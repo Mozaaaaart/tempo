@@ -22,8 +22,11 @@ export async function searchTracks(query, { limit = 20, country = 'FR' } = {}) {
 
   const data = await res.json();
 
-  // previewUrl peut être null → indispensable de filtrer
-  return (data.results ?? []).filter((t) => t.previewUrl);
+  // previewUrl peut être null, et les previews ".plus.aac" (xHE-AAC)
+  // ne sont pas décodables par Chrome desktop → on les exclut
+  return (data.results ?? []).filter(
+    (t) => t.previewUrl && !t.previewUrl.includes('.plus.aac')
+  );
 }
 
 /**

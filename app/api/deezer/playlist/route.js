@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 
 /**
- * Route lookup — détail d'un morceau Deezer (dont le BPM)
- * GET /api/deezer/track?id=3135556
+ * Route — morceaux d'une playlist Deezer (sert de base de données de morceaux IA)
+ * GET /api/deezer/playlist?id=1234567890
  */
 
 export async function GET(request) {
@@ -14,20 +14,22 @@ export async function GET(request) {
   }
 
   try {
-    // fresh=1 → contourne le cache (indispensable pour les previewUrl, dont le jeton expire)
-    const fresh = searchParams.get('fresh') === '1';
-    const res = await fetch(`https://api.deezer.com/track/${id}`, 
-      fresh ? { cache: 'no-store' } : { next: { revalidate: 1800 } }
-    );
+    const res = await fetch(`https://api.deezer.com/playlist/${id}`, {
+      next: { revalidate: 1800 } // 30 min : tu peux enrichir la playlist sans redéployer
+    });
 
     if (!res.ok) {
       return NextResponse.json({ error: `Deezer API a répondu ${res.status}` }, { status: 502 });
     }
 
     const data = await res.json();
-    return NextResponse.json(data, {
-      headers: { 'Cache-Control': 's-maxage=86400, stale-while-revalidate=604800' }
-    });
+    if (data.error) {
+      return NextResponse.json({ error: 'Playlist introuvable ou privée', details: data.error }, { status: 404 });
+    }
+
+    // On ne renvoie que l'essentiel
+    const tracks = (data.tracks?.data ?? []).map((t) => ({ id: t.id, title: t.title }));
+    return NextResponse.json({ count: tracks.length, tracks });
   } catch (err) {
     return NextResponse.json(
       { error: 'Échec de la requête vers Deezer', details: err.message },

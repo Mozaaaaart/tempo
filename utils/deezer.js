@@ -23,6 +23,7 @@ export async function searchTracks(query, { limit = 25 } = {}) {
       albumName: t.album?.title ?? '',
       previewUrl: t.preview,
       artworkUrl100: t.album?.cover_medium ?? t.album?.cover_big ?? null,
+      rank: t.rank ?? 0,
     }));
 }
 
@@ -39,4 +40,17 @@ export async function trackDetails(trackId) {
   const res = await fetch(`/api/deezer/track?${new URLSearchParams({ id: trackId })}`);
   if (!res.ok) throw new Error(`Erreur API interne : ${res.status}`);
   return res.json();
+}
+
+/**
+ * Récupère une previewUrl FRAÎCHE pour un morceau.
+ * Les URLs de preview Deezer contiennent un jeton à durée de vie limitée :
+ * celles issues d'une recherche mise en cache peuvent être expirées (403).
+ * À appeler juste avant de jouer l'audio.
+ */
+export async function freshPreviewUrl(trackId) {
+  const res = await fetch(`/api/deezer/track?${new URLSearchParams({ id: trackId, fresh: '1' })}`);
+  if (!res.ok) return null;
+  const d = await res.json();
+  return d.preview || null;
 }

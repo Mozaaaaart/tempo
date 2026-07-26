@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { searchTracks, highResArtwork } from '@/utils/deezer';
+import { searchTracks, highResArtwork, freshPreviewUrl } from '@/utils/deezer';
 
 const TERMS = [
   'queen', 'daft punk', 'michael jackson', 'abba', 'coldplay',
@@ -52,12 +52,15 @@ export default function JeuOctave() {
       if (!tracks.length) throw new Error('Aucun résultat');
       const t = tracks[Math.floor(Math.random() * tracks.length)];
 
-      // 50% original, 25% octave haut, 25% octave bas
+      // 50% original, 25% tierce au-dessus, 25% tierce en dessous
       const r = Math.random();
-      shiftRef.current = r < 0.5 ? 0 : r < 0.75 ? 12 : -12;
+      shiftRef.current = r < 0.25 ? 0 : r < 0.5 ? 1 : -1;
 
-      // Élément <audio> natif : décode tous les formats Apple sans problème
-      const proxied = `/api/itunes/preview?url=${encodeURIComponent(t.previewUrl)}`;
+      // URL fraîche (les jetons des previews Deezer expirent)
+      const fresh = (await freshPreviewUrl(t.trackId)) ?? t.previewUrl;
+      const proxied = `/api/itunes/preview?url=${encodeURIComponent(fresh)}`;
+
+      // Élément <audio> natif : décode tous les formats sans problème
       const audio = new Audio();
       audio.crossOrigin = 'anonymous';
       audio.src = proxied;
@@ -71,7 +74,12 @@ export default function JeuOctave() {
       });
 
       // Branchement : <audio> → PitchShift → sortie
-      const pitch = new Tone.PitchShift({ pitch: shiftRef.current }).toDestination();
+      const pitch = new Tone.PitchShift({
+        pitch: shiftRef.current,
+        windowSize: 0.02,  // fenêtre plus courte = transitoires plus nets (défaut : 0.1)
+        delayTime: 0,
+        feedback: 0,
+      }).toDestination();
       const source = Tone.getContext().createMediaElementSource(audio);
       Tone.connect(source, pitch);
 
@@ -83,7 +91,7 @@ export default function JeuOctave() {
       setStatus('Écoute bien… original ou modifié ?');
       play();
     } catch (err) {
-      console.error('Erreur octave:', err);
+      console.error('Erreur tierce:', err);
       setLoading(false);
       setStatus(`Erreur de chargement : ${err?.message ?? err}`);
     }
@@ -109,7 +117,7 @@ export default function JeuOctave() {
     let score = 0, msg = 'Raté !';
     if (a === truth) { score = 10; msg = '🎉 Exact !'; }
     else if (truth !== 'orig' && a !== 'orig') { score = 5; msg = 'Bien vu, c\'était modifié — mais mauvaise direction.'; }
-    const lbl = truth === 'orig' ? 'à sa hauteur d\'origine' : truth === 'up' ? 'une octave au-dessus' : 'une octave en dessous';
+    const lbl = truth === 'orig' ? 'à sa hauteur d\'origine' : truth === 'up' ? 'une tierce au-dessus' : 'une tierce en dessous';
     setResult({ score, msg, lbl });
     setStatus('« Nouvelle chanson » pour continuer.');
   }
@@ -125,10 +133,10 @@ export default function JeuOctave() {
   return (
     <main style={{ padding: 40, background: '#0c0e15', minHeight: '100vh', color: '#e9e7de', fontFamily: 'sans-serif' }}>
       <a href="/" style={{ color: '#9aa0b4', fontSize: '0.85rem' }}>← Accueil</a>
-      <h2 style={{ fontSize: '2rem', margin: '12px 0 4px' }}>Octave ou pas ?</h2>
+      <h2 style={{ fontSize: '2rem', margin: '12px 0 4px' }}>Tierce ou pas ?</h2>
       <p style={{ color: '#9aa0b4', marginBottom: 24 }}>
         Un extrait d'un vrai morceau est joué — parfois à sa hauteur d'origine, parfois décalé
-        d'une octave (tempo inchangé). À toi de trancher.
+        d'une tierce vers le haut ou le bas (tempo inchangé). Plus subtil qu'il n'y paraît…
       </p>
 
       <div style={{ background: '#151826', border: '1px solid #2a2f45', borderRadius: 14, padding: 24 }}>
@@ -143,8 +151,8 @@ export default function JeuOctave() {
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button onClick={() => answer('orig')} disabled={answered} style={btnStyle(false, answered)}>🎯 Original</button>
-          <button onClick={() => answer('up')} disabled={answered} style={btnStyle(false, answered)}>⬆️ Octave au-dessus</button>
-          <button onClick={() => answer('down')} disabled={answered} style={btnStyle(false, answered)}>⬇️ Octave en dessous</button>
+          <button onClick={() => answer('up')} disabled={answered} style={btnStyle(false, answered)}>⬆️ Tierce au-dessus</button>
+          <button onClick={() => answer('down')} disabled={answered} style={btnStyle(false, answered)}>⬇️ Tierce en dessous</button>
         </div>
 
         <p style={{ color: '#9aa0b4', fontFamily: 'monospace', fontSize: '0.85rem', minHeight: '1.4em', marginTop: 12 }}>{status}</p>

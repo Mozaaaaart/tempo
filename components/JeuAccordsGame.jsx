@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { seeded } from '@/components/dailyGames';
+import { seeded, survolOr, sortieOr } from '@/components/dailyGames';
 
 const POSITIONS = [
   { name: 'C4', midi: 60, y: 170, ledger: true },
@@ -20,18 +20,26 @@ const LINES_Y = [70, 90, 110, 130, 150];
 const NOTE_GAP = 0.42;
 const PREROLL = 0.15;
 
+// Note creuse dont le contour se trace en un tour, puis reste complet
+const RX = 12, RY = 9;
+// Périmètre de l'ellipse (approximation de Ramanujan)
+const PERIMETRE = Math.PI * (3 * (RX + RY) - Math.sqrt((3 * RX + RY) * (RX + 3 * RY)));
+const DUREE_TRACE = 520; // ms — durée du tour complet
+
 export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
   const [target, setTarget] = useState(null);
   const [mode, setMode] = useState('accord');
   const [userNotes, setUserNotes] = useState([]);
   const [locked, setLocked] = useState(false);
-  const [status, setStatus] = useState(daily ? 'Chargement du piano…' : 'Clique sur « Nouvelle cible » pour commencer.');
+  const [pianoPret, setPianoPret] = useState(false);
+  const [status, setStatus] = useState('Chargement du piano…');
   const [score, setScore] = useState(null);
   const [hoverPos, setHoverPos] = useState(null);
   const [hoverSound, setHoverSound] = useState(true);
   const [revealed, setRevealed] = useState(0);
   const [dragIndex, setDragIndex] = useState(null);
   const [verdicts, setVerdicts] = useState(null);
+  const [pulse, setPulse] = useState(0);   // incrémenté à chaque note jouée → relance le tracé
   const toneRef = useRef(null);
   const synthRef = useRef(null);
   const hoverSynthRef = useRef(null);
@@ -52,7 +60,10 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
         onload: () => {
           synthRef.current = sampler;
           hoverSynthRef.current = sampler;
-          if (daily && !target) newRound(seeded('accords'));
+          setPianoPret(true);
+          setStatus(daily
+            ? 'Clique sur « Écouter la cible » pour lancer l\'épreuve du jour.'
+            : 'Lance une cible pour commencer.');
         },
       }).toDestination();
     });
@@ -95,6 +106,7 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
         next[i] = pos;
         setUserNotes(next);
         hoverSynthRef.current?.triggerAttackRelease(pos.name, '8n', undefined, 0.5);
+        setPulse((p) => p + 1);
       }
       return;
     }
@@ -107,6 +119,7 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
       if (hoverSound) {
         hoverSynthRef.current?.triggerAttackRelease(pos.name, '8n', undefined, 0.35);
       }
+      setPulse((p) => p + 1);   // le contour se retrace, en phase avec le son
     }
   }
 
@@ -142,7 +155,7 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
     setMode(m); setTarget(notes); setUserNotes([]);
     setScore(null); setVerdicts(null); setLocked(false); setHoverPos(null);
     lastHoverRef.current = null;
-    setStatus(`Mode : ${m} · Pose tes ${n} notes. Glisse une note posée pour l'ajuster, clique-la pour la retirer.`);
+    setStatus(`${m === 'accord' ? 'Accord' : 'Arpège'} · ${n} notes à placer. Glisse une note pour l'ajuster, clique-la pour la retirer.`);
     playNotes(notes, m);
   }
 
@@ -222,10 +235,10 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
       if (daily && !dailyDoneRef.current) {
         dailyDoneRef.current = true;
         onDone(Math.round(s * 10) / 10);
-        setStatus('Terminé ! Une seule tentative dans le défi du jour.');
+        setStatus('Épreuve terminée. Une seule tentative dans le défi du jour.');
       } else {
         setLocked(false);
-        setStatus('Terminé ! Tes notes justes en vert, tes erreurs en rouge — la cible en vert à côté.');
+        setStatus('Tes notes justes en vert, tes erreurs en rouge — la cible en vert à côté.');
       }
     }, (d1 + 0.5) * 1000);
   }
@@ -233,45 +246,72 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
   const canValidate = target && userNotes.length === target.length && !locked;
   const ghostX = 170 + userNotes.length * 110;
 
+  // Note creuse : le contour se trace en un tour puis reste complet
+  const NoteCreuse = ({ cx, cy, couleur = 'var(--or-clair)' }) => (
+    <g key={pulse} style={{ pointerEvents: 'none' }}>
+      {/* Halo : passe large très faible, comme sur l'onde */}
+      <ellipse cx={cx} cy={cy} rx={RX} ry={RY} fill="none"
+        stroke={couleur} strokeWidth={5} opacity={0.1} strokeLinecap="round"
+        strokeDasharray={PERIMETRE}
+        style={{ animation: `traceContour ${DUREE_TRACE}ms cubic-bezier(0.4, 0, 0.2, 1) both` }} />
+      {/* Contour net */}
+      <ellipse cx={cx} cy={cy} rx={RX} ry={RY} fill="none"
+        stroke={couleur} strokeWidth={1.6} strokeLinecap="round"
+        strokeDasharray={PERIMETRE}
+        style={{ animation: `traceContour ${DUREE_TRACE}ms cubic-bezier(0.4, 0, 0.2, 1) both` }} />
+    </g>
+  );
+
   const boutons = [
-    ...(daily ? [] : [{ label: 'Nouvelle cible', onClick: () => newRound(), primary: true }]),
-    { label: 'Réécouter cible', onClick: () => target && (score !== null ? playTargetWithReveal(target, mode) : playNotes(target, mode)), disabled: !target },
-    { label: 'Écouter ma version', onClick: () => userNotes.length && playNotes(userNotes, mode), disabled: !userNotes.length },
-    { label: 'Effacer', onClick: () => { setUserNotes([]); setStatus('Notes effacées.'); }, disabled: !userNotes.length || locked },
-    { label: 'Valider', onClick: validate, primary: true, disabled: !canValidate },
+    ...(daily
+      ? (target ? [] : [{ label: 'Écouter la cible', onClick: () => newRound(seeded('accords')), primaire: true, disabled: !pianoPret }])
+      : [{ label: 'Générer une cible', onClick: () => newRound(), primaire: true, disabled: !pianoPret }]),
+    { label: 'Réécouter la cible', onClick: () => target && (score !== null ? playTargetWithReveal(target, mode) : playNotes(target, mode)), disabled: !target },
+    { label: 'Écouter ma proposition', onClick: () => userNotes.length && playNotes(userNotes, mode), disabled: !userNotes.length },
+    { label: 'Effacer les notes', onClick: () => { setUserNotes([]); setStatus('Notes effacées.'); }, disabled: !userNotes.length || locked },
+    { label: 'Valider', onClick: validate, primaire: true, disabled: !canValidate },
   ];
 
   return (
-    <div style={{ background: '#151826', border: '1px solid #2a2f45', borderRadius: 14, padding: 24, marginBottom: 16 }}>
+    <div style={{ background: 'var(--onyx)', border: '0.5px solid var(--filet)', borderRadius: 'var(--rayon-carte)', padding: 'var(--e6)', marginBottom: 'var(--e4)' }}>
       <style>{`
         @keyframes notePop {
           0% { transform: scale(0); opacity: 0; }
           60% { transform: scale(1.35); opacity: 1; }
           100% { transform: scale(1); opacity: 1; }
         }
+        @keyframes traceContour {
+          from { stroke-dashoffset: ${PERIMETRE}; }
+          to   { stroke-dashoffset: 0; }
+        }
       `}</style>
 
-      <h3 style={{ marginBottom: 4 }}>Retrouve l'accord</h3>
-      <p style={{ color: '#9aa0b4', fontSize: '0.9rem', marginBottom: 14 }}>
+      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Retrouve l'accord</h3>
+      <p className="description" style={{ marginBottom: 'var(--e4)' }}>
         Écoute la cible, pose tes notes sur la portée, ajuste-les en les glissant, puis valide.
       </p>
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap', marginBottom: 'var(--e3)' }}>
         {boutons.map((b) => (
           <button key={b.label} onClick={b.onClick} disabled={b.disabled}
+            onMouseEnter={b.primaire ? undefined : survolOr}
+            onMouseLeave={b.primaire ? undefined : sortieOr}
             style={{
-              padding: '10px 16px', borderRadius: 10, border: 'none',
+              fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 500,
+              padding: '9px 16px', borderRadius: 'var(--rayon-controle)',
               cursor: b.disabled ? 'not-allowed' : 'pointer',
-              background: b.primary ? '#f2c14e' : '#1c2032',
-              color: b.primary ? '#1a1405' : '#e9e7de',
-              opacity: b.disabled ? 0.45 : 1, fontWeight: 600
+              background: b.primaire ? 'var(--or)' : 'transparent',
+              color: b.primaire ? 'var(--noir)' : 'var(--ivoire)',
+              border: b.primaire ? '1px solid var(--or)' : '0.5px solid var(--filet-fort)',
+              opacity: b.disabled ? 0.4 : 1,
+              transition: 'background var(--transition-courte), border-color var(--transition-courte)',
             }}>
             {b.label}
           </button>
         ))}
       </div>
 
-      <p style={{ color: '#9aa0b4', fontFamily: 'monospace', fontSize: '0.85rem', minHeight: '1.4em' }}>{status}</p>
+      <p style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--lin)', minHeight: '1.5em' }}>{status}</p>
 
       <svg
         ref={svgRef}
@@ -281,39 +321,44 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
         onMouseUp={endDrag}
         viewBox="0 0 700 215"
         width="100%"
-        style={{ maxWidth: 700, display: 'block', cursor: dragIndex !== null ? 'grabbing' : 'crosshair', marginTop: 8, userSelect: 'none' }}
+        style={{ maxWidth: 700, display: 'block', cursor: dragIndex !== null ? 'grabbing' : 'crosshair', marginTop: 'var(--e2)', userSelect: 'none' }}
       >
         {LINES_Y.map(y => (
-          <line key={y} x1={20} y1={y} x2={680} y2={y} stroke="#2a2f45" strokeWidth={1.5} />
+          <line key={y} x1={20} y1={y} x2={680} y2={y} stroke="var(--filet-fort)" strokeWidth={1} />
         ))}
-        <text x={30} y={148} fontSize={90} fill="#9aa0b4">𝄞</text>
+        <text x={30} y={148} fontSize={90} fill="var(--lin)">𝄞</text>
 
+        {/* Note survolée : creuse, contour tracé en phase avec le son */}
         {hoverPos && canPlace() && dragIndex === null && (
           <g style={{ pointerEvents: 'none' }}>
             {hoverPos.ledger && (
               <line x1={ghostX - 16} y1={hoverPos.y} x2={ghostX + 16} y2={hoverPos.y}
-                stroke="#2a2f45" strokeWidth={1.5} opacity={0.5} />
+                stroke="var(--filet-fort)" strokeWidth={1} opacity={0.5} />
             )}
-            <ellipse cx={ghostX} cy={hoverPos.y} rx={11} ry={8} fill="#f2c14e" opacity={0.35} />
-            <text x={ghostX} y={200} textAnchor="middle" fontSize={12} fill="#f2c14e"
-              opacity={0.6} fontFamily="monospace">{hoverPos.name}</text>
+            <NoteCreuse cx={ghostX} cy={hoverPos.y} />
+            <text x={ghostX} y={200} textAnchor="middle" fontSize={12} fill="var(--or)"
+              opacity={0.6} fontFamily="var(--mono)">{hoverPos.name}</text>
           </g>
         )}
 
+        {/* Notes posées : pleines. En cours de glissement : creuses, retracées à chaque ligne */}
         {userNotes.map((n, i) => (
           <g key={i} onMouseDown={(e) => startDrag(e, i)}>
             {n.ledger && (
-              <line x1={170 + i * 110 - 16} y1={n.y} x2={170 + i * 110 + 16} y2={n.y} stroke="#2a2f45" strokeWidth={1.5} />
+              <line x1={170 + i * 110 - 16} y1={n.y} x2={170 + i * 110 + 16} y2={n.y} stroke="var(--filet-fort)" strokeWidth={1} />
             )}
-            <ellipse cx={170 + i * 110} cy={n.y} rx={11} ry={8}
-              fill={verdicts === null ? '#f2c14e' : verdicts[i] ? '#4ade80' : '#f87171'}
-              stroke={dragIndex === i ? '#e9e7de' : 'none'} strokeWidth={2}
-              style={{ cursor: locked ? 'default' : 'grab' }} />
+            {dragIndex === i ? (
+              <NoteCreuse cx={170 + i * 110} cy={n.y} couleur="var(--ivoire)" />
+            ) : (
+              <ellipse cx={170 + i * 110} cy={n.y} rx={11} ry={8}
+                fill={verdicts === null ? 'var(--or)' : verdicts[i] ? 'var(--jade)' : 'rgba(226, 75, 74, 0.65)'}
+                style={{ cursor: locked ? 'default' : 'grab' }} />
+            )}
             <rect x={170 + i * 110 - 22} y={n.y - 16} width={44} height={32} fill="transparent"
               style={{ cursor: locked ? 'default' : 'grab' }} />
             <text x={170 + i * 110} y={200} textAnchor="middle" fontSize={12}
-              fill={verdicts === null ? '#9aa0b4' : verdicts[i] ? '#4ade80' : '#f87171'}
-              fontFamily="monospace">
+              fill={verdicts === null ? 'var(--lin)' : verdicts[i] ? 'var(--jade)' : 'rgba(226, 75, 74, 0.65)'}
+              fontFamily="var(--mono)">
               {n.name}
             </text>
           </g>
@@ -324,11 +369,11 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
           return (
             <g key={'t' + i} style={{ pointerEvents: 'none' }}>
               {n.ledger && (
-                <line x1={x - 16} y1={n.y} x2={x + 16} y2={n.y} stroke="#2a2f45" strokeWidth={1.5} />
+                <line x1={x - 16} y1={n.y} x2={x + 16} y2={n.y} stroke="var(--filet-fort)" strokeWidth={1} />
               )}
-              <ellipse cx={x} cy={n.y} rx={11} ry={8} fill="#4ade80"
+              <ellipse cx={x} cy={n.y} rx={11} ry={8} fill="var(--jade)"
                 style={{ animation: 'notePop 0.35s ease-out', transformOrigin: `${x}px ${n.y}px` }} />
-              <text x={x} y={52} textAnchor="middle" fontSize={12} fill="#4ade80" fontFamily="monospace">
+              <text x={x} y={52} textAnchor="middle" fontSize={12} fill="var(--jade)" fontFamily="var(--mono)">
                 {n.name}
               </text>
             </g>
@@ -336,35 +381,38 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
         })}
       </svg>
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+      {/* Sélecteur de mode d'écoute */}
+      <div style={{ display: 'flex', gap: 'var(--e2)', marginTop: 'var(--e4)', flexWrap: 'wrap' }}>
         {[
-          { on: true, icon: '🎹', titre: 'Mode découverte', desc: 'les notes sonnent au survol' },
-          { on: false, icon: '🤫', titre: 'Mode silencieux', desc: 'les notes sonnent seulement au clic' },
+          { on: true, titre: 'Mode découverte', desc: 'les notes sonnent au survol' },
+          { on: false, titre: 'Mode silencieux', desc: 'les notes sonnent seulement au clic' },
         ].map((m) => (
           <button key={m.titre} onClick={() => setHoverSound(m.on)}
             style={{
-              flex: '1 1 200px', padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
-              textAlign: 'left', border: hoverSound === m.on ? '1px solid #f2c14e' : '1px solid #2a2f45',
-              background: hoverSound === m.on ? '#26221a' : '#1c2032',
-              color: '#e9e7de',
+              flex: '1 1 200px', padding: 'var(--e3) var(--e4)', borderRadius: 'var(--rayon-controle)',
+              cursor: 'pointer', textAlign: 'left',
+              border: hoverSound === m.on ? '1px solid var(--or)' : '0.5px solid var(--filet)',
+              background: hoverSound === m.on ? 'var(--onyx-haut)' : 'transparent',
+              color: 'var(--ivoire)',
+              transition: 'border-color var(--transition-courte), background var(--transition-courte)',
             }}>
-            <div style={{ fontWeight: 600, fontSize: '0.92rem' }}>{m.icon} {m.titre}</div>
-            <div style={{ color: '#9aa0b4', fontSize: '0.8rem', marginTop: 2 }}>{m.desc}</div>
+            <div style={{ fontWeight: 500, fontSize: 14 }}>{m.titre}</div>
+            <div className="description" style={{ marginTop: 2 }}>{m.desc}</div>
           </button>
         ))}
       </div>
 
       {score !== null && (
-        <div style={{ marginTop: 16, textAlign: 'center', background: '#1c2032', borderRadius: 12, padding: 18, border: '1px dashed #2a2f45' }}>
-          <div style={{
-            fontSize: '2.4rem', fontFamily: 'monospace', fontWeight: 700,
-            color: +score >= 8 ? '#4ade80' : +score >= 5 ? '#f2c14e' : '#f87171'
+        <div style={{ marginTop: 'var(--e4)', paddingTop: 'var(--e4)', borderTop: '0.5px solid var(--filet)' }}>
+          <div className="score-affiche" style={{
+            color: +score >= 9.5 ? 'var(--jade)' : +score < 4 ? 'var(--carmin)' : 'var(--ivoire)',
           }}>
-            {score} / 10
+            {(+score).toFixed(1).replace('.', ',')} <span style={{ color: 'var(--cendre)' }}>/ 10</span>
           </div>
-          <div style={{ color: '#9aa0b4', fontSize: '0.85rem', marginTop: 6 }}>
-            Cible : <span style={{ color: '#4ade80' }}>{target?.map(n => n.name).join(' · ')}</span> — Toi : <span style={{ color: '#f2c14e' }}>{userNotes.map(n => n.name).join(' · ')}</span>
-          </div>
+          <p className="description" style={{ marginTop: 'var(--e2)' }}>
+            Cible : <span style={{ color: 'var(--jade)' }}>{target?.map(n => n.name).join(' · ')}</span>
+            {' — '}Toi : <span style={{ color: 'var(--or)' }}>{userNotes.map(n => n.name).join(' · ')}</span>
+          </p>
         </div>
       )}
     </div>

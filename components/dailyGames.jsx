@@ -44,32 +44,72 @@ export function lev(a, b) {
 export const normTitle = (s) => norm(String(s).replace(/\(.*?\)/g, '').replace(/\[.*?\]/g, '').split(' - ')[0]);
 
 /* ============================================================
-   STYLES PARTAGÉS
+   STYLES PARTAGÉS — jetons du design system
 ============================================================ */
-export const panel = { background: '#151826', border: '1px solid #2a2f45', borderRadius: 14, padding: 24, marginBottom: 16 };
-export const btn = (primary, disabled) => ({
-  padding: '10px 16px', borderRadius: 10, border: 'none',
-  cursor: disabled ? 'not-allowed' : 'pointer',
-  background: primary ? '#f2c14e' : '#1c2032',
-  color: primary ? '#1a1405' : '#e9e7de',
-  opacity: disabled ? 0.45 : 1, fontWeight: 600,
-});
-export const inputStyle = {
-  background: '#1c2032', border: '1px solid #2a2f45', color: '#e9e7de',
-  borderRadius: 10, padding: '10px 14px', minWidth: 220, fontSize: '0.95rem',
+export const panel = {
+  background: 'var(--onyx)',
+  border: '0.5px solid var(--filet)',
+  borderRadius: 'var(--rayon-carte)',
+  padding: 'var(--e6)',
+  marginBottom: 'var(--e4)',
 };
-export const statusStyle = { color: '#9aa0b4', fontFamily: 'monospace', fontSize: '0.85rem', minHeight: '1.4em', marginTop: 14 };
 
-export function ScoreBox({ score }) {
-  if (score === null) return null;
+export const btn = (primaire, disabled) => ({
+  fontFamily: 'var(--sans)',
+  fontSize: 14,
+  fontWeight: 500,
+  padding: '9px 16px',
+  borderRadius: 'var(--rayon-controle)',
+  cursor: disabled ? 'not-allowed' : 'pointer',
+  background: primaire ? 'var(--or)' : 'transparent',
+  color: primaire ? 'var(--noir)' : 'var(--ivoire)',
+  border: primaire ? '1px solid var(--or)' : '0.5px solid var(--filet-fort)',
+  opacity: disabled ? 0.4 : 1,
+  transition: 'background var(--transition-courte), border-color var(--transition-courte), color var(--transition-courte)',
+});
+
+/* Survol des boutons en contour : bordure et texte passent en or */
+export const survolOr = (ev) => {
+  if (ev.currentTarget.disabled) return;
+  ev.currentTarget.style.borderColor = 'var(--or)';
+  ev.currentTarget.style.color = 'var(--or)';
+};
+export const sortieOr = (ev) => {
+  if (ev.currentTarget.disabled) return;
+  ev.currentTarget.style.borderColor = 'var(--filet-fort)';
+  ev.currentTarget.style.color = 'var(--ivoire)';
+};
+
+export const inputStyle = {
+  fontFamily: 'var(--sans)',
+  fontSize: 14,
+  background: 'var(--onyx-haut)',
+  color: 'var(--ivoire)',
+  border: '0.5px solid var(--filet-fort)',
+  borderRadius: 'var(--rayon-controle)',
+  padding: '9px 14px',
+  minWidth: 220,
+};
+
+export const statusStyle = {
+  fontFamily: 'var(--mono)',
+  fontSize: 12,
+  color: 'var(--lin)',
+  minHeight: '1.5em',
+  marginTop: 'var(--e4)',
+};
+
+/* Score : jade réservé au parfait (≥ 9,5), carmin à l'échec (< 4) */
+export function ScoreBox({ score, detail }) {
+  if (score === null || score === undefined) return null;
+  const n = Number(score);
+  const couleur = n >= 9.5 ? 'var(--jade)' : n < 4 ? 'var(--carmin)' : 'var(--ivoire)';
   return (
-    <div style={{ marginTop: 12, textAlign: 'center', background: '#1c2032', borderRadius: 12, padding: 18, border: '1px dashed #2a2f45' }}>
-      <div style={{
-        fontSize: '2.4rem', fontFamily: 'monospace', fontWeight: 700,
-        color: score >= 8 ? '#4ade80' : score >= 4 ? '#f2c14e' : '#f87171',
-      }}>
-        {score} / 10
+    <div style={{ marginTop: 'var(--e4)', paddingTop: 'var(--e4)', borderTop: '0.5px solid var(--filet)' }}>
+      <div className="score-affiche" style={{ color: couleur }}>
+        {n.toFixed(1).replace('.', ',')} <span style={{ color: 'var(--cendre)' }}>/ 10</span>
       </div>
+      {detail && <p className="description" style={{ marginTop: 'var(--e2)' }}>{detail}</p>}
     </div>
   );
 }
@@ -126,19 +166,19 @@ export function ArtistInput({ value, onChange, onSubmit, disabled, placeholder =
       />
       {open && !disabled && matches.length > 0 && (
         <div style={{
-          position: 'absolute', top: '100%', left: 0, zIndex: 20, marginTop: 4,
-          width: '100%', minWidth: 220, maxHeight: 240, overflowY: 'auto',
-          background: '#1c2032', border: '1px solid #2a2f45', borderRadius: 10,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+          position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 100,
+          width: '100%', minWidth: 220, maxHeight: 200, overflowY: 'auto',
+          background: 'var(--onyx)', border: '0.5px solid var(--or)', borderRadius: 'var(--rayon-controle)',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.7)',
         }}>
           {matches.map((a, i) => (
             <div key={a.nom}
               onMouseDown={(e) => { e.preventDefault(); pick(a.nom); }}
               onMouseEnter={() => setHighlight(i)}
               style={{
-                padding: '8px 14px', cursor: 'pointer', fontSize: '0.9rem',
-                background: i === highlight ? '#26221a' : 'transparent',
-                color: i === highlight ? '#f2c14e' : '#e9e7de',
+                padding: '8px 14px', cursor: 'pointer', fontSize: 13,
+                background: i === highlight ? 'var(--onyx-haut)' : 'transparent',
+                color: i === highlight ? 'var(--or)' : 'var(--ivoire)',
               }}>
               {a.nom}
             </div>
@@ -160,7 +200,7 @@ export function JeuArtiste({ onDone }) {
   const [done, setDone] = useState(false);
   const [status, setStatus] = useState(`Devine l'artiste du jour — ${MAX_TRIES} essais.`);
   const [score, setScore] = useState(null);
-  const [animatingRow, setAnimatingRow] = useState(-1); // index de la ligne en cours d'animation
+  const [animatingRow, setAnimatingRow] = useState(-1);
 
   const NB_COLS = 7;
 
@@ -177,7 +217,7 @@ export function JeuArtiste({ onDone }) {
     // Le verdict tombe APRÈS la révélation de la dernière colonne (suspense)
     const revealMs = (NB_COLS - 1) * CELL_DELAY * 1000 + 500;
     if (g.nom === target.nom) {
-      setDone(true); // bloque l'input tout de suite
+      setDone(true);
       setStatus('…');
       setTimeout(() => {
         const pts = [10, 8, 6, 4, 2, 1][next.length - 1];
@@ -199,12 +239,12 @@ export function JeuArtiste({ onDone }) {
     }
   }
 
-  // Une cellule : si sa ligne est en cours d'animation, elle se retourne avec un délai selon sa colonne
   const cell = (val, ok, col, animate, arrow = '') => (
     <div style={{
-      background: ok ? '#14432b' : '#3a1d22',
-      color: ok ? '#4ade80' : '#f87171',
-      borderRadius: 8, padding: '8px 6px', fontSize: '0.82rem', textAlign: 'center',
+      background: 'var(--onyx-haut)',
+      color: ok ? 'var(--jade)' : 'rgba(226, 75, 74, 0.65)',
+      border: `0.5px solid ${ok ? 'var(--jade)' : 'rgba(226, 75, 74, 0.3)'}`,
+      borderRadius: 'var(--rayon-controle)', padding: '8px 6px', fontSize: 12, textAlign: 'center',
       ...(animate ? {
         animation: `cellFlip 0.5s ease-out both`,
         animationDelay: `${col * CELL_DELAY}s`,
@@ -215,29 +255,29 @@ export function JeuArtiste({ onDone }) {
   );
 
   return (
-    <div style={panel}>
+    <div style={{ ...panel, overflow: 'visible' }}>
       <style>{`
         @keyframes cellFlip {
-          0% { transform: rotateX(90deg); opacity: 0; background: #1c2032; color: transparent; }
+          0% { transform: rotateX(90deg); opacity: 0; background: var(--onyx-haut); color: transparent; }
           50% { transform: rotateX(90deg); opacity: 1; }
           100% { transform: rotateX(0deg); opacity: 1; }
         }
       `}</style>
 
-      <h3 style={{ marginBottom: 4 }}>Trouve l'artiste</h3>
-      <p style={{ color: '#9aa0b4', fontSize: '0.9rem', marginBottom: 14 }}>
+      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Trouve l'artiste</h3>
+      <p className="description" style={{ marginBottom: 'var(--e4)' }}>
         Vert = attribut exact. ▲/▼ = la cible a plus/moins (streams) ou est plus tardive/précoce (débuts).
       </p>
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+      <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap', marginBottom: 'var(--e2)' }}>
         <ArtistInput value={input} onChange={setInput} onSubmit={guess} disabled={done} />
         <button onClick={guess} disabled={done} style={btn(true, done)}>Essayer</button>
       </div>
 
       {guesses.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 0.8fr 0.9fr 0.8fr 0.9fr', gap: 6, marginTop: 12, perspective: '600px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 0.8fr 0.9fr 0.8fr 0.9fr', gap: 6, marginTop: 'var(--e3)', perspective: '600px' }}>
           {['Artiste', 'Genre', 'Pays', 'Débuts', 'Format', 'Sexe', 'Streams'].map((h) => (
-            <div key={h} style={{ color: '#9aa0b4', fontFamily: 'monospace', fontSize: '0.66rem', textTransform: 'uppercase', textAlign: 'center', letterSpacing: '0.05em' }}>{h}</div>
+            <div key={h} className="etiquette-mono" style={{ color: 'var(--cendre)', textAlign: 'center', fontSize: 9.5 }}>{h}</div>
           ))}
           {guesses.map((g, rowIdx) => {
             const animate = rowIdx === animatingRow;
@@ -328,14 +368,14 @@ export function JeuPochette({ onDone }) {
   const blur = done ? 0 : BLURS[Math.min(tries, BLURS.length - 1)];
 
   return (
-    <div style={panel}>
-      <h3 style={{ marginBottom: 4 }}>Pochette floutée</h3>
-      <p style={{ color: '#9aa0b4', fontSize: '0.9rem', marginBottom: 14 }}>
+    <div style={{ ...panel, overflow: 'visible' }}>
+      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Pochette floutée</h3>
+      <p className="description" style={{ marginBottom: 'var(--e4)' }}>
         Le flou diminue à chaque mauvaise réponse. Trouve l'artiste de cet album.
       </p>
 
       {track && (
-        <div style={{ width: 260, height: 260, overflow: 'hidden', borderRadius: 12, margin: '0 auto 16px', border: '1px solid #2a2f45' }}>
+        <div style={{ width: 260, height: 260, overflow: 'hidden', borderRadius: 'var(--rayon-carte)', margin: '0 auto var(--e4)', border: '0.5px solid var(--filet)' }}>
           <img
             src={track.artworkUrl100}
             alt="Pochette mystère"
@@ -353,14 +393,14 @@ export function JeuPochette({ onDone }) {
       {loadError ? (
         <button onClick={load} style={btn(true, false)}>Réessayer le chargement</button>
       ) : (
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap', justifyContent: 'center' }}>
           <ArtistInput value={input} onChange={setInput} onSubmit={guess} disabled={done || !track} />
           <button onClick={guess} disabled={done || !track} style={btn(true, done || !track)}>Essayer</button>
         </div>
       )}
 
       {tried.length > 0 && !done && (
-        <p style={{ color: '#9aa0b4', fontSize: '0.82rem', textAlign: 'center', marginTop: 10 }}>
+        <p className="description" style={{ textAlign: 'center', marginTop: 'var(--e3)' }}>
           Déjà essayé : {tried.join(' · ')}
         </p>
       )}
@@ -372,6 +412,8 @@ export function JeuPochette({ onDone }) {
 }
 
 /* ================= 3 · TROUVE LE BPM ================= */
+const BPM_MIN = 60, BPM_MAX = 180;
+
 export function JeuBPM({ onDone }) {
   const [track, setTrack] = useState(null);
   const [realBpm, setRealBpm] = useState(null);
@@ -399,7 +441,7 @@ export function JeuBPM({ onDone }) {
       let found = null;
 
       for (let a = 0; a < 5 && !found; a++) {
-        const artist = ARTISTS[(artistStart + a * 17) % ARTISTS.length]; // pas de 17 pour varier
+        const artist = ARTISTS[(artistStart + a * 17) % ARTISTS.length];
         const tracks = await searchTracks(artist.nom, { limit: 25 });
         if (!tracks.length) continue;
 
@@ -428,7 +470,7 @@ export function JeuBPM({ onDone }) {
     audio?.pause();
     const url = (await freshPreviewUrl(track.trackId)) ?? track.previewUrl;
     const a = new Audio(url);
-    a.play();
+    a.play().catch((e) => console.error('Lecture impossible:', e));
     setAudio(a);
     setTimeout(() => a.pause(), 7000);
   }
@@ -458,34 +500,102 @@ export function JeuBPM({ onDone }) {
     const s = Math.round(Math.max(0, diff <= 2 ? 10 : 10 - (diff - 2) * 0.4) * 10) / 10;
     setScore(s);
     onDone(s);
-    setStatus(`C'était ${realBpm} BPM (${track.artistName} — ${track.trackName}) · écart de ${diff}.`);
+    setStatus(diff === 0
+      ? `Tempo exact. ${track.artistName} — ${track.trackName}.`
+      : `${diff} BPM d'écart. ${track.artistName} — ${track.trackName}.`);
   }
+
+  // Position d'une valeur sur la barre, en pourcentage
+  const pos = (v) => ((Math.min(Math.max(v, BPM_MIN), BPM_MAX) - BPM_MIN) / (BPM_MAX - BPM_MIN)) * 100;
+  const juste = done && Math.abs(guess - realBpm) <= 2;
+  const couleurResultat = !done ? 'var(--or)' : juste ? 'var(--jade)' : 'rgba(226, 75, 74, 0.75)';
 
   return (
     <div style={panel}>
-      <h3 style={{ marginBottom: 4 }}>Trouve le BPM</h3>
-      <p style={{ color: '#9aa0b4', fontSize: '0.9rem', marginBottom: 14 }}>
-        7 secondes d'écoute, puis règle le curseur. Tu peux tester ton métronome autant que tu veux avant de valider.
+      <style>{`
+        @keyframes reveleCible {
+          from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+          to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+      `}</style>
+
+      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Trouve le BPM</h3>
+      <p className="description" style={{ marginBottom: 'var(--e4)' }}>
+        Sept secondes d'écoute, puis règle le curseur. Le métronome est là pour comparer.
       </p>
 
       {loadError ? (
         <button onClick={load} style={btn(true, false)}>Réessayer le chargement</button>
       ) : (
         <>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <button onClick={playClip} disabled={!track} style={btn(false, !track)}>🔊 Écouter l'extrait (7 s)</button>
-            <button onClick={testMetro} disabled={!track} style={btn(false, !track)}>Tester mon métronome</button>
+          <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap' }}>
+            <button onClick={playClip} disabled={!track} style={btn(false, !track)}
+              onMouseEnter={survolOr} onMouseLeave={sortieOr}>Écouter l'extrait (7 s)</button>
+            <button onClick={testMetro} disabled={!track} style={btn(false, !track)}
+              onMouseEnter={survolOr} onMouseLeave={sortieOr}>Tester mon métronome</button>
             <button onClick={validate} disabled={!track || done} style={btn(true, !track || done)}>Valider</button>
           </div>
 
-          <input
-            type="range" min={60} max={180} value={guess}
-            onChange={(e) => setGuess(+e.target.value)}
-            disabled={done}
-            style={{ width: '100%', accentColor: '#f2c14e', margin: '18px 0 6px' }}
-          />
-          <div style={{ fontSize: '1.05rem' }}>
-            Ma proposition : <strong style={{ color: '#f2c14e', fontFamily: 'monospace' }}>{guess}</strong> BPM
+          {/* Barre de réglage + repère de la bonne réponse après validation */}
+          <div style={{ position: 'relative', marginTop: 'var(--e6)', paddingTop: done ? 'var(--e6)' : 0, transition: 'padding-top var(--transition-courte)' }}>
+
+            {done && (
+              <div style={{
+                position: 'absolute', top: 0, left: `${pos(realBpm)}%`, bottom: -4,
+                transform: 'translateX(-50%)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                animation: 'reveleCible 320ms ease-out both',
+                pointerEvents: 'none', zIndex: 3,
+              }}>
+                <div className="etiquette-mono" style={{
+                  color: 'var(--noir)', background: 'var(--jade)',
+                  padding: '3px 8px', borderRadius: 'var(--rayon-controle)',
+                  whiteSpace: 'nowrap', fontWeight: 500,
+                }}>
+                  {realBpm} bpm
+                </div>
+                <div style={{
+                  width: 2, flex: 1, background: 'var(--jade)',
+                  boxShadow: '0 0 10px var(--jade)', marginTop: 4,
+                }} />
+              </div>
+            )}
+
+            {/* Piste dessinée : l'apparence native de l'input est masquée en CSS */}
+            <div style={{
+              position: 'absolute', left: 0, right: 0, top: done ? 'calc(var(--e6) + 8px)' : 8, height: 4,
+              borderRadius: 2, background: 'var(--filet)', pointerEvents: 'none',
+            }}>
+              <div style={{
+                position: 'absolute', left: 0, top: 0, bottom: 0,
+                width: `${pos(guess)}%`, borderRadius: 2,
+                background: couleurResultat,
+                boxShadow: done ? `0 0 14px ${couleurResultat}` : 'none',
+                transition: 'background var(--transition-courte), box-shadow var(--transition-courte)',
+              }} />
+            </div>
+
+            <input
+              className="curseur-nu"
+              type="range" min={BPM_MIN} max={BPM_MAX} value={guess}
+              onChange={(e) => setGuess(+e.target.value)}
+              disabled={done}
+              style={{ width: '100%', position: 'relative', zIndex: 2 }}
+            />
+          </div>
+
+          <div style={{ marginTop: 'var(--e3)', fontSize: 14 }}>
+            Ta proposition :{' '}
+            <span style={{ fontFamily: 'var(--mono)', color: couleurResultat, transition: 'color var(--transition-courte)' }}>
+              {guess} BPM
+            </span>
+            {done && (
+              <span style={{ marginLeft: 'var(--e3)', color: juste ? 'var(--jade)' : 'rgba(226, 75, 74, 0.9)' }}>
+                {guess === realBpm ? 'tempo exact'
+                  : guess < realBpm ? `${realBpm - guess} BPM trop lent`
+                  : `${guess - realBpm} BPM trop rapide`}
+              </span>
+            )}
           </div>
         </>
       )}
@@ -546,7 +656,7 @@ export function JeuSeconde({ onDone }) {
     const url = (await freshPreviewUrl(track.trackId)) ?? track.previewUrl;
     const a = new Audio(url);
     a.currentTime = 0;
-    a.play();
+    a.play().catch((e) => console.error('Lecture impossible:', e));
     setAudio(a);
     setPlaying(true);
     const dur = done ? 30 : SEC_DURATIONS[Math.min(tries, SEC_DURATIONS.length - 1)];
@@ -595,25 +705,26 @@ export function JeuSeconde({ onDone }) {
 
   return (
     <div style={panel}>
-      <h3 style={{ marginBottom: 4 }}>Une seconde de plus</h3>
-      <p style={{ color: '#9aa0b4', fontSize: '0.9rem', marginBottom: 14 }}>
+      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Une seconde de plus</h3>
+      <p className="description" style={{ marginBottom: 'var(--e4)' }}>
         Devine le <strong>titre</strong> (score plein) ou l'<strong>artiste</strong> (moitié des points).
         Chaque erreur allonge l'extrait : {SEC_DURATIONS.join(' → ')} s.
       </p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${SEC_DURATIONS.length}, 1fr)`, gap: 6, marginBottom: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${SEC_DURATIONS.length}, 1fr)`, gap: 6, marginBottom: 'var(--e4)' }}>
         {SEC_DURATIONS.map((d, i) => (
           <div key={d} style={{
-            height: 8, borderRadius: 4,
-            background: i <= tries || done ? '#f2c14e' : '#1c2032',
-            border: '1px solid #2a2f45',
+            height: 6, borderRadius: 3,
+            background: i <= tries || done ? 'var(--or)' : 'var(--onyx-haut)',
+            border: '0.5px solid var(--filet)',
+            transition: 'background var(--transition-courte)',
           }} title={`${d} s`} />
         ))}
       </div>
 
       {artistFound && !done && (
-        <p style={{ color: '#4ade80', fontSize: '0.9rem', marginBottom: 10 }}>
-          ✓ Artiste : {track.artistName}
+        <p style={{ color: 'var(--jade)', fontSize: 13, marginBottom: 'var(--e3)' }}>
+          Artiste trouvé : {track.artistName}
         </p>
       )}
 
@@ -621,16 +732,18 @@ export function JeuSeconde({ onDone }) {
         <button onClick={load} style={btn(true, false)}>Réessayer le chargement</button>
       ) : (
         <>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-            <button onClick={play} disabled={!track || playing} style={btn(false, !track || playing)}>
-              🔊 Écouter ({done ? '30' : SEC_DURATIONS[Math.min(tries, SEC_DURATIONS.length - 1)]} s)
+          <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap', marginBottom: 'var(--e3)' }}>
+            <button onClick={play} disabled={!track || playing} style={btn(false, !track || playing)}
+              onMouseEnter={survolOr} onMouseLeave={sortieOr}>
+              Écouter ({done ? '30' : SEC_DURATIONS[Math.min(tries, SEC_DURATIONS.length - 1)]} s)
             </button>
             <button onClick={() => fail(true)} disabled={!track || done || tries >= SEC_DURATIONS.length - 1}
-              style={btn(false, !track || done || tries >= SEC_DURATIONS.length - 1)}>
-              ➕ Plus long
+              style={btn(false, !track || done || tries >= SEC_DURATIONS.length - 1)}
+              onMouseEnter={survolOr} onMouseLeave={sortieOr}>
+              Plus long
             </button>
           </div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap' }}>
             <input value={input} onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && guess()}
               placeholder={artistFound ? 'Titre du morceau…' : 'Titre ou artiste…'}
@@ -641,7 +754,7 @@ export function JeuSeconde({ onDone }) {
       )}
 
       {tried.length > 0 && !done && (
-        <p style={{ color: '#9aa0b4', fontSize: '0.82rem', marginTop: 10 }}>
+        <p className="description" style={{ marginTop: 'var(--e3)' }}>
           Déjà essayé : {tried.join(' · ')}
         </p>
       )}
@@ -665,7 +778,6 @@ const FAMILLES = {
 const INSTRUMENTS = Object.keys(FAMILLES);
 
 const SAMPLE_BASE = 'https://nbrosowsky.github.io/tonejs-instruments/samples/';
-// candidates = notes testées à la volée ; on ne garde que les fichiers réellement présents
 const SAMPLES = {
   'Piano':              { dir: 'piano',           candidates: ['C4', 'A4', 'C5', 'E4'], shift: 0 },
   'Orgue':              { dir: 'organ',           candidates: ['C4', 'A4', 'C5', 'F4'], shift: 0 },
@@ -724,7 +836,6 @@ export function JeuInstrument({ onDone }) {
         if (Object.keys(urls).length >= 3) break;
       } catch { /* réseau : on tente le suivant */ }
     }
-    // Si la vérification échoue partout (CORS, hors-ligne), on tente quand même la 1re note
     if (!Object.keys(urls).length) urls[candidates[0]] = `${candidates[0]}.mp3`;
     return urls;
   }
@@ -802,30 +913,37 @@ export function JeuInstrument({ onDone }) {
 
   return (
     <div style={panel}>
-      <h3 style={{ marginBottom: 4 }}>Trouve l'instrument</h3>
-      <p style={{ color: '#9aa0b4', fontSize: '0.9rem', marginBottom: 14 }}>
+      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Trouve l'instrument</h3>
+      <p className="description" style={{ marginBottom: 'var(--e4)' }}>
         Un instrument mystère joue « {melodie.nom} » — vrai son acoustique.
         Bonne famille mais mauvais instrument = 5 points.
       </p>
 
-      <button onClick={play} disabled={!tone || loadingSound} style={{ ...btn(false, !tone || loadingSound), marginBottom: 14 }}>
-        {loadingSound ? 'Chargement du son…' : '🔊 Écouter le timbre'}
+      <button onClick={play} disabled={!tone || loadingSound}
+        style={{ ...btn(true, !tone || loadingSound), marginBottom: 'var(--e4)' }}>
+        {loadingSound ? 'Chargement du son…' : 'Écouter le timbre'}
       </button>
 
       {Object.entries(parFamille).map(([fam, list]) => (
-        <div key={fam} style={{ marginBottom: 10 }}>
-          <div style={{ color: '#9aa0b4', fontFamily: 'monospace', fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>
+        <div key={fam} style={{ marginBottom: 'var(--e3)' }}>
+          <div className="etiquette-mono" style={{ color: 'var(--cendre)', marginBottom: 'var(--e1)' }}>
             {fam}
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap' }}>
             {list.map((n) => (
               <button key={n} onClick={() => pick(n)} disabled={done}
                 style={{
                   ...btn(false, done),
-                  padding: '8px 13px', fontSize: '0.88rem',
-                  ...(done && n === target ? { background: '#14432b', color: '#4ade80', opacity: 1 } : {}),
-                  ...(done && n === picked && n !== target ? { background: '#3a1d22', color: '#f87171', opacity: 1 } : {}),
-                }}>
+                  padding: '8px 13px', fontSize: 13,
+                  ...(done && n === target
+                    ? { background: 'var(--onyx-haut)', color: 'var(--jade)', border: '1px solid var(--jade)', opacity: 1 }
+                    : {}),
+                  ...(done && n === picked && n !== target
+                    ? { background: 'var(--onyx-haut)', color: 'rgba(226, 75, 74, 0.9)', border: '1px solid rgba(226, 75, 74, 0.6)', opacity: 1 }
+                    : {}),
+                }}
+                onMouseEnter={(ev) => { if (!done) survolOr(ev); }}
+                onMouseLeave={(ev) => { if (!done) sortieOr(ev); }}>
                 {n}
               </button>
             ))}
@@ -841,8 +959,7 @@ export function JeuInstrument({ onDone }) {
 
 /* ================= 6 · PAROLES MYSTÈRES ================= */
 const PAROLES_POINTS = [10, 5, 2];
-const PAROLES_LINES = 4;       // nb de lignes affichées — rester court (droit de citation)
-const PAROLES_MIN_RANK = 800000; // seuil de popularité Deezer (0-1M) : on ne garde que les hits
+const PAROLES_LINES = 4; // nb de lignes affichées — rester court (droit de citation)
 
 export function JeuParoles({ onDone }) {
   const [track, setTrack] = useState(null);
@@ -872,7 +989,6 @@ export function JeuParoles({ onDone }) {
         const artist = ARTISTS[(artistStart + a * 17) % ARTISTS.length];
         let tracks = await searchTracks(artist.nom, { limit: 25 });
         if (!tracks.length) continue;
-        // Ne garder que les morceaux très connus ; repli sur le top 8 de l'artiste
         const hits = tracks.filter((t) => t.rank >= 700000);
         tracks = hits.length >= 3 ? hits : [...tracks].sort((x, y) => y.rank - x.rank).slice(0, 8);
 
@@ -916,7 +1032,7 @@ export function JeuParoles({ onDone }) {
     audio?.pause();
     const url = (await freshPreviewUrl(track.trackId)) ?? track.previewUrl;
     const a = new Audio(url);
-    a.play();
+    a.play().catch((e) => console.error('Lecture impossible:', e));
     setAudio(a);
     setTimeout(() => a.pause(), 10000);
   }
@@ -947,31 +1063,32 @@ export function JeuParoles({ onDone }) {
 
   return (
     <div style={panel}>
-      <h3 style={{ marginBottom: 4 }}>Paroles mystères</h3>
-      <p style={{ color: '#9aa0b4', fontSize: '0.9rem', marginBottom: 14 }}>
+      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Paroles mystères</h3>
+      <p className="description" style={{ marginBottom: 'var(--e4)' }}>
         Retrouve le titre à partir des paroles. Essai 2 : l'artiste est donné. Essai 3 : l'extrait audio se débloque.
       </p>
 
       {excerpt && (
         <blockquote style={{
-          borderLeft: '3px solid #8b7cf6', background: '#1c2032', borderRadius: 8,
-          padding: '12px 18px', fontStyle: 'italic', whiteSpace: 'pre-line',
-          marginBottom: 14, color: '#e9e7de',
+          borderLeft: '1px solid var(--or)', background: 'var(--onyx-haut)', borderRadius: 0,
+          padding: 'var(--e3) var(--e5)', whiteSpace: 'pre-line',
+          marginBottom: 'var(--e4)', color: 'var(--ivoire)',
         }}>
           « {excerpt} »
         </blockquote>
       )}
 
       {tries >= 1 && !done && (
-        <p style={{ color: '#4ade80', fontSize: '0.9rem', marginBottom: 10 }}>
-          ✓ Artiste : {track?.artistName}
+        <p style={{ color: 'var(--jade)', fontSize: 13, marginBottom: 'var(--e3)' }}>
+          Artiste : {track?.artistName}
         </p>
       )}
 
       {(tries >= 2 || done) && track && (
-        <div style={{ marginBottom: 14 }}>
-          <button onClick={playClip} style={btn(false, false)}>
-            🔊 Écouter l'extrait (10 s)
+        <div style={{ marginBottom: 'var(--e4)' }}>
+          <button onClick={playClip} style={btn(false, false)}
+            onMouseEnter={survolOr} onMouseLeave={sortieOr}>
+            Écouter l'extrait (10 s)
           </button>
         </div>
       )}
@@ -979,7 +1096,7 @@ export function JeuParoles({ onDone }) {
       {loadError ? (
         <button onClick={load} style={btn(true, false)}>Réessayer le chargement</button>
       ) : (
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap' }}>
           <input value={input} onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && guess()}
             placeholder="Titre du morceau…" disabled={done || !track} style={inputStyle} />
@@ -1018,7 +1135,6 @@ export function JeuRefrain({ onDone }) {
       const rng = seeded('refrain');
       const artistStart = Math.floor(rng() * ARTISTS.length);
 
-      // Essaie jusqu'à 5 artistes (Lyrics.ovh ne couvre pas tout le monde)
       for (let a = 0; a < 5; a++) {
         const artist = ARTISTS[(artistStart + a * 17) % ARTISTS.length];
         const tracks = await searchTracks(artist.nom, { limit: 25 });
@@ -1075,7 +1191,7 @@ export function JeuRefrain({ onDone }) {
     audio?.pause();
     const url = (await freshPreviewUrl(track.trackId)) ?? track.previewUrl;
     const a = new Audio(url);
-    a.play();
+    a.play().catch((e) => console.error('Lecture impossible:', e));
     setAudio(a);
     setTimeout(() => a.pause(), 10000);
   }
@@ -1102,27 +1218,28 @@ export function JeuRefrain({ onDone }) {
 
   return (
     <div style={panel}>
-      <h3 style={{ marginBottom: 4 }}>Complète le refrain</h3>
-      <p style={{ color: '#9aa0b4', fontSize: '0.9rem', marginBottom: 14 }}>
+      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Complète le refrain</h3>
+      <p className="description" style={{ marginBottom: 'var(--e4)' }}>
         Trois lignes du morceau te sont données — tape la ligne suivante. Fautes et accents tolérés.
       </p>
 
       {context.length > 0 && (
         <blockquote style={{
-          borderLeft: '3px solid #8b7cf6', background: '#1c2032', borderRadius: 8,
-          padding: '12px 18px', fontStyle: 'italic', whiteSpace: 'pre-line',
-          marginBottom: 14, color: '#e9e7de',
+          borderLeft: '1px solid var(--or)', background: 'var(--onyx-haut)', borderRadius: 0,
+          padding: 'var(--e3) var(--e5)', whiteSpace: 'pre-line',
+          marginBottom: 'var(--e4)', color: 'var(--ivoire)',
         }}>
           {context.join('\n')}
           {'\n'}
-          <span style={{ color: '#f2c14e' }}>{done ? answer : tries >= 1 ? hint() : '␣␣␣␣␣␣␣␣␣␣␣␣ ?'}</span>
+          <span style={{ color: 'var(--or)' }}>{done ? answer : tries >= 1 ? hint() : '␣␣␣␣␣␣␣␣␣␣␣␣ ?'}</span>
         </blockquote>
       )}
 
       {(tries >= 1 || done) && track && (
-        <div style={{ marginBottom: 14 }}>
-          <button onClick={playClip} style={btn(false, false)}>
-            🔊 Écouter l'extrait (10 s)
+        <div style={{ marginBottom: 'var(--e4)' }}>
+          <button onClick={playClip} style={btn(false, false)}
+            onMouseEnter={survolOr} onMouseLeave={sortieOr}>
+            Écouter l'extrait (10 s)
           </button>
         </div>
       )}
@@ -1130,7 +1247,7 @@ export function JeuRefrain({ onDone }) {
       {loadError ? (
         <button onClick={load} style={btn(true, false)}>Réessayer le chargement</button>
       ) : (
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap' }}>
           <input value={input} onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && guess()}
             placeholder="La ligne suivante…" disabled={done || !answer}

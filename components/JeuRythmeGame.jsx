@@ -20,11 +20,12 @@ function levelConfig(level) {
 // Durée d'une mesure : la grille est en croches, donc steps/2 temps
 const barOf = (cfg) => (60 / cfg.bpm) * (cfg.steps / 2);
 
+// Jugements : jade réservé au parfait, carmin atténué à l'échec
 const JUDGMENTS = [
-  { max: 0.05, label: '✨ Parfait !', color: '#4ade80', pts: 1 },
-  { max: 0.12, label: '👍 Bien', color: '#f2c14e', pts: 0.7 },
-  { max: 0.2, label: '😬 Limite', color: '#fb923c', pts: 0.4 },
-  { max: Infinity, label: '❌ Raté', color: '#f87171', pts: 0 },
+  { max: 0.05, label: 'parfait', color: 'var(--jade)', pts: 1 },
+  { max: 0.12, label: 'bien', color: 'var(--or-clair)', pts: 0.7 },
+  { max: 0.2, label: 'limite', color: 'var(--or)', pts: 0.4 },
+  { max: Infinity, label: 'hors temps', color: 'rgba(226, 75, 74, 0.75)', pts: 0 },
 ];
 
 export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
@@ -39,9 +40,10 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
   const [floatingJudgment, setFloatingJudgment] = useState(null);
   const [lastScore, setLastScore] = useState(null);
   const [dailyRound, setDailyRound] = useState(0);
+  const [annonce, setAnnonce] = useState(null); // { type: 'perte' | 'reussite', texte }
   const [status, setStatus] = useState(daily
-    ? '3 patterns, un seul essai chacun. Ton score = la moyenne.'
-    : 'Un run : le niveau monte tant que tu tiens. 3 vies. Prêt ?');
+    ? 'Trois patterns, un seul essai chacun. Ton score est la moyenne.'
+    : 'Le niveau monte tant que tu tiens. Trois vies.');
 
   const toneRef = useRef(null);
   const clickRef = useRef(null);
@@ -79,6 +81,10 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
     });
 
     function onKey(e) {
+      // Ne pas capturer l'espace quand l'utilisateur saisit du texte ailleurs :
+      // les dix épreuves sont montées simultanément dans le carrousel.
+      const c = e.target;
+      if (c && (c.tagName === 'INPUT' || c.tagName === 'TEXTAREA' || c.isContentEditable)) return;
       if (e.code === 'Space') { e.preventDefault(); tap(); }
     }
     document.addEventListener('keydown', onKey);
@@ -129,6 +135,7 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
     setLives(3);
     setLevel(levelRef.current);
     setLastScore(null);
+    setAnnonce(null);
     startCycle();
   }
 
@@ -146,8 +153,8 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
     setPatternVisible(true);
     setStepFlash({});
     setStatus(daily
-      ? `Pattern ${dailyRoundRef.current + 1}/${DAILY_ROUNDS} · ${cfg.steps} cases — écoute et mémorise…`
-      : `Niveau ${lvl} · ${cfg.bpm} BPM · ${cfg.steps} cases — écoute et mémorise…`);
+      ? `Pattern ${dailyRoundRef.current + 1} sur ${DAILY_ROUNDS} · ${cfg.steps} cases — écoute et mémorise.`
+      : `Niveau ${lvl} · ${cfg.bpm} BPM · ${cfg.steps} cases — écoute et mémorise.`);
 
     const beat = 60 / cfg.bpm;
     const bar = barOf(cfg);
@@ -168,7 +175,7 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
     schedule(() => {
       setPhaseBoth('ready');
       setPatternVisible(false);
-      setStatus('Le rythme s\'efface… prépare-toi !');
+      setStatus('Le rythme s\'efface. Prépare-toi.');
       animateCursor(prep0, bar);
     }, (prep0 - Tone.now()) * 1000);
 
@@ -180,11 +187,15 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
     tapsPtsRef.current = [];
     extrasRef.current = 0;
 
+    // La frappe s'ouvre 250 ms AVANT la mesure : sans cette marge, le premier
+    // temps est perdu (dérive du setTimeout + rendu React). Les frappes trop
+    // précoces restent rejetées par le test de fenêtre dans tap().
     schedule(() => {
       setPhaseBoth('play');
-      setStatus('À toi ! (Espace ou clic)');
-      animateCursor(r0, bar);
-    }, (r0 - Tone.now()) * 1000);
+      setStatus('À toi. Frappe avec la barre d\'espace ou dans la zone.');
+    }, Math.max(0, (r0 - Tone.now()) * 1000 - 250));
+
+    schedule(() => animateCursor(r0, bar), Math.max(0, (r0 - Tone.now()) * 1000));
 
     schedule(() => endCycle(), (r0 + bar + 0.25 - Tone.now()) * 1000);
   }
@@ -261,12 +272,12 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
       if (dailyRoundRef.current >= DAILY_ROUNDS) {
         const avg = Math.round((dailyScoresRef.current.reduce((a, b) => a + b, 0) / DAILY_ROUNDS) * 10) / 10;
         setPhaseBoth('gameover');
-        setStatus(`Terminé : ${dailyScoresRef.current.map(x => x.toFixed(1)).join(' · ')} → moyenne ${avg}/10.`);
+        setStatus(`Terminé : ${dailyScoresRef.current.map(x => x.toFixed(1)).join(' · ')} → moyenne ${avg} sur 10.`);
         if (!dailyDoneRef.current) { dailyDoneRef.current = true; onDone(avg); }
       } else {
         levelRef.current = DAILY_LEVELS[dailyRoundRef.current];
         setLevel(levelRef.current);
-        setStatus(`${s}/10 — pattern ${dailyRoundRef.current + 1}/${DAILY_ROUNDS} arrive…`);
+        setStatus(`${s} sur 10. Pattern ${dailyRoundRef.current + 1} sur ${DAILY_ROUNDS} dans un instant.`);
         schedule(() => startCycle(), 1800);
       }
       return;
@@ -276,103 +287,136 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
       levelRef.current += 1;
       setLevel(levelRef.current);
       setBestLevel((b) => Math.max(b, levelRef.current));
-      setStatus(`${s}/10 — niveau suivant ! 🔥`);
-      schedule(() => startCycle(), 1400);
+      setAnnonce({ type: 'reussite', texte: `Réussi — niveau ${levelRef.current} débloqué` });
+      setStatus(`${s} sur 10.`);
+      schedule(() => { setAnnonce(null); startCycle(); }, 1600);
     } else {
       livesRef.current -= 1;
       setLives(livesRef.current);
       if (livesRef.current <= 0) {
+        setAnnonce(null);
         setPhaseBoth('gameover');
-        setStatus(`Game over — tu as atteint le niveau ${levelRef.current}.`);
+        setStatus('Plus de vies. Run terminé.');
       } else {
-        setStatus(`${s}/10 — raté, ${livesRef.current} vie(s) restante(s). On retente le niveau.`);
-        schedule(() => startCycle(), 1800);
+        setAnnonce({
+          type: 'perte',
+          texte: `Vie perdue — il t'en reste ${livesRef.current} sur 3`,
+        });
+        setStatus(`${s} sur 10. Le niveau ${levelRef.current} est rejoué.`);
+        schedule(() => { setAnnonce(null); startCycle(); }, 2000);
       }
     }
   }
 
   const running = phase === 'listen' || phase === 'ready' || phase === 'play';
   const phaseBadge = {
-    listen: { txt: '👂 ÉCOUTE', bg: '#26221a', border: '#f2c14e', color: '#f2c14e' },
-    ready: { txt: '🕐 PRÉPARE-TOI…', bg: '#2b2115', border: '#fb923c', color: '#fb923c' },
-    play: { txt: '🥁 REJOUE DE MÉMOIRE !', bg: '#14432b', border: '#4ade80', color: '#4ade80' },
+    listen: { txt: 'écoute', couleur: 'var(--lin)' },
+    ready: { txt: 'préparation', couleur: 'var(--or)' },
+    play: { txt: 'à toi', couleur: 'var(--jade)' },
   }[phase];
-  const cursorColor = phase === 'listen' ? '#f2c14e' : phase === 'ready' ? '#fb923c' : '#4ade80';
+  const cursorColor = phase === 'listen' ? 'var(--or)' : phase === 'ready' ? 'var(--or-clair)' : 'var(--jade)';
   const dailyFini = daily && phase === 'gameover';
   const gridSteps = pattern?.length ?? 8;
   const gridGap = gridSteps > 12 ? 5 : 8;
 
   return (
-    <div style={{ background: '#151826', border: '1px solid #2a2f45', borderRadius: 14, padding: 24, marginBottom: 16 }}>
+    <div style={{ marginBottom: 'var(--e4)' }}>
       <style>{`
         @keyframes floatUp {
           0% { transform: translateY(0); opacity: 1; }
           100% { transform: translateY(-30px); opacity: 0; }
         }
+        @keyframes pulseAttente {
+          0%, 100% {
+            border-color: var(--filet);
+            box-shadow: 0 0 0 rgba(250, 199, 117, 0);
+          }
+          50% {
+            border-color: var(--or-clair);
+            box-shadow: 0 0 24px rgba(250, 199, 117, 0.22);
+          }
+        }
+        @keyframes apparitionAnnonce {
+          from { opacity: 0; transform: translateY(-6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
 
-      <h3 style={{ marginBottom: 4 }}>Reproduis le rythme</h3>
-      <p style={{ color: '#9aa0b4', fontSize: '0.9rem', marginBottom: 14 }}>
-        {daily
-          ? '3 patterns de tailles différentes : écoute, mémorise — le rythme s\'efface avant ton tour. Score = moyenne des 3.'
-          : 'Écoute, mémorise : le rythme s\'efface avant ton tour. Plus le niveau monte, plus la grille s\'agrandit — et les mesures deviennent irrégulières.'}
-      </p>
-
-      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 16, fontFamily: 'monospace', fontSize: '0.9rem', color: '#9aa0b4' }}>
+      {/* Tableau de bord */}
+      <div style={{ display: 'flex', gap: 'var(--e5)', flexWrap: 'wrap', alignItems: 'baseline', marginBottom: 'var(--e4)' }}>
         {daily ? (
-          <span>Pattern : <strong style={{ color: '#f2c14e' }}>{Math.min(dailyRound + 1, DAILY_ROUNDS)}/{DAILY_ROUNDS}</strong></span>
+          <Donnee etiquette="pattern" valeur={`${Math.min(dailyRound + 1, DAILY_ROUNDS)} / ${DAILY_ROUNDS}`} />
         ) : (
           <>
-            <span>Niveau : <strong style={{ color: '#f2c14e' }}>{level}</strong></span>
-            <span>Vies : <strong style={{ color: '#f87171' }}>{'♥'.repeat(lives)}{'♡'.repeat(3 - lives)}</strong></span>
-            <span>Record : <strong style={{ color: '#4ade80' }}>niveau {bestLevel}</strong></span>
+            <Donnee etiquette="niveau" valeur={level} accent />
+            <Donnee etiquette="vies" valeur={'●'.repeat(lives) + '○'.repeat(3 - lives)} />
+            <Donnee etiquette="record" valeur={`niveau ${bestLevel}`} />
           </>
         )}
-        <span>Grille : <strong style={{ color: '#8b7cf6' }}>{gridSteps} cases</strong></span>
-        {lastScore !== null && <span>Dernier : <strong style={{ color: '#e9e7de' }}>{lastScore}/10</strong></span>}
+        <Donnee etiquette="grille" valeur={`${gridSteps} cases`} />
+        {lastScore !== null && <Donnee etiquette="dernier" valeur={`${lastScore.toFixed(1).replace('.', ',')} / 10`} />}
       </div>
 
-      {!running && (
+      {/* Bouton de lancement ou badge de phase */}
+      {!running ? (
         <button onClick={startRun} disabled={dailyFini}
           style={{
-            padding: '12px 22px', borderRadius: 10, border: 'none',
-            cursor: dailyFini ? 'not-allowed' : 'pointer', background: '#f2c14e',
-            color: '#1a1405', fontWeight: 700, fontSize: '1rem', marginBottom: 16,
-            opacity: dailyFini ? 0.45 : 1,
+            fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 500,
+            padding: '9px 16px', borderRadius: 'var(--rayon-controle)',
+            cursor: dailyFini ? 'not-allowed' : 'pointer',
+            background: dailyFini ? 'transparent' : 'var(--or)',
+            color: dailyFini ? 'var(--cendre)' : 'var(--noir)',
+            border: `1px solid ${dailyFini ? 'var(--filet)' : 'var(--or)'}`,
+            marginBottom: 'var(--e4)',
+            transition: 'background var(--transition-courte)',
           }}>
-          {dailyFini ? '✔ Terminé pour aujourd\'hui'
-            : daily ? '▶ Lancer les 3 patterns'
-            : phase === 'gameover' ? '🔄 Nouveau run' : '▶ Lancer le run'}
+          {dailyFini ? 'Terminé pour aujourd\'hui'
+            : daily ? 'Commencer l\'épreuve'
+            : phase === 'gameover' ? 'Recommencer' : 'Commencer le jeu'}
         </button>
-      )}
-      {running && (
-        <div style={{
-          display: 'inline-block', padding: '8px 16px', borderRadius: 10, marginBottom: 16,
-          background: phaseBadge.bg, border: `1px solid ${phaseBadge.border}`,
-          color: phaseBadge.color, fontFamily: 'monospace', fontWeight: 700,
+      ) : (
+        <div className="etiquette-mono" style={{
+          display: 'inline-block', padding: '6px 12px', marginBottom: 'var(--e4)',
+          border: `1px solid ${phaseBadge.couleur}`, borderRadius: 'var(--rayon-controle)',
+          color: phaseBadge.couleur,
         }}>
           {phaseBadge.txt}
         </div>
       )}
 
-      <div style={{ position: 'relative', marginBottom: 8 }}>
+      {/* Annonce entre deux patterns : vie perdue ou niveau débloqué */}
+      {annonce && (
+        <div style={{
+          marginBottom: 'var(--e4)', padding: 'var(--e3) var(--e4)',
+          border: `1px solid ${annonce.type === 'perte' ? 'rgba(226, 75, 74, 0.5)' : 'var(--or)'}`,
+          borderRadius: 'var(--rayon-controle)',
+          color: annonce.type === 'perte' ? 'rgba(226, 75, 74, 0.9)' : 'var(--or)',
+          fontSize: 14, fontWeight: 500,
+          animation: 'apparitionAnnonce 220ms ease-out both',
+        }}>
+          {annonce.texte}
+        </div>
+      )}
+
+      {/* Grille rythmique */}
+      <div style={{ position: 'relative', marginBottom: 'var(--e2)' }}>
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(${gridSteps}, 1fr)`, gap: gridGap }}>
           {Array.from({ length: gridSteps }, (_, i) => {
             const actif = pattern?.[i] && patternVisible;
-            const surTemps = i % 2 === 0; // les temps forts, un peu plus marqués
+            const surTemps = i % 2 === 0; // temps forts : fond onyx, filet plus présent
             return (
               <div key={i} style={{
-                aspectRatio: '1 / 1.4', borderRadius: 8,
-                background: stepFlash[i] ?? (actif ? '#2b2f52' : surTemps ? '#1e2338' : '#1c2032'),
-                border: `1px solid ${actif ? '#8b7cf6' : surTemps ? '#333a55' : '#2a2f45'}`,
+                aspectRatio: '1 / 1.4', borderRadius: 'var(--rayon-controle)',
+                background: surTemps ? 'var(--onyx)' : 'transparent',
+                border: `${actif ? '1px' : '0.5px'} solid ${actif ? 'var(--or)' : surTemps ? 'var(--filet)' : 'rgba(242,236,224,0.07)'}`,
                 position: 'relative',
-                transition: 'background 0.35s ease, border-color 0.35s ease',
+                transition: 'border-color 0.35s ease',
                 transitionDelay: `${i * 0.035}s`,
               }}>
                 {pattern?.[i] && (
                   <div style={{
                     position: 'absolute', inset: '26% 28%', borderRadius: '50%',
-                    background: stepFlash[i] ?? '#8b7cf6',
+                    background: stepFlash[i] ?? 'var(--or)',
                     opacity: (patternVisible || stepFlash[i]) ? 1 : 0,
                     transform: (patternVisible || stepFlash[i]) ? 'scale(1)' : 'scale(0.15)',
                     transition: 'opacity 0.45s ease, transform 0.45s cubic-bezier(.34,1.3,.64,1), background 0.15s',
@@ -383,18 +427,23 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
             );
           })}
         </div>
+
+        {/* Curseur qui parcourt la mesure */}
         {cursor >= 0 && (
           <div style={{
             position: 'absolute', top: -6, bottom: -6,
-            left: `${cursor * 100}%`, width: 3, borderRadius: 2,
-            background: cursorColor, boxShadow: `0 0 8px ${cursorColor}`,
+            left: `${cursor * 100}%`, width: 2,
+            background: cursorColor,
+            boxShadow: `0 0 10px ${cursorColor}`,
           }} />
         )}
+
+        {/* Jugement flottant */}
         {floatingJudgment && (
-          <div key={floatingJudgment.key} style={{
-            position: 'absolute', top: -34, left: '50%', transform: 'translateX(-50%)',
-            fontFamily: 'monospace', fontWeight: 700, fontSize: '1.1rem',
-            color: floatingJudgment.color, animation: 'floatUp 0.6s ease-out forwards',
+          <div key={floatingJudgment.key} className="etiquette-mono" style={{
+            position: 'absolute', top: -30, left: '50%', transform: 'translateX(-50%)',
+            color: floatingJudgment.color,
+            animation: 'floatUp 0.6s ease-out forwards',
             pointerEvents: 'none', whiteSpace: 'nowrap',
           }}>
             {floatingJudgment.label}
@@ -402,34 +451,79 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
         )}
       </div>
 
+      {/* Zone de frappe : pulse pendant la préparation, s'allume au moment de jouer */}
       <div
         onPointerDown={(e) => { e.preventDefault(); tap(); }}
+        className="etiquette-mono"
         style={{
-          border: `1px dashed ${phase === 'play' ? '#4ade80' : '#2a2f45'}`,
-          color: phase === 'play' ? '#4ade80' : '#9aa0b4',
-          borderRadius: 14, padding: 34, textAlign: 'center',
+          border: `${phase === 'play' ? '1px' : '0.5px'} solid ${phase === 'play' ? 'var(--jade)' : 'var(--filet)'}`,
+          color: phase === 'play' ? 'var(--jade)' : phase === 'ready' ? 'var(--or-clair)' : 'var(--cendre)',
+          background: phase === 'play' ? 'var(--onyx-haut)' : 'transparent',
+          boxShadow: phase === 'play' ? '0 0 26px rgba(93, 202, 165, 0.2)' : 'none',
+          borderRadius: 'var(--rayon-carte)', padding: 'var(--e7)', textAlign: 'center',
           cursor: running ? 'pointer' : 'default',
-          fontFamily: 'monospace', userSelect: 'none', marginTop: 14,
+          userSelect: 'none', marginTop: 'var(--e4)',
+          animation: phase === 'ready' ? 'pulseAttente 900ms ease-in-out infinite' : 'none',
+          transition: 'border-color var(--transition-courte), color var(--transition-courte), background var(--transition-courte), box-shadow var(--transition-courte)',
         }}>
-        {phase === 'play' ? '🥁 FRAPPE ICI (ou Espace)' : phase === 'ready' ? '🕐 Ta mesure arrive…' : 'Zone de frappe'}
+        {phase === 'play' ? 'frappe ici ou avec la barre d\'espace'
+          : phase === 'ready' ? 'ta mesure arrive'
+          : 'zone de frappe'}
       </div>
 
-      <p style={{ color: '#9aa0b4', fontFamily: 'monospace', fontSize: '0.85rem', minHeight: '1.4em', marginTop: 12 }}>{status}</p>
+      <p className="lin" style={{ fontSize: 13, minHeight: '1.5em', marginTop: 'var(--e3)' }}>{status}</p>
 
+      {/* Écran de fin */}
       {phase === 'gameover' && (
-        <div style={{ marginTop: 16, textAlign: 'center', background: '#1c2032', borderRadius: 12, padding: 18, border: '1px dashed #2a2f45' }}>
-          <div style={{ fontSize: '2.4rem', fontFamily: 'monospace', fontWeight: 700, color: '#f2c14e' }}>
-            {daily
-              ? `${Math.round((dailyScoresRef.current.reduce((a, b) => a + b, 0) / DAILY_ROUNDS) * 10) / 10} / 10`
-              : `Niveau ${level}`}
-          </div>
-          {!daily && (
-            <div style={{ color: '#9aa0b4', fontSize: '0.85rem', marginTop: 6 }}>
-              Record de la session : niveau {bestLevel}
-            </div>
+        <div style={{
+          marginTop: 'var(--e5)', paddingTop: 'var(--e5)',
+          borderTop: '1px solid var(--or)', textAlign: 'center',
+          animation: 'apparitionAnnonce 260ms ease-out both',
+        }}>
+          {daily ? (
+            <>
+              <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>score de l'épreuve</div>
+              <div className="score-affiche" style={{ fontSize: 38, marginTop: 'var(--e2)' }}>
+                {(dailyScoresRef.current.reduce((a, b) => a + b, 0) / DAILY_ROUNDS).toFixed(1).replace('.', ',')}
+                <span style={{ color: 'var(--cendre)' }}> / 10</span>
+              </div>
+              <p className="description" style={{ marginTop: 'var(--e2)' }}>
+                Détail des trois patterns : {dailyScoresRef.current.map((x) => x.toFixed(1).replace('.', ',')).join(' · ')}
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>run terminé</div>
+              <div style={{
+                fontFamily: 'var(--mono)', fontSize: 44, fontWeight: 500,
+                color: 'var(--or)', marginTop: 'var(--e2)', lineHeight: 1.1,
+              }}>
+                niveau {level}
+              </div>
+              <p className="description" style={{ marginTop: 'var(--e2)' }}>
+                {level >= bestLevel
+                  ? 'Meilleur niveau de la session.'
+                  : `Ton record de la session reste le niveau ${bestLevel}.`}
+              </p>
+            </>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/* Une donnée du tableau de bord : étiquette mono en cendre, valeur en ivoire */
+function Donnee({ etiquette, valeur, accent = false }) {
+  return (
+    <div>
+      <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>{etiquette}</div>
+      <div style={{
+        fontFamily: 'var(--mono)', fontSize: 14, marginTop: 2,
+        color: accent ? 'var(--or)' : 'var(--ivoire)',
+      }}>
+        {valeur}
+      </div>
     </div>
   );
 }

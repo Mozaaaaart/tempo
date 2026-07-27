@@ -163,28 +163,28 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
   const btnStyle = (primary, disabled) => ({
     padding: '10px 16px', borderRadius: 10, border: 'none',
     cursor: disabled ? 'not-allowed' : 'pointer',
-    background: primary ? '#f2c14e' : '#1c2032',
-    color: primary ? '#1a1405' : '#e9e7de',
+    background: primary ? 'var(--or)' : 'var(--onyx-haut)',
+    color: primary ? 'var(--noir)' : 'var(--ivoire)',
     opacity: disabled ? 0.45 : 1, fontWeight: 600,
   });
 
   return (
-    <div style={{ background: '#151826', border: '1px solid #2a2f45', borderRadius: 14, padding: 24, marginBottom: 16 }}>
+    <div style={{ background: 'var(--onyx)', border: '1px solid var(--filet)', borderRadius: 14, padding: 24, marginBottom: 16 }}>
       <h3 style={{ marginBottom: 4 }}>Humain ou IA ?</h3>
-      <p style={{ color: '#9aa0b4', fontSize: '0.9rem', marginBottom: 14 }}>
+      <p style={{ color: 'var(--lin)', fontSize: '0.9rem', marginBottom: 14 }}>
         {daily
           ? `${DAILY_ROUNDS} extraits : vrais morceaux ou musique 100% générée par IA ?`
           : 'Certains extraits sont de vrais morceaux (souvent obscurs…), d\'autres sont 100% générés par IA. 97% des gens n\'y arrivent pas — et toi ?'}
       </p>
 
-      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 16, fontFamily: 'monospace', fontSize: '0.9rem', color: '#9aa0b4' }}>
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 16, fontFamily: 'monospace', fontSize: '0.9rem', color: 'var(--lin)' }}>
         {daily ? (
-          <span>Manche : <strong style={{ color: '#f2c14e' }}>{Math.min(dailyCount + 1, DAILY_ROUNDS)}/{DAILY_ROUNDS}</strong></span>
+          <span>Manche : <strong style={{ color: 'var(--or)' }}>{Math.min(dailyCount + 1, DAILY_ROUNDS)}/{DAILY_ROUNDS}</strong></span>
         ) : (
           <>
-            <span>Score : <strong style={{ color: '#e9e7de' }}>{stats.good}/{stats.total}</strong></span>
-            <span>Série : <strong style={{ color: '#f2c14e' }}>{stats.streak}</strong></span>
-            <span>Record : <strong style={{ color: '#4ade80' }}>{stats.best}</strong></span>
+            <span>Score : <strong style={{ color: 'var(--ivoire)' }}>{stats.good}/{stats.total}</strong></span>
+            <span>Série : <strong style={{ color: 'var(--or)' }}>{stats.streak}</strong></span>
+            <span>Record : <strong style={{ color: 'var(--jade)' }}>{stats.best}</strong></span>
           </>
         )}
       </div>
@@ -203,17 +203,17 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
         <button onClick={() => answer(true)} disabled={answered} style={btnStyle(false, answered)}>🤖 IA</button>
       </div>
 
-      <p style={{ color: '#9aa0b4', fontFamily: 'monospace', fontSize: '0.85rem', minHeight: '1.4em', marginTop: 12 }}>{status}</p>
+      <p style={{ color: 'var(--lin)', fontFamily: 'monospace', fontSize: '0.85rem', minHeight: '1.4em', marginTop: 12 }}>{status}</p>
 
       {result && (
-        <div style={{ marginTop: 16, textAlign: 'center', background: '#1c2032', borderRadius: 12, padding: 18, border: '1px dashed #2a2f45' }}>
+        <div style={{ marginTop: 16, textAlign: 'center', background: 'var(--onyx-haut)', borderRadius: 12, padding: 18, border: '1px dashed var(--filet)' }}>
           <div style={{
             fontSize: '2rem', fontFamily: 'monospace', fontWeight: 700,
-            color: result.correct ? '#4ade80' : '#f87171',
+            color: result.correct ? 'var(--jade)' : 'var(--carmin)',
           }}>
             {result.correct ? '✔ Bien vu !' : '✘ Raté !'}
           </div>
-          <div style={{ color: '#9aa0b4', fontSize: '0.9rem', marginTop: 8 }}>{result.revealText}</div>
+          <div style={{ color: 'var(--lin)', fontSize: '0.9rem', marginTop: 8 }}>{result.revealText}</div>
         </div>
       )}
     </div>

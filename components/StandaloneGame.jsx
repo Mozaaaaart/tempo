@@ -1,16 +1,16 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { setSeedSalt, btn } from '@/components/dailyGames';
+import PageEpreuve from '@/components/PageEpreuve';
 
 /**
- * Enveloppe une version "jeu libre" d'un sous-jeu du quotidien :
- * tirage aléatoire + bouton Rejouer qui re-tire tout.
+ * Version "épreuve libre" d'un sous-jeu du quotidien : tirage aléatoire
+ * et relance illimitée, dans l'enveloppe visuelle commune.
  *
  * Le contenu n'est rendu qu'après le montage côté client : le salt étant
- * aléatoire, un rendu serveur produirait un tirage différent du client
- * (erreur d'hydratation React).
+ * aléatoire, un rendu serveur produirait un tirage différent du client.
  */
-export default function StandaloneGame({ titre, description, Jeu }) {
+export default function StandaloneGame({ num, titre, description, Jeu }) {
   const [mounted, setMounted] = useState(false);
   const [runKey, setRunKey] = useState(0);
   const [lastScore, setLastScore] = useState(null);
@@ -18,13 +18,12 @@ export default function StandaloneGame({ titre, description, Jeu }) {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // Nouveau salt à chaque partie (uniquement côté client)
   if (mounted) {
     if (saltRef.current === null) saltRef.current = Math.random().toString(36).slice(2);
     setSeedSalt(saltRef.current);
   }
 
-  function rejouer() {
+  function relancer() {
     saltRef.current = Math.random().toString(36).slice(2);
     setSeedSalt(saltRef.current);
     setLastScore(null);
@@ -32,24 +31,20 @@ export default function StandaloneGame({ titre, description, Jeu }) {
   }
 
   return (
-    <main style={{ padding: 40, background: '#0c0e15', minHeight: '100vh', color: '#e9e7de', fontFamily: 'sans-serif' }}>
-      <a href="/" style={{ color: '#9aa0b4', fontSize: '0.85rem' }}>← Accueil</a>
-      <h2 style={{ fontSize: '2rem', margin: '12px 0 4px' }}>{titre}</h2>
-      <p style={{ color: '#9aa0b4', marginBottom: 24 }}>{description}</p>
-
+    <PageEpreuve num={num} titre={titre} description={description}>
       {mounted ? (
         <div key={runKey}>
           <Jeu onDone={setLastScore} />
         </div>
       ) : (
-        <p style={{ color: '#9aa0b4', fontFamily: 'monospace', fontSize: '0.85rem' }}>Chargement du jeu…</p>
+        <p className="lin" style={{ fontSize: 13 }}>Chargement de l'épreuve…</p>
       )}
 
       {lastScore !== null && (
-        <button onClick={rejouer} style={{ ...btn(true, false), marginTop: 4 }}>
-          🔄 Rejouer (nouveau tirage)
+        <button onClick={relancer} style={{ ...btn(true, false), marginTop: 'var(--e4)' }}>
+          Relancer l'épreuve
         </button>
       )}
-    </main>
+    </PageEpreuve>
   );
 }

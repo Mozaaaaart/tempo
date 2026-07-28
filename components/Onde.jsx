@@ -4,92 +4,222 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 /**
  * L'onde — élément signature du site, en mouvement permanent.
  *
- * Géométrie de base :
- *   s    = signe(t) · |t|^0.62        amplitude du brin
- *   e(x) = sin(πx/W)^0.72             enveloppe, l'onde meurt sur les bords
- *   y(x) = cy + A · s · e(x) · sin(2π·f·x/W + φ)
+ * ------------------------------------------------------------------ modèle
  *
- * Trois mouvements superposés, de périodes différentes (l'ensemble ne boucle
- * donc jamais visiblement) : écoulement, torsion, respiration.
+ *     y_i(x) = cy + A_i · vrille(x) · PROFIL(x) · sin(θ(x) + δ_i)
+ *
+ * La différence avec la version précédente tient en un mot : PROFIL est FIXE.
+ *
+ * Ce n'est plus une somme de paquets qui dérivent chacun à leur vitesse — la
+ * composition changeait alors en permanence et rien n'était reconnaissable.
+ * C'est désormais une enveloppe écrite à la main, position par position :
+ * deux petites bosses, un grand pic, un creux profond, un pic moyen, une
+ * bosse finale. Cette silhouette ne bouge jamais.
+ *
+ * Ce qui bouge, c'est l'oscillation qui la traverse : θ(x) défile, donc les
+ * brins glissent à l'intérieur d'une forme immobile. Le lobe reste un lobe,
+ * mais il vit.
+ *
+ * COHÉRENCE — pourquoi ça ne se tresse pas
+ * PROFIL, vrille et θ sont identiques pour tous les brins ; seul A_i change.
+ * La famille est de la forme A_i · f(x) : les brins ne se croisent qu'aux
+ * zéros de f, tous au même endroit et en même temps. Toute phase propre à un
+ * brin casserait la propriété — d'où la valeur minuscule de RETARD.
  *
  * L'illumination du survol est animée EN JAVASCRIPT, pas en CSS : le tracé
  * étant recalculé à chaque image, une transition CSS redémarrerait sans cesse
- * et n'atteindrait jamais sa cible. Chaque brin a sa propre inertie, ce qui
- * reproduit le décalage de départ du centre vers les bords.
+ * et n'atteindrait jamais sa cible.
  */
 
-const FREQUENCE = 2.35;
-const OPACITE_HALO = 0.02;
-const LARGEUR_HALO = 6;
-const LARGEUR_COEUR = 1;
+// ------------------------------------------------------------------ profil
 
-// Périodes des trois mouvements, en millisecondes
-const PERIODE_ECOULEMENT = 8000;
-const PERIODE_TORSION = 19000;
-const PERIODE_RESPIRATION = 7000;
+/**
+ * LA SILHOUETTE. C'est ici que tout se joue.
+ *
+ * Chaque point est [position, amplitude] :
+ *   position   0 = bord gauche, 1 = bord droit
+ *   amplitude  0 = ligne plate, 1 = pleine hauteur
+ *
+ * Entre deux points, interpolation lissée (dérivée nulle aux nœuds) : les
+ * lobes montent et redescendent en douceur, sans angle.
+ *
+ * Pour redessiner la forme, il suffit de réécrire cette table. Ajouter un
+ * lobe = ajouter trois points (pied, sommet, pied). Aplatir une zone = mettre
+ * l'amplitude à 0 sur deux points consécutifs.
+ */
+const PROFIL = [
+  [0.000, 0.00],
+  [0.040, 0.00],
+  [0.075, 0.20],  // première petite bosse
+  [0.110, 0.06],
+  [0.150, 0.30],  // seconde bosse, un peu plus haute
+  [0.195, 0.10],
+  [0.250, 0.46],  // montée vers le grand pic
+  [0.300, 0.72],
+  [0.345, 1.00],  // LE grand pic
+  [0.395, 0.66],
+  [0.445, 0.30],
+  [0.490, 0.14],
+  [0.530, 0.25],  // palier calme au centre
+  [0.570, 0.22],
+  [0.610, 0.62],
+  [0.650, 0.92],  // creux profond (l'amplitude est haute, la phase l'inverse)
+  [0.690, 0.58],
+  [0.730, 0.22],
+  [0.765, 0.10],
+  [0.805, 0.40],  // pic moyen
+  [0.845, 0.62],
+  [0.885, 0.34],
+  [0.925, 0.25],  // bosse finale
+  [0.960, 0.13],
+  [1.000, 0.05],
+];
 
-const TORSION_BASE = 0.55;
-const TORSION_VARIATION = 0.35;
-const RESPIRATION = 0.45;        // ±38 % d'amplitude : le faisceau enfle nettement
-const RESPIRATION_PAR_BRIN = 0.16;
+// Nombre d'oscillations sur toute la largeur. Plus c'est haut, plus les brins
+// sont serrés à l'intérieur de chaque lobe.
+const FREQUENCE = 1.6;
 
-// Inertie de la lumière : plus la valeur est petite, plus le brin est lent.
-// Exprimée sur une base de 30 i/s, puis corrigée selon la cadence réelle.
+// Temps que met l'oscillation à parcourir un cycle complet, ms.
+// C'est la seule animation de la forme : le profil, lui, ne bouge pas.
+const PERIODE_ECOULEMENT = 4600;
+
+// ------------------------------------------------------------------- vrille
+
+// Demi-tours de vrille sur la largeur. 0 désactive la torsion.
+// Garder bas : sur une silhouette fixe, un pincement viendrait écraser un lobe.
+const TORSION_TOURS = 0.1;
+const PERIODE_TORSION = 18000;
+
+// -------------------------------------------------------------- respiration
+
+const PERIODE_RESPIRATION = 8000;
+const RESPIRATION = 0.16;          // ±12 % : la silhouette doit rester stable
+const RESPIRATION_PAR_BRIN = 0.08;
+
+// Déphasage résiduel entre le brin du haut et celui du bas, en radians.
+// Au-delà de ~0,25 le tressage revient.
+const RETARD = 0.14;
+
+// Répartition des brins : exposant < 1 les resserre vers les bords du ruban,
+// ce qui épaissit le contour des lobes — c'est l'effet de maille de la référence.
+const REPARTITION = 0.72;
+
+// ------------------------------------------------------------------ lumière
+
 const INERTIE_CENTRE = 0.16;
 const INERTIE_BORD = 0.10;
+
+const OPACITE_HALO = 0.02;
+const LARGEUR_HALO = 6;
+const LARGEUR_COEUR = 0.8;
 
 const IMAGES_PAR_SECONDE = 60;
 
 const PRESETS = {
-  principale: { desktop: { brins: 19, amplitude: 54, hauteur: 168, pas: 6 },
-                mobile:  { brins: 11, amplitude: 34, hauteur: 124, pas: 8 } },
-  bandeau:    { desktop: { brins: 9,  amplitude: 20, hauteur: 70,  pas: 6 },
-                mobile:  { brins: 7,  amplitude: 16, hauteur: 58,  pas: 8 } },
+  principale: { desktop: { brins: 30, amplitude: 54, hauteur: 168, pas: 5 },
+                mobile:  { brins: 17, amplitude: 34, hauteur: 124, pas: 7 } },
+  bandeau:    { desktop: { brins: 17, amplitude: 20, hauteur: 70,  pas: 5 },
+                mobile:  { brins: 11, amplitude: 16, hauteur: 58,  pas: 7 } },
 };
 
 const TAU = Math.PI * 2;
+
+const osc = (temps, periode, phase = 0) =>
+  periode ? Math.sin((temps / periode) * TAU + phase) : 0;
+
+const adoucir = (z) => z * z * (3 - 2 * z);
+
+/**
+ * Amplitude du profil à la position u, par interpolation lissée entre les
+ * deux points encadrants. La table étant courte et ordonnée, une recherche
+ * linéaire depuis un curseur qui avance suffit — appelée une seule fois par
+ * abscisse, pas une fois par brin.
+ */
+function profilEn(u, curseur) {
+  while (curseur.i < PROFIL.length - 2 && PROFIL[curseur.i + 1][0] < u) curseur.i++;
+  const [x0, a0] = PROFIL[curseur.i];
+  const [x1, a1] = PROFIL[curseur.i + 1];
+  if (x1 === x0) return a0;
+  const z = Math.min(Math.max((u - x0) / (x1 - x0), 0), 1);
+  return a0 + (a1 - a0) * adoucir(z);
+}
+
+export const GONFLEMENT_MAX = (1 + RESPIRATION) * (1 + RESPIRATION_PAR_BRIN);
 
 function construireBrins({ brins, amplitude, hauteur, pas, sections, W, temps = 0 }) {
   const cy = hauteur / 2;
 
   const ecoulement = (temps / PERIODE_ECOULEMENT) * TAU;
-  const torsion = TORSION_BASE + TORSION_VARIATION * Math.sin((temps / PERIODE_TORSION) * TAU);
-  const souffle = 1 + RESPIRATION * Math.sin((temps / PERIODE_RESPIRATION) * TAU);
+  const rotation = temps / PERIODE_TORSION;
+  const souffle = 1 + RESPIRATION * osc(temps, PERIODE_RESPIRATION);
+
+  const xs = [];
+  for (let x = 0; x <= W; x += pas) xs.push(x);
+  if (xs[xs.length - 1] < W) xs.push(W);
+  const n = xs.length;
+
+  /**
+   * Décomposition sinus / cosinus :
+   *
+   *   f(u, δ) = PROFIL(u) · vrille(u) · sin(θ(u) + δ)
+   *           = cos(δ) · S(u) + sin(δ) · C(u)
+   *
+   * S et C ne dépendent pas du brin : calculés une seule fois pour toute
+   * l'onde. Le retard d'un brin ne coûte alors que deux multiplications par
+   * point au lieu d'un appel trigonométrique.
+   */
+  const S = new Float64Array(n);
+  const C = new Float64Array(n);
+  const curseur = { i: 0 };
+
+  for (let j = 0; j < n; j++) {
+    const u = xs[j] / W;
+
+    const enveloppe = profilEn(u, curseur);
+    const vrille = TORSION_TOURS
+      ? Math.cos(TAU * (TORSION_TOURS * u + rotation))
+      : 1;
+
+    const poids = enveloppe * vrille;
+    const theta = TAU * FREQUENCE * u - ecoulement;
+
+    S[j] = poids * Math.sin(theta);
+    C[j] = poids * Math.cos(theta);
+  }
 
   const resultat = [];
 
   for (let i = 0; i < brins; i++) {
     const t = brins === 1 ? 0 : -1 + (2 * i) / (brins - 1);
-    const s = Math.sign(t) * Math.pow(Math.abs(t), 0.62);
-    const phi = t * torsion + ecoulement + t * 0.35;
-    // Respiration globale + décalage par brin : le faisceau s'ouvre et se referme
-    const ampli = amplitude * souffle
-      * (1 + RESPIRATION_PAR_BRIN * Math.sin((temps / PERIODE_RESPIRATION) * TAU + t * 2.4));
+    const s = Math.sign(t) * Math.pow(Math.abs(t), REPARTITION);
 
-    const pts = [];
-    for (let x = 0; x <= W; x += pas) {
-      const env = Math.pow(Math.max(0, Math.sin((Math.PI * x) / W)), 0.72);
-      pts.push([x, cy + ampli * s * env * Math.sin((TAU * FREQUENCE * x) / W + phi)]);
+    const ampli = amplitude * s * souffle
+      * (1 + RESPIRATION_PAR_BRIN * osc(temps, PERIODE_RESPIRATION, t * 2.4));
+
+    const delta = t * RETARD;
+    const cd = Math.cos(delta);
+    const sd = Math.sin(delta);
+
+    const pts = new Array(n);
+    for (let j = 0; j < n; j++) {
+      pts[j] = [xs[j], cy + ampli * (S[j] * cd + C[j] * sd)];
     }
-    if (pts[pts.length - 1][0] < W) pts.push([W, cy]);
 
-    // Longueur d'arc cumulée — c'est elle qui aligne la lumière sur les colonnes
     const cum = [0];
-    for (let j = 1; j < pts.length; j++) {
+    for (let j = 1; j < n; j++) {
       cum.push(cum[j - 1] + Math.hypot(pts[j][0] - pts[j - 1][0], pts[j][1] - pts[j - 1][1]));
     }
     const total = cum[cum.length - 1];
 
     const arcEn = (xq) => {
       const q = Math.min(Math.max(xq, 0), W);
-      const idx = Math.min(Math.floor(q / pas), pts.length - 2);
+      const idx = Math.min(Math.floor(q / pas), n - 2);
       const [x0] = pts[idx];
       const [x1] = pts[idx + 1];
       const ratio = x1 === x0 ? 0 : (q - x0) / (x1 - x0);
       return cum[idx] + (cum[idx + 1] - cum[idx]) * ratio;
     };
 
-    // Position relative (0 → 1) du milieu de chaque section
     const centres = Array.from({ length: sections }, (_, k) => arcEn(((k + 0.5) * W) / sections) / total);
 
     resultat.push({
@@ -97,7 +227,7 @@ function construireBrins({ brins, amplitude, hauteur, pas, sections, W, temps = 
       total,
       centres,
       t,
-      opacite: 0.26 + 0.6 * Math.abs(t),
+      opacite: 0.22 + 0.62 * Math.abs(t),
     });
   }
   return resultat;
@@ -109,7 +239,6 @@ export default function Onde({ variante = 'principale', sections = 5, active = n
   const [temps, setTemps] = useState(0);
   const boiteRef = useRef(null);
 
-  // Position animée de la lumière, par brin (index de section, valeur continue)
   const posRef = useRef([]);
   const opaciteRef = useRef(0);
   const activeRef = useRef(null);
@@ -136,7 +265,6 @@ export default function Onde({ variante = 'principale', sections = 5, active = n
   const cfg = PRESETS[variante][mobile ? 'mobile' : 'desktop'];
   const { hauteur, brins: nbBrins } = cfg;
 
-  // Horloge : fait avancer l'onde ET rapproche la lumière de sa cible
   useEffect(() => {
     const reduit = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let raf;
@@ -150,8 +278,6 @@ export default function Onde({ variante = 'principale', sections = 5, active = n
         dernier = t;
         const cible = activeRef.current;
 
-        // Facteur ramené à une base de 30 i/s : la vitesse perçue ne dépend
-        // plus de la cadence de rafraîchissement de l'écran.
         const dt = Math.min((t - (avant || t)) / (1000 / 30), 3);
         avant = t;
 
@@ -164,7 +290,6 @@ export default function Onde({ variante = 'principale', sections = 5, active = n
             const k = INERTIE_CENTRE + (INERTIE_BORD - INERTIE_CENTRE) * u;
             const kdt = reduit ? 1 : 1 - Math.pow(1 - k, dt);
             const ecart = cible - posRef.current[i];
-            // Sous ce seuil, on se pose exactement : évite la traîne infinie
             posRef.current[i] = Math.abs(ecart) < 0.005
               ? cible
               : posRef.current[i] + ecart * kdt;
@@ -181,12 +306,9 @@ export default function Onde({ variante = 'principale', sections = 5, active = n
     return () => cancelAnimationFrame(raf);
   }, [nbBrins]);
 
-  // Plafond calculé sur l'amplitude MAXIMALE atteinte pendant la respiration,
-  // pour que les crêtes ne sortent jamais du cadre.
-  const gonflementMax = (1 + RESPIRATION) * (1 + RESPIRATION_PAR_BRIN);
   const amplitude = Math.min(
     cfg.amplitude * Math.min(1.25, Math.max(1, largeur / 728) * 0.6),
-    (hauteur / 2 - 4) / gonflementMax
+    (hauteur / 2 - 4) / GONFLEMENT_MAX
   );
   const W = largeur || 728;
 
@@ -195,9 +317,9 @@ export default function Onde({ variante = 'principale', sections = 5, active = n
     [cfg.brins, cfg.hauteur, cfg.pas, amplitude, sections, W, temps]
   );
 
-  const gradId = `onde-or-${variante}`;
+  const idOr = `onde-or-${variante}`;
+  const idBase = `onde-base-${variante}`;
 
-  // Centre interpolé entre deux sections, selon la position animée du brin
   function centreAnime(b, i) {
     const p = posRef.current[i] ?? 0;
     const a = Math.max(0, Math.min(Math.floor(p), sections - 1));
@@ -217,7 +339,7 @@ export default function Onde({ variante = 'principale', sections = 5, active = n
           style={{ display: 'block' }}
         >
           <defs>
-            <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+            <linearGradient id={idOr} x1="0" y1="0" x2="1" y2="0">
               <stop offset="0%" stopColor="#5A3406" />
               <stop offset="18%" stopColor="#BA7517" />
               <stop offset="38%" stopColor="#EF9F27" />
@@ -226,20 +348,30 @@ export default function Onde({ variante = 'principale', sections = 5, active = n
               <stop offset="88%" stopColor="#8F5A10" />
               <stop offset="100%" stopColor="#4A2B05" />
             </linearGradient>
+
+            <linearGradient id={idBase} x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#2A1803" />
+              <stop offset="22%" stopColor="#4E3009" />
+              <stop offset="45%" stopColor="#6E440D" />
+              <stop offset="62%" stopColor="#7C4E10" />
+              <stop offset="80%" stopColor="#4E3009" />
+              <stop offset="100%" stopColor="#241403" />
+            </linearGradient>
+
+            
           </defs>
 
-          {/* Couche éteinte : bronze, présente en permanence */}
-          <g fill="none" stroke="var(--bronze)">
+
+          <g fill="none" stroke={`url(#${idBase})`}>
             {brinsCalcules.map((b, i) => (
               <g key={`b${i}`}>
                 <path d={b.d} strokeWidth={LARGEUR_HALO} opacity={OPACITE_HALO * 0.4} />
-                <path d={b.d} strokeWidth={LARGEUR_COEUR} opacity={b.opacite * 0.4} />
+                <path d={b.d} strokeWidth={LARGEUR_COEUR} opacity={b.opacite} />
               </g>
             ))}
           </g>
 
-          {/* Couche allumée : or, sur un segment qui suit la courbe */}
-          <g fill="none" stroke={`url(#${gradId})`} opacity={opaciteRef.current}>
+          <g fill="none" stroke={`url(#${idOr})`} opacity={opaciteRef.current}>
             {brinsCalcules.map((b, i) => {
               const ratio = centreAnime(b, i);
               const segCoeur = b.total / sections;

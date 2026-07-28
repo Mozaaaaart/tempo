@@ -1,19 +1,41 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 import Onde from '@/components/Onde';
+import Ambiance from '@/components/Ambiance';
+import { EPREUVES as CATALOGUE, lienEpreuve } from '@/data/epreuves';
 
-const EPREUVES = [
-  { num: '01', titre: 'Accords', href: '/epreuves?e=1',
-    desc: 'Place trois ou quatre notes sur la portée, écoute l\'écart avec la cible.' },
-  { num: '02', titre: 'Rythme', href: '/epreuves?e=2',
-    desc: 'Reproduis un pattern de batterie au clic, à cinquante millisecondes près.' },
-  { num: '03', titre: 'Artiste', href: '/epreuves?e=3',
-    desc: 'Devine l\'artiste du jour. Genre, pays, décennie : les indices tombent à chaque erreur.' },
-  { num: '04', titre: 'Pochette', href: '/epreuves?e=4',
-    desc: 'Une pochette d\'album, floutée à l\'extrême. Le flou se lève à chaque tentative.' },
-  { num: '05', titre: 'Humain ou IA', href: '/epreuves?e=5',
-    desc: 'Deux extraits, l\'un composé par un humain, l\'autre par une machine. À toi de trancher.' },
-];
+/**
+ * Les cinq épreuves mises en avant sur l'accueil, dans l'ordre d'affichage.
+ * Seuls les slugs sont listés ici : titres et URLs viennent de la source
+ * unique. Renommer un slug dans data/epreuves.js ne peut donc pas laisser un
+ * lien mort derrière lui — la page lèverait une erreur au build.
+ */
+const VITRINE = ['accords', 'rythme', 'artiste', 'pochette', 'humain-ou-ia'];
+
+/**
+ * Accroches propres à l'accueil, plus courtes et plus racoleuses que les
+ * descriptions du catalogue, qui servent aux métadonnées et aux pages
+ * d'épreuve. C'est le seul texte volontairement dupliqué.
+ */
+const ACCROCHES = {
+  'accords': 'Place trois ou quatre notes sur la portée, écoute l\'écart avec la cible.',
+  'rythme': 'Reproduis un pattern de batterie au clic, à cinquante millisecondes près.',
+  'artiste': 'Devine l\'artiste du jour. Genre, pays, décennie : les indices tombent à chaque erreur.',
+  'pochette': 'Une pochette d\'album, floutée à l\'extrême. Le flou se lève à chaque tentative.',
+  'humain-ou-ia': 'Deux extraits, l\'un composé par un humain, l\'autre par une machine. À toi de trancher.',
+};
+
+const EPREUVES = VITRINE.map((slug) => {
+  const e = CATALOGUE.find((x) => x.slug === slug);
+  if (!e) throw new Error(`Slug inconnu dans la vitrine de l'accueil : ${slug}`);
+  return {
+    num: e.num,
+    titre: e.nom,
+    href: lienEpreuve(e.slug),
+    desc: ACCROCHES[slug] ?? e.desc,
+  };
+});
 
 export default function Accueil() {
   const [active, setActive] = useState(null);
@@ -48,7 +70,11 @@ export default function Accueil() {
 
   return (
     <main className="contenu">
-      {/* 1 — En-tête */}
+      {/* 1 — En-tête.
+          ATTENTION : ne monter qu'UN SEUL <Ambiance> par page. Deux instances
+          créent deux AudioContext indépendants qui jouent simultanément —
+          son doublé, décalage entre les deux, oscillateurs en double. Celui
+          de la page vit désormais au bloc 4. */}
       <header style={{ display: 'flex', alignItems: 'center', gap: 'var(--e3)', marginBottom: 'var(--e8)' }}>
         <div style={{
           width: 34, height: 34, borderRadius: '50%',
@@ -63,14 +89,18 @@ export default function Accueil() {
           <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>évaluation auditive</div>
         </div>
         <nav style={{ display: 'flex', gap: 'var(--e4)', fontSize: 12 }}>
-          <a href="/epreuves" style={{ color: 'var(--lin)' }}>toutes les épreuves</a>
-          <a href="/quotidien" style={{ color: 'var(--lin)' }}>défi du jour</a>
+          {/* Vers la première épreuve directement : /epreuves ne fait que
+              rediriger, autant s'épargner l'aller-retour serveur. */}
+          <Link href={lienEpreuve(CATALOGUE[0].slug)} style={{ color: 'var(--lin)' }}>
+            toutes les épreuves
+          </Link>
+          <Link href="/quotidien" style={{ color: 'var(--lin)' }}>défi du jour</Link>
         </nav>
       </header>
 
       {/* 2 — Titre */}
       <h1 className="titre-page">
-        L'oreille se travaille.<br />La tienne vaut combien ?
+        L&apos;oreille se travaille.<br />La tienne vaut combien ?
       </h1>
 
       {/* 3 — Sous-titre */}
@@ -78,31 +108,56 @@ export default function Accueil() {
         Cinq épreuves courtes, notées sur dix. Aucune connaissance en solfège requise.
       </p>
 
-      {/* 4 — Lien d'entrée */}
-      <div style={{ marginTop: 'var(--e5)' }}>
-        <a href="/quotidien" style={{ fontSize: 14 }}>Commencer le défi du jour →</a>
+      {/* 4 — Invitation à activer le son, avec le réglage à côté.
+          `deploye` garde le curseur visible en permanence : à cet endroit il
+          fait partie du message, il ne doit pas se dérober quand la souris
+          s'éloigne. */}
+      <div style={{
+        marginTop: 'var(--e5)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 'var(--e3)',
+        flexWrap: 'wrap',
+        rowGap: 'var(--e2)',
+      }}>
+        <span className="lin" style={{ fontSize: 14, color: '#EF9F27' }}>
+          Ce site s&apos;écoute. Activez le son pour l&apos;ambiance.
+        </span>
+        <Ambiance deploye />
       </div>
 
-      {/* 5 — L'onde */}
+      {/* 5 — L'onde.
+          `active` illumine la section, `survol` fait enfler l'onde au-dessus
+          d'elle. Sur l'accueil, le survol pilote les deux, d'où la même valeur. */}
       <div style={{ marginTop: 'var(--e7)' }}>
-        <Onde sections={5} active={active} />
+        <Onde sections={EPREUVES.length} active={active} survol={active} />
       </div>
 
       {/* 6 — Grille des cinq épreuves */}
       <div
         className="grille-epreuves"
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 'var(--e3)', marginTop: 'var(--e5)' }}
+        style={{ display: 'grid', gridTemplateColumns: `repeat(${EPREUVES.length}, 1fr)`, gap: 'var(--e3)', marginTop: 'var(--e5)' }}
         onMouseLeave={() => setActive(null)}
       >
         {EPREUVES.map((e, k) => (
-          <a key={e.num} href={e.href} onMouseEnter={() => setActive(k)} onFocus={() => setActive(k)} style={styleColonne(k)}>
+          <Link
+            key={e.href}
+            href={e.href}
+            onMouseEnter={() => setActive(k)}
+            onFocus={() => setActive(k)}
+            style={styleColonne(k)}
+          >
             <div className="mono" style={{ fontSize: 10.5, letterSpacing: '0.09em', color: 'var(--cendre)' }}>
               {e.num}
             </div>
-            <div style={{ fontSize: 14, marginTop: 'var(--e1)', color: active === k ? 'var(--or)' : 'var(--ivoire)', transition: 'color var(--transition-courte)' }}>
+            <div style={{
+              fontSize: 14, marginTop: 'var(--e1)',
+              color: active === k ? 'var(--or)' : 'var(--ivoire)',
+              transition: 'color var(--transition-courte)',
+            }}>
               {e.titre}
             </div>
-          </a>
+          </Link>
         ))}
       </div>
 
@@ -111,13 +166,14 @@ export default function Accueil() {
         {active === null ? 'Survole une épreuve pour la découvrir.' : EPREUVES[active].desc}
       </p>
 
-      {/* 8 — Bloc du défi quotidien : seul élément encadré */}
-      <a href="/quotidien" style={styleBlocQuotidien} onMouseEnter={allumer} onMouseLeave={eteindre}>
+      {/* 8 — Bloc du défi quotidien : seul élément encadré, et désormais le
+             principal appel à l'action de la page. */}
+      <Link href="/quotidien" style={styleBlocQuotidien} onMouseEnter={allumer} onMouseLeave={eteindre}>
         <div className="etiquette-mono">défi du jour</div>
         <p style={{ fontSize: 14, marginTop: 'var(--e2)' }}>
-          Dix épreuves, les mêmes pour tous, jusqu'à minuit. Ton résultat se partage en une ligne.
+          Dix épreuves, les mêmes pour tous, jusqu&apos;à minuit. Ton résultat se partage en une ligne.
         </p>
-      </a>
+      </Link>
 
       {/* 9 — Mention de pied */}
       <footer style={{ marginTop: 'var(--e8)', textAlign: 'center', fontSize: 11, color: 'var(--cendre)' }}>

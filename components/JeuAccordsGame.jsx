@@ -67,7 +67,11 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
         },
       }).toDestination();
     });
-    return () => revealTimersRef.current.forEach(clearTimeout);
+    return () => {
+      revealTimersRef.current.forEach(clearTimeout);
+      // Coupe une note de piano encore en cours au moment de la relance
+      try { synthRef.current?.releaseAll?.(); synthRef.current?.dispose(); } catch {}
+    };
   }, []);
 
   async function ensureAudio() {

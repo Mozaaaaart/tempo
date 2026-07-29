@@ -87,10 +87,12 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
       if (c && (c.tagName === 'INPUT' || c.tagName === 'TEXTAREA' || c.isContentEditable)) return;
       if (e.code === 'Space') { e.preventDefault(); tap(); }
     }
-    document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
       stopAll();
+      // Les sons déjà programmés dans Tone survivent aux timers JS :
+      // disposer les synthés coupe le métronome resté en attente.
+      try { clickRef.current?.dispose(); clapRef.current?.dispose(); } catch {}
     };
   }, []);
 

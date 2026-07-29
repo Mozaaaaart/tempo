@@ -80,6 +80,47 @@ export const sortieOr = (ev) => {
   ev.currentTarget.style.color = 'var(--ivoire)';
 };
 
+/* ============================================================
+   LECTEUR AUDIO — une seule piste à la fois, coupée au démontage.
+   Un useState ne convient pas ici : la fonction de nettoyage du
+   useEffect(..., []) capturerait la valeur initiale (null) et
+   laisserait l'extrait tourner quand le jeu est relancé.
+============================================================ */
+export function useLecteurAudio() {
+  const audioRef = useRef(null);
+  const timerRef = useRef(null);
+
+  function arreter() {
+    clearTimeout(timerRef.current);
+    timerRef.current = null;
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = '';
+      audioRef.current = null;
+    }
+  }
+
+  // Coupe le son au démontage (changement d'épreuve, relance, navigation)
+  useEffect(() => arreter, []);
+
+  function jouer(url, secondes, { depart = 0, onFin } = {}) {
+    arreter();
+    const a = new Audio(url);
+    audioRef.current = a;
+    if (depart) a.currentTime = depart;
+    a.play().catch((e) => console.error('Lecture impossible:', e));
+    if (secondes) {
+      timerRef.current = setTimeout(() => {
+        a.pause();
+        onFin?.();
+      }, secondes * 1000);
+    }
+    return a;
+  }
+
+  return { jouer, arreter };
+}
+
 export const inputStyle = {
   fontFamily: 'var(--sans)',
   fontSize: 14,
@@ -422,13 +463,12 @@ export function JeuBPM({ onDone }) {
   const [done, setDone] = useState(false);
   const [status, setStatus] = useState('Chargement du morceau du jour…');
   const [score, setScore] = useState(null);
-  const [audio, setAudio] = useState(null);
   const [tone, setTone] = useState(null);
+  const { jouer, arreter } = useLecteurAudio();
 
   useEffect(() => {
     import('tone').then(setTone);
     load();
-    return () => audio?.pause();
   }, []);
 
   async function load() {
@@ -467,12 +507,8 @@ export function JeuBPM({ onDone }) {
 
   async function playClip() {
     if (!track) return;
-    audio?.pause();
     const url = (await freshPreviewUrl(track.trackId)) ?? track.previewUrl;
-    const a = new Audio(url);
-    a.play().catch((e) => console.error('Lecture impossible:', e));
-    setAudio(a);
-    setTimeout(() => a.pause(), 7000);
+    jouer(url, 7);
   }
 
   async function testMetro() {
@@ -495,7 +531,7 @@ export function JeuBPM({ onDone }) {
   function validate() {
     if (done || realBpm === null) return;
     setDone(true);
-    audio?.pause();
+    arreter();
     const diff = Math.abs(guess - realBpm);
     const s = Math.round(Math.max(0, diff <= 2 ? 10 : 10 - (diff - 2) * 0.4) * 10) / 10;
     setScore(s);
@@ -621,12 +657,11 @@ export function JeuSeconde({ onDone }) {
   const [playing, setPlaying] = useState(false);
   const [status, setStatus] = useState('Chargement du morceau du jour…');
   const [score, setScore] = useState(null);
-  const [audio, setAudio] = useState(null);
   const artistFoundAtRef = useRef(0);
+  const { jouer } = useLecteurAudio();
 
   useEffect(() => {
     load();
-    return () => audio?.pause();
   }, []);
 
   async function load() {
@@ -652,15 +687,10 @@ export function JeuSeconde({ onDone }) {
 
   async function play() {
     if (!track) return;
-    audio?.pause();
     const url = (await freshPreviewUrl(track.trackId)) ?? track.previewUrl;
-    const a = new Audio(url);
-    a.currentTime = 0;
-    a.play().catch((e) => console.error('Lecture impossible:', e));
-    setAudio(a);
-    setPlaying(true);
     const dur = done ? 30 : SEC_DURATIONS[Math.min(tries, SEC_DURATIONS.length - 1)];
-    setTimeout(() => { a.pause(); setPlaying(false); }, dur * 1000);
+    setPlaying(true);
+    jouer(url, dur, { onFin: () => setPlaying(false) });
   }
 
   function finish(pts, msg) {
@@ -968,13 +998,12 @@ export function JeuParoles({ onDone }) {
   const [input, setInput] = useState('');
   const [tries, setTries] = useState(0);
   const [done, setDone] = useState(false);
-  const [audio, setAudio] = useState(null);
   const [status, setStatus] = useState('Chargement des paroles du jour…');
   const [score, setScore] = useState(null);
+  const { jouer } = useLecteurAudio();
 
   useEffect(() => {
     load();
-    return () => audio?.pause();
   }, []);
 
   async function load() {
@@ -1029,12 +1058,8 @@ export function JeuParoles({ onDone }) {
 
   async function playClip() {
     if (!track) return;
-    audio?.pause();
     const url = (await freshPreviewUrl(track.trackId)) ?? track.previewUrl;
-    const a = new Audio(url);
-    a.play().catch((e) => console.error('Lecture impossible:', e));
-    setAudio(a);
-    setTimeout(() => a.pause(), 10000);
+    jouer(url, 10);
   }
 
   function guess() {
@@ -1121,11 +1146,10 @@ export function JeuRefrain({ onDone }) {
   const [done, setDone] = useState(false);
   const [status, setStatus] = useState('Chargement du refrain du jour…');
   const [score, setScore] = useState(null);
-  const [audio, setAudio] = useState(null);
+  const { jouer } = useLecteurAudio();
 
   useEffect(() => {
     load();
-    return () => audio?.pause();
   }, []);
 
   async function load() {
@@ -1188,12 +1212,8 @@ export function JeuRefrain({ onDone }) {
 
   async function playClip() {
     if (!track) return;
-    audio?.pause();
     const url = (await freshPreviewUrl(track.trackId)) ?? track.previewUrl;
-    const a = new Audio(url);
-    a.play().catch((e) => console.error('Lecture impossible:', e));
-    setAudio(a);
-    setTimeout(() => a.pause(), 10000);
+    jouer(url, 10);
   }
 
   function guess() {

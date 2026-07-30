@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import Onde from '@/components/Onde';
 import { EPREUVES } from '@/data/epreuves';
 import { EpreuveContext } from '@/components/EpreuveContext';
+import VolumeControl from '@/components/VolumeControl';
 
 /**
  * Enveloppe des dix épreuves.
@@ -146,7 +147,8 @@ export default function EpreuvesLayout({ children }) {
           }
         `}</style>
 
-        {/* En-tête, identique à l'accueil */}
+        {/* En-tête, identique à l'accueil, avec le curseur de volume en plus :
+            c'est ici, et non sur l'accueil, qu'on écoute des extraits de jeu. */}
         <header style={{ display: 'flex', alignItems: 'center', gap: 'var(--e3)', marginBottom: 'var(--e7)' }}>
           <Link href="/" style={{
             width: 34, height: 34, borderRadius: '50%', border: '1px solid var(--or)',
@@ -272,6 +274,8 @@ export default function EpreuvesLayout({ children }) {
           >
             Relancer l&apos;épreuve
           </button>
+
+          <VolumeControl compact />
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--e2)', marginLeft: 'auto' }}>
             {precedente ? (

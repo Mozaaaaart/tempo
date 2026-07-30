@@ -14,6 +14,7 @@ import JeuAccordsGame from '@/components/JeuAccordsGame';
 import JeuRythmeGame from '@/components/JeuRythmeGame';
 import JeuIAGame from '@/components/JeuIAGame';
 import { useEpreuve } from '@/components/EpreuveContext';
+import JeuDuelGame from '@/components/JeuDuelGame';
 
 const JEUX = {
   'accords': JeuAccordsGame,
@@ -26,6 +27,7 @@ const JEUX = {
   'instrument': JeuInstrument,
   'paroles': JeuParoles,
   'refrain': JeuRefrain,
+  'duel': JeuDuelGame,
 };
 
 /**

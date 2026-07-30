@@ -133,3 +133,105 @@ button:focus-visible { outline: 1px solid var(--or); outline-offset: 3px; }
   background: var(--ivoire);
   border: none;
 }
+
+
+/* ============================================================
+   ÉPREUVE DUEL — à coller dans app/globals.css
+   Les media queries imposent des classes : les styles inline du reste du
+   composant ne peuvent pas porter de point de rupture.
+============================================================ */
+
+/* Deux colonnes de largeur égale, séparées par la colonne du « VS ». */
+.duel-grille {
+  display: grid;
+  grid-template-columns: 1fr 88px 1fr;
+  align-items: start;
+  gap: var(--e4);
+}
+
+.duel-pochette {
+  width: 100%;
+  max-width: 220px;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--rayon-controle);
+  border: 0.5px solid var(--filet);
+  display: block;
+  margin: 0 auto;
+  background: var(--onyx-haut);
+  user-select: none;
+}
+
+/* Le filet vertical matérialise la frontière entre les deux propositions ;
+   il s'interrompt autour du glyphe, qui est posé par-dessus le fond. */
+.duel-vs {
+  position: relative;
+  align-self: stretch;
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.duel-vs::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 0.5px;
+  background: var(--filet);
+}
+.duel-vs > span {
+  position: relative;
+  font-family: var(--serif);
+  font-size: 40px;
+  line-height: 1;
+  color: var(--cendre);
+  background: var(--onyx);
+  padding: var(--e2) 0;
+}
+
+@media (max-width: 640px) {
+  /* Les deux cartes s'empilent, le « VS » devient un séparateur horizontal. */
+  .duel-grille {
+    grid-template-columns: 1fr;
+    gap: var(--e5);
+  }
+  .duel-pochette { max-width: 140px; }
+  .duel-vs {
+    min-height: 0;
+    padding: var(--e2) 0;
+  }
+  .duel-vs::before {
+    top: 50%;
+    bottom: auto;
+    left: 0;
+    right: 0;
+    width: auto;
+    height: 0.5px;
+  }
+  .duel-vs > span {
+  font-size: 56px;   /* était 40px */
+  padding: var(--e3) 0;
+  }
+
+  @media (max-width: 640px) {
+    .duel-vs > span { font-size: 42px; }  /* était 30px */
+  }
+}
+
+/* ---- Mouvement ----
+   Deux transitions seulement, toutes deux fonctionnelles : elles disent au
+   candidat ce qui vient de se passer. Aucune animation de comptage sur les
+   chiffres — le nombre de streams apparaît d'un coup.
+   prefers-reduced-motion est déjà neutralisé globalement plus haut. */
+
+@keyframes duelArrivee {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes duelPromotion {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}

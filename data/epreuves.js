@@ -66,12 +66,12 @@ export const EPREUVES = [
     desc: 'Un timbre acoustique isolé sur un air connu. Vingt-et-un instruments possibles.',
   },
   {
-    slug: 'paroles',
+    slug: 'duel',
     num: '09',
-    nom: 'Paroles',
-    court: 'Paroles',
-    desc: 'Quatre lignes de paroles. Retrouve le morceau dont elles viennent.',
-  },
+    nom: 'Duel',
+    court: 'Duel',
+    desc: 'Deux morceaux, un seul a plus de streams. Dix duels pour trancher.',
+},
   {
     slug: 'refrain',
     num: '10',

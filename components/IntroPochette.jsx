@@ -144,25 +144,47 @@ export default function IntroPochette({ onFin, exclure = null }) {
       // Les DEUX dimensions comptent : le panneau est court tant que le jeu
       // n'a rien chargé, et ne tenir compte que de la largeur faisait sortir
       // le titre du cadre, donc disparaître sous l'overflow du voile.
-      setEchelle(Math.min(1, (l - 24) / SCENE_L, (h - 16) / H_CONTRAINTE));
+      setEchelle(Math.min(1, (l - 24) / SCENE_L, (h - 40) / H_CONTRAINTE));
     };
     calc();
     window.addEventListener('resize', calc);
     return () => window.removeEventListener('resize', calc);
   }, []);
 
-  /* ---- Pochette réelle, floutée jusqu'à la bonne réponse ---- */
+  /* ---- Pochette réelle, floutée jusqu'à la bonne réponse ----
+     Deux précautions ajoutées après un écart entre local et production :
+     · une seconde tentative, la première requête vers la fonction serverless
+       pouvant échouer ou traîner sur un démarrage à froid ;
+     · les erreurs sont tracées au lieu d'être avalées, sinon le seul symptôme
+       visible est un cadre vide, qui ne dit pas d'où vient le problème. */
   useEffect(() => {
     let annule = false;
+
+    async function tenter() {
+      const res = await fetch(`/api/deezer?term=${encodeURIComponent(demoNom)}&limit=10`, {
+        cache: 'no-store',
+      });
+      if (!res.ok) throw new Error(`/api/deezer a répondu ${res.status}`);
+      const data = await res.json();
+      const t = (data?.data ?? []).find((x) => x.album?.cover_xl || x.album?.cover_big);
+      const url = t?.album?.cover_xl ?? t?.album?.cover_big ?? null;
+      if (!url) throw new Error('Aucune pochette dans la réponse Deezer');
+      return url;
+    }
+
     (async () => {
-      try {
-        const res = await fetch(`/api/deezer?term=${encodeURIComponent(demoNom)}&limit=10`);
-        if (!res.ok) return;
-        const data = await res.json();
-        const t = (data?.data ?? []).find((x) => x.album?.cover_xl || x.album?.cover_big);
-        if (!annule) setPochette(t?.album?.cover_xl ?? t?.album?.cover_big ?? null);
-      } catch { /* le dégradé de repli suffit */ }
+      for (let essai = 0; essai < 2 && !annule; essai++) {
+        try {
+          const url = await tenter();
+          if (!annule) setPochette(url);
+          return;
+        } catch (err) {
+          console.warn(`Intro pochette — tentative ${essai + 1} :`, err.message);
+          await new Promise((r) => setTimeout(r, 600));
+        }
+      }
     })();
+
     return () => { annule = true; };
   }, [demoNom]);
 
@@ -283,7 +305,8 @@ export default function IntroPochette({ onFin, exclure = null }) {
           }}>
             {pochette && (
               <img
-                src={pochette} alt="" 
+                src={pochette} alt="" referrerPolicy="no-referrer"
+                onError={() => console.warn('Intro pochette — image refusée par le CDN :', pochette)}
                 style={{
                   width: '100%', height: '100%', objectFit: 'cover', display: 'block',
                   filter: `blur(${flou}px)`,

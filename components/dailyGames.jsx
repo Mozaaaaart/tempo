@@ -2,6 +2,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ARTISTS } from '@/data/artists';
 import { searchTracks, trackDetails, freshPreviewUrl } from '@/utils/deezer';
+import { useVolume } from '@/utils/volume';
+import { useIntro } from '@/utils/intro';
+import IntroArtiste, { ResultatArtiste, RES_ARTISTE_TOTAL } from './IntroArtiste';
+import IntroPochette, { ResultatPochette, RES_POCHETTE_TOTAL } from './IntroPochette';
 
 /* ============================================================
    UTILITAIRES SEED — même défi pour tous dans le Quotidien,
@@ -82,43 +86,115 @@ export const sortieOr = (ev) => {
 
 /* ============================================================
    LECTEUR AUDIO — une seule piste à la fois, coupée au démontage.
-   Un useState ne convient pas ici : la fonction de nettoyage du
-   useEffect(..., []) capturerait la valeur initiale (null) et
-   laisserait l'extrait tourner quand le jeu est relancé.
+
+   Un useState ne convient pas pour la piste elle-même : la fonction de
+   nettoyage du useEffect(..., []) capturerait la valeur initiale (null) et
+   laisserait l'extrait tourner quand le jeu est relancé. D'où les refs.
+
+   Deux corrections :
+   · le volume global (curseur de l'en-tête) est appliqué au départ ET pendant
+     la lecture — un <audio> neuf démarre à 1 quoi qu'affiche le curseur ;
+   · pause / reprise, avec report du temps restant sur le minuteur de coupure,
+     sans quoi reprendre après une pause tronquait l'extrait.
 ============================================================ */
 export function useLecteurAudio() {
+  const volume = useVolume();
   const audioRef = useRef(null);
   const timerRef = useRef(null);
+  const finRef = useRef(null);
+  const restantRef = useRef(0);   // ms restants avant coupure
+  const departRef = useRef(0);    // horodatage du dernier démarrage
+  const pauseRef = useRef(false);
+  const [enLecture, setEnLecture] = useState(false);
+  const [enPause, setEnPause] = useState(false);
+
+  // Le curseur de volume doit agir sur la piste EN COURS, pas seulement sur
+  // la suivante : on garde la valeur en ref pour les démarrages, et on la
+  // pousse sur l'élément audio à chaque changement.
+  const volumeRef = useRef(volume);
+  useEffect(() => {
+    const v = Math.max(0, Math.min(1, Number(volume) || 0));
+    volumeRef.current = v;
+    if (audioRef.current) audioRef.current.volume = v;
+  }, [volume]);
 
   function arreter() {
     clearTimeout(timerRef.current);
     timerRef.current = null;
+    finRef.current = null;
+    restantRef.current = 0;
+    pauseRef.current = false;
     if (audioRef.current) {
+      audioRef.current.onended = null;
       audioRef.current.pause();
       audioRef.current.src = '';
       audioRef.current = null;
     }
+    setEnLecture(false);
+    setEnPause(false);
   }
 
   // Coupe le son au démontage (changement d'épreuve, relance, navigation)
   useEffect(() => arreter, []);
 
+  function terminer() {
+    const onFin = finRef.current;
+    arreter();
+    onFin?.();
+  }
+
   function jouer(url, secondes, { depart = 0, onFin } = {}) {
     arreter();
     const a = new Audio(url);
+    a.volume = volumeRef.current;
     audioRef.current = a;
+    finRef.current = onFin ?? null;
     if (depart) a.currentTime = depart;
+    a.onended = () => terminer();
     a.play().catch((e) => console.error('Lecture impossible:', e));
+
+    setEnLecture(true);
+    setEnPause(false);
+    pauseRef.current = false;
+
     if (secondes) {
-      timerRef.current = setTimeout(() => {
-        a.pause();
-        onFin?.();
-      }, secondes * 1000);
+      restantRef.current = secondes * 1000;
+      departRef.current = Date.now();
+      timerRef.current = setTimeout(terminer, restantRef.current);
     }
     return a;
   }
 
-  return { jouer, arreter };
+  function pause() {
+    if (!audioRef.current || pauseRef.current) return;
+    audioRef.current.pause();
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+      restantRef.current = Math.max(0, restantRef.current - (Date.now() - departRef.current));
+    }
+    pauseRef.current = true;
+    setEnPause(true);
+  }
+
+  function reprendre() {
+    if (!audioRef.current || !pauseRef.current) return;
+    audioRef.current.volume = volumeRef.current;
+    audioRef.current.play().catch((e) => console.error('Lecture impossible:', e));
+    if (restantRef.current > 0) {
+      departRef.current = Date.now();
+      timerRef.current = setTimeout(terminer, restantRef.current);
+    }
+    pauseRef.current = false;
+    setEnPause(false);
+  }
+
+  function basculer() {
+    if (!audioRef.current) return;
+    pauseRef.current ? reprendre() : pause();
+  }
+
+  return { jouer, arreter, pause, reprendre, basculer, enLecture, enPause };
 }
 
 export const inputStyle = {
@@ -158,14 +234,17 @@ export function ScoreBox({ score, detail }) {
 /* ============================================================
    AUTOCOMPLETE ARTISTES — liste scrollable, clavier ↑↓ + Entrée
 ============================================================ */
-export function ArtistInput({ value, onChange, onSubmit, disabled, placeholder = 'Nom d\'artiste…' }) {
+export function ArtistInput({ value, onChange, onSubmit, disabled, erreur = false, exclure = [], placeholder = 'Nom d\'artiste…' }) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
 
   const q = norm(value);
+  // Un nom déjà proposé et validé sort de la liste : le reproposer ne peut
+  // qu'être une erreur de manipulation, autant qu'il ne soit plus cliquable.
+  const dispo = exclure.length ? ARTISTS.filter((a) => !exclure.includes(a.nom)) : ARTISTS;
   const matches = q
-    ? ARTISTS.filter((a) => norm(a.nom).includes(q)).slice(0, 60)
-    : [...ARTISTS].sort((a, b) => a.nom.localeCompare(b.nom));
+    ? dispo.filter((a) => norm(a.nom).includes(q)).slice(0, 60)
+    : [...dispo].sort((a, b) => a.nom.localeCompare(b.nom));
 
   function pick(nom) {
     onChange(nom);
@@ -203,7 +282,13 @@ export function ArtistInput({ value, onChange, onSubmit, disabled, placeholder =
         onKeyDown={onKeyDown}
         placeholder={placeholder}
         disabled={disabled}
-        style={inputStyle}
+        style={{
+          ...inputStyle,
+          // Un contour carmin dit l'erreur sans texte à lire. Le parent le
+          // rend au filet neutre au bout de quelques centaines de ms.
+          border: erreur ? '1px solid var(--carmin)' : inputStyle.border,
+          transition: 'border-color var(--transition-courte)',
+        }}
       />
       {open && !disabled && matches.length > 0 && (
         <div style={{
@@ -231,11 +316,24 @@ export function ArtistInput({ value, onChange, onSubmit, disabled, placeholder =
 }
 
 /* ================= 1 · TROUVE L'ARTISTE ================= */
-const MAX_TRIES = 6;
-const CELL_DELAY = 0.25; // secondes entre chaque colonne révélée
+const MAX_TRIES = 7;
+const POINTS_ARTISTE = [10, 8.5, 7, 5.5, 4, 2.5, 1];
+const CELL_DELAY = 0.25;   // secondes entre chaque colonne révélée
+const FLOU_ARTISTE = 22;   // flou constant : il ne diminue jamais en cours de partie
+const EXTRAIT_SEC = 10;
 
-export function JeuArtiste({ onDone }) {
-  const target = useMemo(() => ARTISTS[Math.floor(seeded('artiste')() * ARTISTS.length)], []);
+export function JeuArtiste({ onDone, daily = false }) {
+  // Manche 0 : l'artiste du jour, tiré par la graine — identique pour tous.
+  // Manches suivantes (bouton « Nouvel artiste ») : tirage libre.
+  const [manche, setManche] = useState(0);
+  const target = useMemo(
+    () => (manche === 0
+      ? ARTISTS[Math.floor(seeded('artiste')() * ARTISTS.length)]
+      : ARTISTS[Math.floor(Math.random() * ARTISTS.length)]),
+    [manche]
+  );
+  // L'intro ne se joue qu'à l'arrivée sur l'épreuve, pas sur une relance.
+  const [intro, setIntro] = useState(useIntro('artiste'));
   const [input, setInput] = useState('');
   const [guesses, setGuesses] = useState([]);
   const [done, setDone] = useState(false);
@@ -243,16 +341,101 @@ export function JeuArtiste({ onDone }) {
   const [score, setScore] = useState(null);
   const [animatingRow, setAnimatingRow] = useState(-1);
 
+  // Surcouche de résultat, posée à la fin de la partie puis retirée seule.
+  const [resultat, setResultat] = useState(null);
+  // Le bilan du bas et le dévoilement du portrait attendent que le voile soit
+  // levé : deux fois le même chiffre au même instant se contrediraient.
+  const [bilan, setBilan] = useState(false);
+  const bilanTimer = useRef(null);
+
+  // Portrait + catalogue de l'artiste (Deezer), chargés en fond dès le montage
+  const [photo, setPhoto] = useState(null);
+  const [pistes, setPistes] = useState([]);
+  const [chargementExtrait, setChargementExtrait] = useState(false);
+  const { jouer, arreter, basculer, enLecture, enPause } = useLecteurAudio();
+
   const NB_COLS = 7;
+
+  useEffect(() => {
+    let annule = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/deezer?term=${encodeURIComponent(target.nom)}&limit=25`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const tous = (data?.data ?? []).filter((t) => t?.preview);
+        const exacts = tous.filter((t) => norm(t?.artist?.name) === norm(target.nom));
+        const retenus = exacts.length ? exacts : tous;
+        if (annule) return;
+        const avecPortrait = retenus.find((t) => t.artist?.picture_xl || t.artist?.picture_big);
+        setPhoto(avecPortrait?.artist?.picture_xl ?? avecPortrait?.artist?.picture_big ?? null);
+        setPistes(retenus);
+      } catch (err) {
+        console.error('Artiste — chargement Deezer:', err);
+      }
+    })();
+    return () => { annule = true; };
+  }, [target.nom]);
+
+  // Le voile de résultat se retire seul ; le minuteur suit si le composant part.
+  useEffect(() => {
+    if (resultat === null) return;
+    const t = setTimeout(() => setResultat(null), RES_ARTISTE_TOTAL);
+    return () => clearTimeout(t);
+  }, [resultat]);
+  useEffect(() => () => clearTimeout(bilanTimer.current), []);
+
+  // Pose le voile, puis le bilan une fois qu'il s'est levé.
+  function terminerPartie(pts, phrase) {
+    setStatus(phrase);
+    setResultat(pts);
+    onDone(pts);
+    bilanTimer.current = setTimeout(() => {
+      setScore(pts);
+      setBilan(true);
+    }, RES_ARTISTE_TOTAL);
+  }
+
+  // Nouvelle manche sans remonter le composant : l'intro ne rejoue donc pas.
+  function relancer() {
+    clearTimeout(bilanTimer.current);
+    arreter();
+    setManche((m) => m + 1);
+    setInput('');
+    setGuesses([]);
+    setDone(false);
+    setScore(null);
+    setAnimatingRow(-1);
+    setResultat(null);
+    setBilan(false);
+    setPhoto(null);
+    setPistes([]);
+    setStatus(`Devine l'artiste — ${MAX_TRIES} essais.`);
+  }
+
+  async function jouerExtrait() {
+    if (!pistes.length || chargementExtrait) return;
+    setChargementExtrait(true);
+    try {
+      const p = pistes[Math.floor(Math.random() * pistes.length)];
+      const url = (await freshPreviewUrl(p.id)) ?? p.preview;
+      jouer(url, EXTRAIT_SEC);
+    } catch (err) {
+      console.error('Artiste — extrait:', err);
+    } finally {
+      setChargementExtrait(false);
+    }
+  }
 
   function guess() {
     if (done) return;
     const g = ARTISTS.find((a) => norm(a.nom) === norm(input));
+    // Le champ se vide dans TOUS les cas, y compris sur un refus.
+    setInput('');
     if (!g) { setStatus('Artiste absent de la base — utilise l\'autocomplétion.'); return; }
-    if (guesses.some((x) => x.nom === g.nom)) { setStatus('Déjà essayé !'); return; }
+    if (guesses.some((x) => x.nom === g.nom)) { setStatus(`${g.nom} a déjà été proposé.`); return; }
     const next = [...guesses, g];
     setGuesses(next);
-    setInput('');
     setAnimatingRow(next.length - 1);
 
     // Le verdict tombe APRÈS la révélation de la dernière colonne (suspense)
@@ -261,21 +444,22 @@ export function JeuArtiste({ onDone }) {
       setDone(true);
       setStatus('…');
       setTimeout(() => {
-        const pts = [10, 8, 6, 4, 2, 1][next.length - 1];
-        setScore(pts); onDone(pts);
-        setStatus(`🎉 Trouvé en ${next.length} essai(s) !`);
+        terminerPartie(POINTS_ARTISTE[next.length - 1], `🎉 Trouvé en ${next.length} essai(s) !`);
       }, revealMs);
     } else if (next.length >= MAX_TRIES) {
       setDone(true);
       setStatus('…');
       setTimeout(() => {
-        setScore(0); onDone(0);
-        setStatus(`Perdu… c'était ${target.nom}.`);
+        terminerPartie(0, `Perdu… c'était ${target.nom}.`);
       }, revealMs);
     } else {
       setStatus('…');
       setTimeout(() => {
-        setStatus(`Raté — ${MAX_TRIES - next.length} essai(s) restant(s).`);
+        setStatus(
+          next.length === MAX_TRIES - 1
+            ? `Dernier essai — un extrait de ${EXTRAIT_SEC} secondes est débloqué.`
+            : `Raté — ${MAX_TRIES - next.length} essai(s) restant(s).`
+        );
       }, revealMs);
     }
   }
@@ -295,28 +479,152 @@ export function JeuArtiste({ onDone }) {
     </div>
   );
 
+  // Pas de `!done` : l'extrait débloqué au dernier essai reste écoutable une
+  // fois la partie finie — on vient d'apprendre qui c'était, l'entendre est
+  // la récompense.
+  const extraitDispo = guesses.length >= MAX_TRIES - 1 && pistes.length > 0;
+
+  // Trois états, comme sur les cartes du Duel : repos, lecture, pause. L'or
+  // n'est porté que pendant la lecture réelle ; en pause le bouton redevient
+  // ivoire, ce qui rend l'état lisible sans rien lire.
+  const joue = enLecture && !enPause;
+  const libelleExtrait = chargementExtrait ? 'Chargement…'
+    : joue ? 'Pause'
+      : enPause ? 'Reprendre'
+        : `Écouter ${EXTRAIT_SEC} s`;
+
   return (
-    <div style={{ ...panel, overflow: 'visible' }}>
+    <div style={{ ...panel, overflow: 'visible', textAlign: 'center', position: 'relative' }}>
       <style>{`
         @keyframes cellFlip {
           0% { transform: rotateX(90deg); opacity: 0; background: var(--onyx-haut); color: transparent; }
           50% { transform: rotateX(90deg); opacity: 1; }
           100% { transform: rotateX(0deg); opacity: 1; }
         }
+        @keyframes artApparition {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
 
+      {intro && <IntroArtiste exclure={target.nom} onFin={() => setIntro(false)} />}
+      {resultat !== null && <ResultatArtiste score={resultat} artiste={target.nom} />}
+
       <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Trouve l'artiste</h3>
-      <p className="description" style={{ marginBottom: 'var(--e4)' }}>
-        Vert = attribut exact. ▲/▼ = la cible a plus/moins (streams) ou est plus tardive/précoce (débuts).
+      <p className="description" style={{ maxWidth: 460, margin: '0 auto var(--e3)' }}>
+        Propose un artiste : chaque colonne le compare à l'artiste du jour.
       </p>
 
-      <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap', marginBottom: 'var(--e2)' }}>
-        <ArtistInput value={input} onChange={setInput} onSubmit={guess} disabled={done} />
+      {/* ---- Légende : reprend les couleurs exactes des cases ---- */}
+      <div style={{
+        display: 'flex', gap: 'var(--e4)', flexWrap: 'wrap', justifyContent: 'center',
+        fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--lin)',
+        marginBottom: 'var(--e5)',
+      }}>
+        <span><span style={{ color: 'var(--jade)' }}>■</span> identique</span>
+        <span><span style={{ color: 'rgba(226,75,74,0.65)' }}>■</span> différent</span>
+        <span>▲ plus grand</span>
+        <span>▼ plus petit</span>
+      </div>
+
+      {/* ---- Portrait : le flou ne bouge pas, il se lève quand le voile se lève ---- */}
+      <div style={{ marginBottom: 'var(--e5)' }}>
+        <div style={{
+          width: 190, height: 190, margin: '0 auto',
+          overflow: 'hidden', borderRadius: 'var(--rayon-carte)',
+          border: `${bilan ? '1px' : '0.5px'} solid ${bilan ? 'var(--or)' : 'var(--filet)'}`,
+          background: 'var(--onyx-haut)',
+          transition: 'border-color var(--transition-courte)',
+        }}>
+          {photo && (
+            <img
+              src={photo}
+              alt="Portrait de l'artiste mystère"
+              width={190} height={190}
+              style={{
+                filter: bilan ? 'none' : `blur(${FLOU_ARTISTE}px)`,
+                transform: bilan ? 'scale(1)' : 'scale(1.18)',
+                transition: 'filter 0.6s ease, transform 0.6s ease',
+                display: 'block', width: '100%', height: '100%', objectFit: 'cover',
+              }}
+            />
+          )}
+        </div>
+        <div style={{ marginTop: 'var(--e2)' }}>
+          {/* Une fois le nom affiché en clair, l'étiquette ne dit plus rien
+              qu'on ne lise déjà : elle disparaît. */}
+          {!bilan && (
+            <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>
+              Artiste mystère
+            </div>
+          )}
+          {/* Le cendre ne porte jamais d'information nécessaire : une fois
+              révélé, le nom passe en ivoire et en corps de lecture. */}
+          {bilan && (
+            <div style={{
+              fontFamily: 'var(--sans)', fontSize: 17, fontWeight: 500,
+              color: 'var(--ivoire)', marginTop: 4, lineHeight: 1.2,
+              animation: 'artApparition 420ms 120ms ease-out both',
+            }}>
+              {target.nom}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ---- Saisie ---- */}
+      <div style={{ display: 'flex', gap: 'var(--e2)', justifyContent: 'center', flexWrap: 'wrap' }}>
+        <ArtistInput
+          value={input} onChange={setInput} onSubmit={guess}
+          disabled={done} exclure={guesses.map((g) => g.nom)}
+        />
         <button onClick={guess} disabled={done} style={btn(true, done)}>Essayer</button>
       </div>
 
+      {/* ---- Extrait audio : débloqué après le 6ᵉ essai raté ----
+           Pas de survolOr/sortieOr ici : le survol écraserait l'or de l'état
+           « en lecture » et le sortir le repasserait en ivoire. */}
+      {extraitDispo && (
+        <div style={{ marginTop: 'var(--e3)' }}>
+          <button
+            onClick={enLecture ? basculer : jouerExtrait}
+            disabled={chargementExtrait}
+            style={{
+              ...btn(false, chargementExtrait),
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 'var(--e2)',
+              borderColor: joue ? 'var(--or)' : 'var(--filet-fort)',
+              color: joue ? 'var(--or)' : 'var(--ivoire)',
+            }}
+            aria-label={chargementExtrait ? 'Chargement de l\'extrait'
+              : joue ? 'Mettre en pause l\'extrait'
+                : enPause ? 'Reprendre la lecture de l\'extrait'
+                  : 'Écouter un extrait de l\'artiste'}
+          >
+            {joue ? (
+              // Pause : deux barres
+              <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
+                <rect x="0" y="0" width="3" height="12" />
+                <rect x="7" y="0" width="3" height="12" />
+              </svg>
+            ) : (
+              // Lecture / reprise : triangle
+              <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
+                <path d="M0 0v12l10-6z" />
+              </svg>
+            )}
+            {libelleExtrait}
+          </button>
+        </div>
+      )}
+
+      {/* ---- Grille des tentatives ---- */}
       {guesses.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 0.8fr 0.9fr 0.8fr 0.9fr', gap: 6, marginTop: 'var(--e3)', perspective: '600px' }}>
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 0.8fr 0.9fr 0.8fr 0.9fr',
+          gap: 6, marginTop: 'var(--e5)', perspective: '600px', textAlign: 'left',
+        }}>
           {['Artiste', 'Genre', 'Pays', 'Débuts', 'Format', 'Sexe', 'Streams'].map((h) => (
             <div key={h} className="etiquette-mono" style={{ color: 'var(--cendre)', textAlign: 'center', fontSize: 9.5 }}>{h}</div>
           ))}
@@ -340,7 +648,45 @@ export function JeuArtiste({ onDone }) {
       )}
 
       <p style={statusStyle}>{status}</p>
-      <ScoreBox score={score} />
+
+      {/* ---- Bilan : posé seulement quand le voile s'est levé ---- */}
+      {score !== null && bilan && (
+        <div style={{
+          marginTop: 'var(--e4)', paddingTop: 'var(--e4)',
+          borderTop: '1px solid var(--or)', textAlign: 'center',
+          animation: 'artApparition 340ms ease-out both',
+        }}>
+          <div className="score-affiche" style={{
+            color: score >= 9.5 ? 'var(--jade)' : score < 4 ? 'var(--carmin)' : 'var(--ivoire)',
+          }}>
+            {score.toFixed(1).replace('.', ',')} <span style={{ color: 'var(--cendre)' }}>/ 10</span>
+          </div>
+          <p className="description" style={{ marginTop: 'var(--e2)' }}>
+            {score > 0
+              ? <>Trouvé en {guesses.length} essai{guesses.length > 1 ? 's' : ''} sur {MAX_TRIES} — <span style={{ color: 'var(--or)' }}>{target.nom}</span></>
+              : <>Non trouvé en {MAX_TRIES} essais — c'était <span style={{ color: 'var(--or)' }}>{target.nom}</span></>}
+          </p>
+
+          {/* Une seule tentative en quotidien : pas de relance là-bas. */}
+          {!daily && (
+            <button
+              onClick={relancer}
+              style={{
+                fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 500,
+                padding: '9px 16px', borderRadius: 'var(--rayon-controle)',
+                marginTop: 'var(--e4)',
+                cursor: 'pointer',
+                background: 'var(--or)',
+                color: 'var(--noir)',
+                border: '1px solid var(--or)',
+                transition: 'background var(--transition-courte)',
+              }}
+            >
+              Nouvel artiste
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -350,10 +696,38 @@ function RowFragment({ children }) {
 }
 
 /* ================= 2 · POCHETTE FLOUTÉE ================= */
-const BLURS = [24, 16, 10, 5, 2];
-const POINTS = [10, 8, 6, 4, 2];
+const POCH_TRIES = 7;
+/* Flou après 0, 1, 2… erreurs. Les pas sont larges au début et se resserrent
+   ensuite : le flou perçu n'est pas linéaire, passer de 34 à 28 se remarque
+   bien plus que de 13 à 10. La dernière valeur reste volontairement haute —
+   au septième essai on distingue des formes et des couleurs, pas un titre,
+   sinon l'épreuve se gagne à l'usure sans jamais rien reconnaître. */
+const BLURS = [34, 28, 23, 19, 16, 13, 10];
+const POINTS = [10, 8.5, 7, 5.5, 4, 2.5, 1];
+const POCH_EXTRAIT_SEC = 10;
 
-export function JeuPochette({ onDone }) {
+/* Mise en page de la colonne de réponses.
+   La gouttière n'est pas choisie : elle est CALCULÉE pour que les sept jetons
+   et leur compteur finissent exactement au bas de la pochette. Changer la
+   taille des jetons ou de la pochette la réajuste toute seule.
+   · POCH_COUVERTURE — côté de la pochette, en px
+   · POCH_JETON_H    — hauteur d'un jeton
+   · POCH_JETON_TXT  — corps du texte d'un jeton
+   · POCH_ENTETE_H   — hauteur du compteur « 3/7 » au-dessus de la colonne */
+const POCH_COUVERTURE = 260;
+const POCH_JETON_H = 30;
+const POCH_JETON_TXT = 12.5;
+const POCH_ENTETE_H = 16;
+const POCH_JETON_GAP =
+  (POCH_COUVERTURE - POCH_ENTETE_H - POCH_TRIES * POCH_JETON_H) / (POCH_TRIES - 1);
+
+export function JeuPochette({ onDone, daily = false }) {
+  // Manche 0 : la pochette du jour, tirée par la graine — identique pour tous.
+  // Manches suivantes (bouton « Nouvelle pochette ») : tirage libre.
+  const [manche, setManche] = useState(0);
+  // L'intro ne se joue qu'à l'arrivée sur l'épreuve, pas sur une relance.
+  const [intro, setIntro] = useState(useIntro('pochette'));
+
   const [track, setTrack] = useState(null);
   const [loadError, setLoadError] = useState(false);
   const [input, setInput] = useState('');
@@ -363,19 +737,43 @@ export function JeuPochette({ onDone }) {
   const [status, setStatus] = useState('Chargement de la pochette du jour…');
   const [score, setScore] = useState(null);
 
-  useEffect(() => { load(); }, []);
+  // Contour carmin du champ pendant quelques centaines de ms après une erreur.
+  const [erreur, setErreur] = useState(false);
+  const erreurTimer = useRef(null);
+
+  // Surcouche de résultat, posée à la fin de la partie puis retirée seule.
+  const [resultat, setResultat] = useState(null);
+  // Le bilan du bas et le dévoilement de la pochette attendent que le voile
+  // soit levé : deux fois le même chiffre au même instant se contrediraient.
+  const [bilan, setBilan] = useState(false);
+  const bilanTimer = useRef(null);
+
+  const [chargementExtrait, setChargementExtrait] = useState(false);
+  const { jouer, arreter, basculer, enLecture, enPause } = useLecteurAudio();
+
+  useEffect(() => { load(); }, [manche]);
+
+  useEffect(() => {
+    if (resultat === null) return;
+    const t = setTimeout(() => setResultat(null), RES_POCHETTE_TOTAL);
+    return () => clearTimeout(t);
+  }, [resultat]);
+  useEffect(() => () => {
+    clearTimeout(bilanTimer.current);
+    clearTimeout(erreurTimer.current);
+  }, []);
 
   async function load() {
     setLoadError(false);
     setStatus('Chargement de la pochette du jour…');
     try {
-      const rng = seeded('pochette');
+      const rng = manche === 0 ? seeded('pochette') : Math.random;
       const artist = ARTISTS[Math.floor(rng() * ARTISTS.length)];
       const tracks = await searchTracks(artist.nom, { limit: 25 });
       if (!tracks.length) throw new Error('Aucun résultat');
       const t = tracks[Math.floor(rng() * tracks.length)];
       setTrack({ ...t, artisteNom: artist.nom });
-      setStatus(`De quel artiste est cette pochette ? ${BLURS.length} essais.`);
+      setStatus(`De quel artiste est cette pochette ? ${POCH_TRIES} essais.`);
     } catch (err) {
       console.error('Erreur pochette:', err);
       setLoadError(true);
@@ -383,71 +781,273 @@ export function JeuPochette({ onDone }) {
     }
   }
 
+  function signalerErreur() {
+    clearTimeout(erreurTimer.current);
+    setErreur(true);
+    erreurTimer.current = setTimeout(() => setErreur(false), 700);
+  }
+
+  // Pose le voile, puis le bilan une fois qu'il s'est levé.
+  function terminerPartie(pts, phrase) {
+    setStatus(phrase);
+    setDone(true);
+    setResultat(pts);
+    onDone(pts);
+    bilanTimer.current = setTimeout(() => {
+      setScore(pts);
+      setBilan(true);
+    }, RES_POCHETTE_TOTAL);
+  }
+
+  // Nouvelle manche sans remonter le composant : l'intro ne rejoue donc pas.
+  function relancer() {
+    clearTimeout(bilanTimer.current);
+    arreter();
+    setManche((m) => m + 1);
+    setTrack(null);
+    setInput('');
+    setTries(0);
+    setTried([]);
+    setDone(false);
+    setScore(null);
+    setResultat(null);
+    setBilan(false);
+    setErreur(false);
+  }
+
+  async function jouerExtrait() {
+    if (!track || chargementExtrait) return;
+    setChargementExtrait(true);
+    try {
+      const url = (await freshPreviewUrl(track.trackId)) ?? track.previewUrl;
+      if (url) jouer(url, POCH_EXTRAIT_SEC);
+    } catch (err) {
+      console.error('Pochette — extrait:', err);
+    } finally {
+      setChargementExtrait(false);
+    }
+  }
+
   function guess() {
     if (done || !track) return;
     const g = ARTISTS.find((a) => norm(a.nom) === norm(input));
-    if (!g) { setStatus('Artiste absent de la base — utilise l\'autocomplétion.'); return; }
-    if (tried.includes(g.nom)) { setStatus('Déjà essayé !'); return; }
+    // Le champ se vide dans TOUS les cas, y compris sur un refus : sinon le
+    // nom rejeté reste sous les yeux et invite à revalider le même.
     setInput('');
-    setTried([...tried, g.nom]);
+    if (!g) { setStatus('Artiste absent de la base — utilise l\'autocomplétion.'); signalerErreur(); return; }
+    // tried contient des objets { nom, bon } : un includes() sur le tableau
+    // ne trouvait jamais rien, et les doublons passaient.
+    if (tried.some((t) => t.nom === g.nom)) { setStatus(`${g.nom} a déjà été proposé.`); signalerErreur(); return; }
     if (norm(g.nom) === norm(track.artisteNom)) {
-      const pts = POINTS[tries];
-      setScore(pts); setDone(true); onDone(pts);
-      setStatus(`🎉 Exact ! C'était ${track.artistName} — album « ${track.albumName} ».`);
+      setTried([...tried, { nom: g.nom, bon: true }]);
+      terminerPartie(POINTS[tries], `🎉 Exact ! C'était ${track.artistName} — album « ${track.albumName} ».`);
     } else {
+      setTried([...tried, { nom: g.nom, bon: false }]);
+      signalerErreur();
       const next = tries + 1;
       setTries(next);
-      if (next >= BLURS.length) {
-        setScore(0); setDone(true); onDone(0);
-        setStatus(`Perdu… c'était ${track.artistName} — « ${track.albumName} ».`);
+      if (next >= POCH_TRIES) {
+        terminerPartie(0, `Perdu… c'était ${track.artistName} — « ${track.albumName} ».`);
+      } else if (next === POCH_TRIES - 1) {
+        setStatus(`Dernier essai — un extrait de ${POCH_EXTRAIT_SEC} secondes est débloqué.`);
       } else {
-        setStatus(`Raté — le flou diminue. ${BLURS.length - next} essai(s) restant(s).`);
+        setStatus(`Raté — le flou diminue. ${POCH_TRIES - next} essai(s) restant(s).`);
       }
     }
   }
 
-  const blur = done ? 0 : BLURS[Math.min(tries, BLURS.length - 1)];
+  const blur = bilan ? 0 : BLURS[Math.min(tries, BLURS.length - 1)];
+  const extraitDispo = tries >= POCH_TRIES - 1 && !done && !!track;
+  const joue = enLecture && !enPause;
+  const libelleExtrait = chargementExtrait ? 'Chargement…'
+    : joue ? 'Pause'
+      : enPause ? 'Reprendre'
+        : `Écouter ${POCH_EXTRAIT_SEC} s`;
 
   return (
-    <div style={{ ...panel, overflow: 'visible' }}>
+    <div style={{ ...panel, overflow: 'visible', position: 'relative' }}>
+      <style>{`
+        @keyframes pochApparition {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes pochJeton {
+          from { opacity: 0; transform: translateX(-10px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+      `}</style>
+
+      {intro && <IntroPochette exclure={track?.artisteNom} onFin={() => setIntro(false)} />}
+      {resultat !== null && <ResultatPochette score={resultat} artiste={track?.artistName} />}
+
       <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Pochette floutée</h3>
       <p className="description" style={{ marginBottom: 'var(--e4)' }}>
-        Le flou diminue à chaque mauvaise réponse. Trouve l'artiste de cet album.
+        Le flou diminue à chaque mauvaise réponse. Trouve l'artiste de cet album en {POCH_TRIES} essais.
       </p>
 
-      {track && (
-        <div style={{ width: 260, height: 260, overflow: 'hidden', borderRadius: 'var(--rayon-carte)', margin: '0 auto var(--e4)', border: '0.5px solid var(--filet)' }}>
-          <img
-            src={track.artworkUrl100}
-            alt="Pochette mystère"
-            width={260} height={260}
-            style={{
-              filter: `blur(${blur}px)`,
-              transform: 'scale(1.15)',
-              transition: 'filter 0.4s ease',
-              display: 'block', width: '100%', height: '100%', objectFit: 'cover',
-            }}
-          />
+      {/* ---- Pochette centrée, réponses à sa droite ----
+           Grille à trois colonnes plutôt qu'un flottant : les deux colonnes
+           latérales ont la même souplesse, la pochette est donc centrée sur
+           le panneau quel que soit le nombre de jetons, et la colonne de
+           droite ne peut pas déborder puisqu'elle est bornée par la grille.
+           Le cadre est rendu même sans pochette chargée : sinon le panneau
+           n'a pas sa hauteur définitive et la surcouche d'intro s'y trouve
+           rognée. */}
+      <div style={{
+        display: 'grid',
+        // Colonnes latérales de LARGEUR ÉGALE et fixe, pas des 1fr : une
+        // fraction se répartit selon la place restante, donc la colonne de
+        // droite s'élargissait avec son contenu et décentrait la pochette.
+        gridTemplateColumns: `minmax(0, 170px) minmax(0, ${POCH_COUVERTURE}px) minmax(0, 170px)`,
+        justifyContent: 'center',
+        gap: 'var(--e3)', alignItems: 'start',
+        marginBottom: 'var(--e4)',
+      }}>
+        <div aria-hidden="true" />
+
+        <div style={{
+          width: '100%', aspectRatio: '1 / 1', overflow: 'hidden',
+          borderRadius: 'var(--rayon-carte)',
+          border: `${bilan ? '1px' : '0.5px'} solid ${bilan ? 'var(--or)' : 'var(--filet)'}`,
+          background: 'var(--onyx-haut)',
+          transition: 'border-color var(--transition-courte)',
+        }}>
+          {track && (
+            <img
+              src={track.artworkUrl100}
+              alt="Pochette mystère"
+              style={{
+                filter: `blur(${blur}px)`,
+                transform: bilan ? 'scale(1)' : 'scale(1.15)',
+                transition: 'filter 0.5s ease, transform 0.5s ease',
+                display: 'block', width: '100%', height: '100%', objectFit: 'cover',
+              }}
+            />
+          )}
         </div>
-      )}
+
+        {/* Colonne des tentatives : chaque jeton entre par la gauche */}
+        {/* alignItems: flex-start → chaque jeton fait la largeur de son nom,
+            au lieu de s'étirer sur toute la colonne. */}
+        <div style={{
+          textAlign: 'left', display: 'flex', flexDirection: 'column',
+          alignItems: 'flex-start', gap: POCH_JETON_GAP, minWidth: 0,
+        }}>
+          {tried.length > 0 && (
+            <div className="etiquette-mono" style={{
+              color: 'var(--cendre)', height: POCH_ENTETE_H, lineHeight: `${POCH_ENTETE_H}px`,
+            }}>
+              {tried.length}/{POCH_TRIES}
+            </div>
+          )}
+          {tried.map((t, i) => (
+            <div key={`${t.nom}-${i}`} style={{
+              fontFamily: 'var(--sans)', fontSize: POCH_JETON_TXT,
+              height: POCH_JETON_H, boxSizing: 'border-box',
+              display: 'flex', alignItems: 'center',
+              padding: '0 11px', maxWidth: '100%',
+              borderRadius: 'var(--rayon-controle)',
+              background: 'var(--onyx-haut)',
+              color: t.bon ? 'var(--jade)' : 'rgba(226, 75, 74, 0.65)',
+              border: `0.5px solid ${t.bon ? 'var(--jade)' : 'rgba(226, 75, 74, 0.3)'}`,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              animation: 'pochJeton 320ms cubic-bezier(0.22, 1, 0.36, 1) both',
+            }}>
+              {t.nom}
+            </div>
+          ))}
+        </div>
+      </div>
 
       {loadError ? (
         <button onClick={load} style={btn(true, false)}>Réessayer le chargement</button>
       ) : (
         <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap', justifyContent: 'center' }}>
-          <ArtistInput value={input} onChange={setInput} onSubmit={guess} disabled={done || !track} />
+          <ArtistInput
+            value={input} onChange={setInput} onSubmit={guess}
+            disabled={done || !track} erreur={erreur}
+            exclure={tried.map((t) => t.nom)}
+          />
           <button onClick={guess} disabled={done || !track} style={btn(true, done || !track)}>Essayer</button>
         </div>
       )}
 
-      {tried.length > 0 && !done && (
-        <p className="description" style={{ textAlign: 'center', marginTop: 'var(--e3)' }}>
-          Déjà essayé : {tried.join(' · ')}
-        </p>
+      {/* ---- Extrait audio : débloqué au dernier essai ----
+           Pas de survolOr/sortieOr : le survol écraserait l'or de l'état
+           « en lecture » et le sortir le repasserait en ivoire. */}
+      {extraitDispo && (
+        <div style={{ marginTop: 'var(--e3)', textAlign: 'center' }}>
+          <button
+            onClick={enLecture ? basculer : jouerExtrait}
+            disabled={chargementExtrait}
+            style={{
+              ...btn(false, chargementExtrait),
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 'var(--e2)',
+              borderColor: joue ? 'var(--or)' : 'var(--filet-fort)',
+              color: joue ? 'var(--or)' : 'var(--ivoire)',
+            }}
+            aria-label={chargementExtrait ? 'Chargement de l\'extrait'
+              : joue ? 'Mettre en pause l\'extrait'
+                : enPause ? 'Reprendre la lecture de l\'extrait'
+                  : 'Écouter un extrait de l\'album'}
+          >
+            {joue ? (
+              <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
+                <rect x="0" y="0" width="3" height="12" />
+                <rect x="7" y="0" width="3" height="12" />
+              </svg>
+            ) : (
+              <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
+                <path d="M0 0v12l10-6z" />
+              </svg>
+            )}
+            {libelleExtrait}
+          </button>
+        </div>
       )}
 
       <p style={{ ...statusStyle, textAlign: 'center' }}>{status}</p>
-      <ScoreBox score={score} />
+
+      {/* ---- Bilan : posé seulement quand le voile s'est levé ---- */}
+      {score !== null && bilan && (
+        <div style={{
+          marginTop: 'var(--e4)', paddingTop: 'var(--e4)',
+          borderTop: '1px solid var(--or)', textAlign: 'center',
+          animation: 'pochApparition 340ms ease-out both',
+        }}>
+          <div className="score-affiche" style={{
+            color: score >= 9.5 ? 'var(--jade)' : score < 4 ? 'var(--carmin)' : 'var(--ivoire)',
+          }}>
+            {score.toFixed(1).replace('.', ',')} <span style={{ color: 'var(--cendre)' }}>/ 10</span>
+          </div>
+          <p className="description" style={{ marginTop: 'var(--e2)' }}>
+            {score > 0
+              ? <>Trouvé en {tried.length} essai{tried.length > 1 ? 's' : ''} sur {POCH_TRIES} — <span style={{ color: 'var(--or)' }}>{track?.artistName}</span>, « {track?.albumName} »</>
+              : <>Non trouvé en {POCH_TRIES} essais — c'était <span style={{ color: 'var(--or)' }}>{track?.artistName}</span>, « {track?.albumName} »</>}
+          </p>
+
+          {/* Une seule tentative en quotidien : pas de relance là-bas. */}
+          {!daily && (
+            <button
+              onClick={relancer}
+              style={{
+                fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 500,
+                padding: '9px 16px', borderRadius: 'var(--rayon-controle)',
+                marginTop: 'var(--e4)',
+                cursor: 'pointer',
+                background: 'var(--or)',
+                color: 'var(--noir)',
+                border: '1px solid var(--or)',
+                transition: 'background var(--transition-courte)',
+              }}
+            >
+              Nouvelle pochette
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

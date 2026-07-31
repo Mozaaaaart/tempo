@@ -1,6 +1,22 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { panel, seeded } from '@/components/dailyGames';
+import { useVolume } from '@/utils/volume';
+
+/* Gains propres à chaque synthé, en dB. Le volume global de l'en-tête s'y
+   AJOUTE au lieu de les remplacer : le clap doit rester plus fort que le
+   métronome quel que soit le réglage, c'est ce rapport qui rend la grille
+   lisible à l'oreille. */
+const GAIN_CLICK = -14;
+const GAIN_CLAP = 0;
+
+/* useVolume rend un gain linéaire (0 à 1), Tone raisonne en décibels.
+   Le zéro se traite à part : gainToDb(0) vaut -Infinity, mais l'addition
+   d'un gain de base à -Infinity reste -Infinity par chance seulement — on
+   l'écrit explicitement plutôt que de compter dessus. */
+function dbPour(Tone, base, v) {
+  return v > 0 ? base + Tone.gainToDb(v) : -Infinity;
+}
 
 /** Mode libre : survie. Trois vies, le niveau monte tant qu'on tient. */
 const VIES = 3;
@@ -468,6 +484,10 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
   const dailyScoresRef = useRef([]);
   const dailyDoneRef = useRef(false);
 
+  const volume = useVolume();
+  const volumeRef = useRef(volume);
+  const [tonePret, setTonePret] = useState(false);
+
   useEffect(() => {
     import('tone').then((Tone) => {
       toneRef.current = Tone;
@@ -476,12 +496,13 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
         oscillator: { type: 'square' },
         envelope: { attack: 0.001, decay: 0.08, sustain: 0 },
       }).toDestination();
-      clickRef.current.volume.value = -14;
+      clickRef.current.volume.value = dbPour(Tone, GAIN_CLICK, volumeRef.current);
       clapRef.current = new Tone.NoiseSynth({
         noise: { type: 'white' },
         envelope: { attack: 0.001, decay: 0.12, sustain: 0 },
       }).toDestination();
-      clapRef.current.volume.value = 0;
+      clapRef.current.volume.value = dbPour(Tone, GAIN_CLAP, volumeRef.current);
+      setTonePret(true);
     });
 
     function onKey(e) {
@@ -499,6 +520,16 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
       try { clickRef.current?.dispose(); clapRef.current?.dispose(); } catch {}
     };
   }, []);
+
+  // Le curseur de volume doit agir sur les synthés DÉJÀ créés, pas seulement
+  // sur les suivants : sans cet effet, le réglage n'avait aucun effet ici.
+  useEffect(() => {
+    volumeRef.current = volume;
+    const Tone = toneRef.current;
+    if (!Tone) return;
+    if (clickRef.current) clickRef.current.volume.value = dbPour(Tone, GAIN_CLICK, volume);
+    if (clapRef.current) clapRef.current.volume.value = dbPour(Tone, GAIN_CLAP, volume);
+  }, [volume, tonePret]);
 
   // Intro jouée au montage, comme dans l'épreuve Duel : le composant est
   // remonté aussi bien par le clic sur l'onglet Rythme que par « Relancer
@@ -857,12 +888,21 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
             <Donnee etiquette="record" valeur={`niveau ${bestLevel}`} />
           </>
         )}
-        <Donnee etiquette="grille" valeur={`${gridSteps} cases`} />
-        {lastScore !== null && <Donnee etiquette="dernier" valeur={`${lastScore.toFixed(1).replace('.', ',')} / 10`} />}
+        {lastScore !== null && (
+          <Donnee
+            etiquette="dernier score"
+            valeur={`${lastScore.toFixed(1).replace('.', ',')} / 10`}
+          />
+        )}
       </div>
 
-      {/* Bouton de lancement ou badge de phase */}
-      {!running ? (
+      {/* Bouton de lancement ou badge de phase.
+         Après un run libre, la relance descend dans le bloc de bilan, comme
+         « Nouvel accord », « Nouvel artiste » et « Nouvelle pochette » : on
+         redémarre là où on vient de lire son résultat, pas en haut de page.
+         Le mode quotidien garde son bouton ici, puisqu'il n'y a rien à
+         relancer et que l'état « terminé » doit rester visible d'emblée. */}
+      {!running && !(phase === 'gameover' && !daily) && (
         <button onClick={startRun} disabled={dailyFini}
           style={{
             fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 500,
@@ -876,9 +916,13 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
           }}>
           {dailyFini ? 'Terminé pour aujourd\'hui'
             : daily ? 'Commencer l\'épreuve'
-            : phase === 'gameover' ? 'Recommencer' : 'Commencer le jeu'}
+            : 'Commencer le jeu'}
         </button>
-      ) : (
+      )}
+
+      {/* Badge de phase : uniquement pendant un run. phaseBadge n'est défini
+         que pour listen / ready / play — le lire hors run plantait. */}
+      {running && phaseBadge && (
         <div className="etiquette-mono" style={{
           display: 'inline-block', padding: '6px 12px', marginBottom: 'var(--e4)',
           border: `1px solid ${phaseBadge.couleur}`, borderRadius: 'var(--rayon-controle)',
@@ -979,6 +1023,25 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
                   : `Ton record de la session reste le niveau ${bestLevel}.`}
               </p>
             </>
+          )}
+
+          {/* Une seule tentative en quotidien : pas de relance là-bas. */}
+          {!daily && (
+            <button
+              onClick={startRun}
+              style={{
+                fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 500,
+                padding: '9px 16px', borderRadius: 'var(--rayon-controle)',
+                marginTop: 'var(--e4)',
+                cursor: 'pointer',
+                background: 'var(--or)',
+                color: 'var(--noir)',
+                border: '1px solid var(--or)',
+                transition: 'background var(--transition-courte)',
+              }}
+            >
+              Recommencer
+            </button>
           )}
         </div>
       )}

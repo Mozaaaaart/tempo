@@ -1056,7 +1056,10 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
         schedule(() => {
           setPhaseBoth('gameover');
           setRunActif(false);
-          setStatus('Plus de vies. Run terminé.');
+          // Rien à écrire ici : la croix du voile a déjà annoncé la défaite,
+          // et le bilan juste en dessous donne le niveau atteint. Le répéter
+          // en ligne d'état faisait dire trois fois la même chose.
+          setStatus('');
         }, DUREE_DEFAITE);
       } else {
         setAnnonce({
@@ -1403,7 +1406,12 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
       {/* Zone de frappe : le composant porte lui-même sa pédagogie */}
       <ZoneFrappe phase={phase} running={running} impulsion={impulsion} onTap={tap} />
 
-      <p className="lin" style={{ fontSize: 13, minHeight: '1.5em', marginTop: 'var(--e3)' }}>{status}</p>
+      {/* La ligne d'état ne sert qu'en cours de partie : à la fin, le bilan
+         porte tout ce qu'il y a à dire. Retirée plutôt que vidée, sinon sa
+         hauteur minimale laisserait un blanc dans la mise en page. */}
+      {status && (
+        <p className="lin" style={{ fontSize: 13, minHeight: '1.5em', marginTop: 'var(--e3)' }}>{status}</p>
+      )}
 
       {/* Écran de fin */}
       {phase === 'gameover' && (

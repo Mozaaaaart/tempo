@@ -33,9 +33,21 @@ export const INTRO_ARTISTE_TOTAL = 6600;
 
 /* Repère de la scène : largeur fixe, mise à l'échelle sur petit écran. */
 const SCENE_L = 620;
-const SCENE_H = 350;
+
+/* Le menu déroulant d'abord : SCENE_H_BAS en dérive, et `const` n'est
+   accessible qu'à partir de sa ligne de déclaration — le lire plus haut levait
+   « Cannot access before initialization » au chargement du module. */
 const RANGEE = 34;   // hauteur d'une ligne du menu déroulant
+const VISIBLES = 3;    // lignes visibles — trois suffisent et laissent
+                       // respirer le bas du panneau
 const DEFILEMENT = 2;    // lignes parcourues par le défilement
+
+/* Hauteur de centrage, puis dernier pixel occupé menu déployé compris. Le
+   voile rogne ce qui dépasse : la contrainte ci-dessous garantit que la liste
+   déroulante reste entièrement visible quelle que soit la hauteur du panneau. */
+const SCENE_H = 350;
+const SCENE_H_BAS = 266 + RANGEE * VISIBLES;
+const H_CONTRAINTE = 2 * SCENE_H_BAS - SCENE_H;
 
 /* Positions du curseur dans le repère de la scène */
 const REPOS = { x: 430, y: 340 };
@@ -96,7 +108,11 @@ export default function IntroArtiste({ onFin, exclure = null }) {
   useEffect(() => {
     const calc = () => {
       const l = hote.current?.offsetWidth ?? SCENE_L;
-      setEchelle(Math.min(1, (l - 24) / SCENE_L));
+      const h = hote.current?.offsetHeight ?? SCENE_H;
+      // Les DEUX dimensions comptent : le panneau est court tant que le jeu
+      // n'a rien chargé, et ne tenir compte que de la largeur faisait sortir
+      // le titre du cadre, donc disparaître sous l'overflow du voile.
+      setEchelle(Math.min(1, (l - 24) / SCENE_L, (h - 40) / H_CONTRAINTE));
     };
     calc();
     window.addEventListener('resize', calc);
@@ -237,7 +253,7 @@ export default function IntroArtiste({ onFin, exclure = null }) {
           }}>
             {photo && (
               <img
-                src={photo} alt="" width={130} height={130}
+                src={photo} alt="" width={130} height={130} referrerPolicy="no-referrer"
                 style={{
                   width: '100%', height: '100%', objectFit: 'cover', display: 'block',
                   filter: 'blur(20px)', transform: 'scale(1.2)',
@@ -275,7 +291,7 @@ export default function IntroArtiste({ onFin, exclure = null }) {
           {/* ---------- Menu déroulant (par-dessus les indices, comme en jeu) ---------- */}
           <div style={{
             position: 'absolute', top: 266, left: '50%', marginLeft: -150,
-            width: 300, height: RANGEE * 4, overflow: 'hidden', zIndex: 5,
+            width: 300, height: RANGEE * VISIBLES, overflow: 'hidden', zIndex: 5,
             background: 'var(--onyx)',
             border: '0.5px solid var(--or)',
             borderRadius: 'var(--rayon-controle)',
@@ -337,9 +353,14 @@ export default function IntroArtiste({ onFin, exclure = null }) {
             7 essais pour le trouver
           </div>
 
-          {/* ---------- Curseur ---------- */}
+          {/* ---------- Curseur ----------
+               zIndex au-dessus du menu déroulant (5) : sans lui, le curseur
+               passait DERRIÈRE la liste au moment précis où il descend la
+               parcourir, et le geste devenait invisible. En pile, le dernier
+               élément déclaré ne l'emporte que si personne n'a de zIndex — dès
+               qu'un voisin en pose un, il faut trancher explicitement. */}
           <div style={{
-            position: 'absolute', left: 0, top: 0,
+            position: 'absolute', left: 0, top: 0, zIndex: 10,
             animation: `artCurseur ${D_CURSEUR}ms ${T_CURSEUR}ms cubic-bezier(0.5, 0, 0.2, 1) both`,
           }}>
             {[T_CLIC1, T_CLIC2].map((t) => (

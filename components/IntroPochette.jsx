@@ -411,9 +411,12 @@ export default function IntroPochette({ onFin, exclure = null }) {
             </div>
           </div>
 
-          {/* ---------- Curseur ---------- */}
+          {/* ---------- Curseur ----------
+               zIndex au-dessus du menu déroulant (5), même raison que dans
+               l'intro de l'épreuve Artiste : sans lui, le curseur disparaît
+               derrière la liste au moment où il la parcourt. */}
           <div style={{
-            position: 'absolute', left: 0, top: 0,
+            position: 'absolute', left: 0, top: 0, zIndex: 10,
             transform: `translate(${curseur.x}px, ${curseur.y}px)`,
             transition: 'transform 480ms cubic-bezier(0.5, 0, 0.2, 1)',
             opacity: 0,

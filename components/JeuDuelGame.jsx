@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { panel, btn, seeded, ScoreBox, statusStyle } from '@/components/dailyGames';
 import { freshPreviewUrl } from '@/utils/deezer';
 import { useVolume } from '@/utils/volume';
+import { useIntro } from '@/utils/intro';
 
 /**
  * Épreuve « Duel » — face-à-face de popularité.
@@ -24,8 +25,9 @@ import { useVolume } from '@/utils/volume';
 /** Mode quotidien : format fixe, noté sur dix, une seule tentative. */
 const NB_DUELS_QUOTIDIEN = 10;
 
-/** Mode libre : survie. Trois vies, le niveau monte tant qu'on tient. */
-const VIES = 3;
+/** Mode libre : survie à UNE seule vie. Aucune erreur permise — le score est
+    le niveau atteint, comme dans l'épreuve « Humain ou IA ». */
+const VIES = 1;
 
 /**
  * Écart minimum entre les deux morceaux opposés, resserré à mesure que le
@@ -70,9 +72,66 @@ const INTRO_PAS_VIE = 200;                     // écart entre deux pastilles
 /* La légende attend que la dernière pastille soit posée : nommer « 3 vies »
    avant qu'elles ne soient toutes là ferait mentir le compte. */
 const INTRO_LEGENDE = INTRO_VIES + (VIES - 1) * INTRO_PAS_VIE + 300;
-const SORTIE_ACTE_INTRO = DELAI_ENTREE + 1900; // le titre et les vies s'effacent
-const INTRO_VOEU = DELAI_ENTREE + 2200;        // « Bonne chance »
-const DUREE_INTRO = DELAI_ENTREE + 3600;       // durée totale du voile
+const SORTIE_ACTE_INTRO = DELAI_ENTREE + 1500; // le titre et la vie s'effacent
+
+/* ---- Acte II : la démonstration ----
+   Le vœu « Bonne chance » ne disait rien du jeu. À la place, on montre la
+   question posée : deux morceaux, celui de gauche dont on connaît les
+   streams, celui de droite qu'il faut situer au-dessus ou en dessous. Le
+   curseur choisit, le chiffre caché se révèle, le niveau monte.
+
+   L'acte II démarre pendant que l'acte I finit de s'effacer : attendre la
+   fin complète créait un temps mort au milieu de l'intro. */
+/* L'acte II ne peut pas commencer avant que l'acte I n'ait entamé sa sortie :
+   à 1800 ms le titre entrait alors que « Mode survie » et la pastille étaient
+   encore pleinement là, et les deux se lisaient ensemble. On démarre donc
+   juste après le début du fondu — un léger recouvrement enchaîne les deux
+   actes sans temps mort, mais l'ordre reste lisible. */
+const D2 = SORTIE_ACTE_INTRO + 180;
+const D2_TITRE = D2;                  // le nom de l'épreuve
+const D2_REGLE = D2 + 340;            // la règle, une fois le titre posé
+const D2_CARTES = D2 + 620;           // les deux pochettes se posent
+const D2_CHIFFRE = D2 + 1140;          // le nombre de streams de gauche
+const D2_QUESTION = D2 + 1720;        // « plus ou moins ? » et les deux choix
+const D2_CURSEUR = D2 + 2120;
+const D2_CURSEUR_DUREE = 1500;
+const D2_CLIC = D2 + 3220;            // le curseur tranche
+const D2_REVEAL = D2 + 3570;          // le chiffre caché apparaît
+const D2_NIVEAU = D2 + 4220;          // le compteur se pose
+const D2_MONTEE = D2_NIVEAU + 620;    // 1 roule sur 2
+const D2_SORTIE = D2_MONTEE + 1300;
+const DUREE_INTRO = D2_SORTIE + 420;  // durée totale du voile
+
+/* Repère de la scène de démonstration, en pixels. Elle reprend la mise en
+   page du vrai jeu : deux colonnes séparées par un filet et le « vs », la
+   pochette, le titre, l'artiste, le bouton d'écoute — puis le chiffre à
+   gauche et les deux réponses à droite. */
+const DEMO_L = 620;
+const DEMO_H = 504;
+const DEMO_POCHETTE = 132;
+const DEMO_COL = 250;
+
+/* Les deux morceaux de démonstration. Les pochettes viennent de Deezer, comme
+   en jeu : un aplat de couleur ne montrerait pas ce qu'on voit vraiment. */
+const DEMO_GAUCHE = { terme: 'The Weeknd Starboy', titre: 'Starboy', artiste: 'The Weeknd', streams: '2,27 Mds' };
+const DEMO_DROITE = { terme: 'Ed Sheeran Shape of You', titre: 'Shape of You', artiste: 'Ed Sheeran', streams: '4,05 Mds' };
+
+const DEMO_REPOS = { x: 520, y: 424 };
+const DEMO_CIBLE = { x: 372, y: 380 };   // le bouton « plus »
+
+function keyframesCurseurDemo() {
+  const p = (t) => (((t - D2_CURSEUR) / D2_CURSEUR_DUREE) * 100).toFixed(1);
+  const pos = (c, dy = 0) => `translate(${c.x}px, ${c.y + dy}px)`;
+  return `
+    0%   { transform: ${pos(DEMO_REPOS)}; opacity: 0; }
+    10%  { transform: ${pos(DEMO_REPOS)}; opacity: 1; }
+    ${p(D2_CLIC - 60)}%  { transform: ${pos(DEMO_CIBLE)}; }
+    ${p(D2_CLIC)}%       { transform: ${pos(DEMO_CIBLE, 4)}; }
+    ${p(D2_CLIC + 90)}%  { transform: ${pos(DEMO_CIBLE)}; }
+    92%  { transform: ${pos(DEMO_CIBLE)}; opacity: 1; }
+    100% { transform: ${pos(DEMO_CIBLE)}; opacity: 0; }
+  `;
+}
 
 /* ============================================================
    OUTILS
@@ -177,15 +236,59 @@ function Pastilles({ restantes, perdue = null, taille = 18, delai = 0, echelonne
    passée en prop — pas d'état de sortie à gérer côté React.
 ============================================================ */
 
-function Surcouche({ annonce }) {
+function Surcouche({ annonce, onPasser }) {
   const restantes = annonce.restantes ?? 0;
   const finale = Boolean(annonce.finale);
   const intro = annonce.type === 'intro';
 
+  /* Seule la présentation se passe. Les annonces de perte et de défaite ne
+     sont pas des explications mais des résultats : les rendre cliquables
+     ferait sauter son verdict à un joueur qui cliquait encore sur « plus »
+     ou « moins ». */
+  const passable = intro && typeof onPasser === 'function';
+
+  /* Pochettes de la démonstration, chargées dès l'ouverture du voile. L'acte I
+     dure assez longtemps pour qu'elles soient là quand l'acte II arrive ; si
+     la requête échoue, le cadre reste vide et le reste de la scène tient. */
+  const [pochettes, setPochettes] = useState({ gauche: null, droite: null });
+
+  useEffect(() => {
+    if (!intro) return;
+    let annule = false;
+    const chercher = async (terme) => {
+      try {
+        const res = await fetch(`/api/deezer?term=${encodeURIComponent(terme)}&limit=5`);
+        if (!res.ok) return null;
+        const data = await res.json();
+        const t = (data?.data ?? []).find((x) => x.album?.cover_big || x.album?.cover_xl);
+        return t?.album?.cover_big ?? t?.album?.cover_xl ?? null;
+      } catch { return null; }
+    };
+    (async () => {
+      const [gauche, droite] = await Promise.all([
+        chercher(DEMO_GAUCHE.terme),
+        chercher(DEMO_DROITE.terme),
+      ]);
+      if (!annule) setPochettes({ gauche, droite });
+    })();
+    return () => { annule = true; };
+  }, [intro]);
+
   return (
     <div
       data-duel-surcouche
+      onClick={passable ? onPasser : undefined}
+      role={passable ? 'button' : undefined}
+      tabIndex={passable ? 0 : undefined}
+      aria-label={passable ? 'Passer la présentation' : undefined}
+      onKeyDown={passable ? (e) => {
+        if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onPasser();
+        }
+      } : undefined}
       style={{
+        cursor: passable ? 'pointer' : 'default',
         position: 'absolute',
         inset: 0,
         borderRadius: 'inherit',
@@ -253,30 +356,246 @@ function Surcouche({ annonce }) {
                   animation: `duelTexteEntree 320ms ${INTRO_LEGENDE}ms ease-out both`,
                 }}
               >
-                {VIES} vies
+                {VIES} vie{VIES > 1 ? 's' : ''}
               </div>
             </div>
           </div>
 
-          {/* ---- Acte II : le vœu ---- */}
+          {/* ---- Acte II : la démonstration ----
+              Monté dès le départ mais tenu invisible par le `both` de ses
+              animations retardées : rien n'entre dans le flux, donc aucun
+              à-coup de mise en page quand l'acte I s'efface.
+
+              La mise en page reprend celle du jeu — deux colonnes, filet
+              central, « vs » — pour qu'il n'y ait rien à réapprendre entre la
+              présentation et la première manche. */}
           <div style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            position: 'absolute', inset: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
             pointerEvents: 'none',
+            animation: `duelActeSortie 340ms ${D2_SORTIE}ms ease-in both`,
           }}>
-            <span style={{
-              fontFamily: 'var(--mono)',
-              fontSize: 40,
-              fontWeight: 500,
-              lineHeight: 1,
-              color: 'var(--or)',
-              animation: `duelVoeu 480ms ${INTRO_VOEU}ms cubic-bezier(0.34, 1.3, 0.64, 1) both`,
-            }}>
-              Bonne chance
-            </span>
+            <div style={{ position: 'relative', width: DEMO_L, height: DEMO_H }}>
+
+              {/* En-tête : le nom de l'épreuve, puis la règle en une ligne.
+                 La règle attend que le titre soit posé — les deux ensemble se
+                 lisent comme un pavé, l'un après l'autre comme une phrase. */}
+              <div style={{
+                position: 'absolute', top: 0, left: 0, right: 0, textAlign: 'center',
+                fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 500, lineHeight: 1,
+                letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--or)',
+                animation: `duelTexteEntree 340ms ${D2_TITRE}ms ease-out both`,
+              }}>
+                Duel de streams
+              </div>
+
+              <div style={{
+                position: 'absolute', top: 40, left: 0, right: 0, textAlign: 'center',
+                fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 500,
+                letterSpacing: '0.02em', color: 'var(--lin)',
+                animation: `duelTexteEntree 320ms ${D2_REGLE}ms ease-out both`,
+              }}>
+                Lequel des deux a été le plus écouté ?
+              </div>
+
+              {/* Les deux colonnes */}
+              <div style={{
+                position: 'absolute', top: 74, left: 0, right: 0,
+                display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+                animation: `duelTexteEntree 340ms ${D2_CARTES}ms ease-out both`,
+              }}>
+                {[
+                  { d: DEMO_GAUCHE, src: pochettes.gauche, cote: 'gauche' },
+                  { d: DEMO_DROITE, src: pochettes.droite, cote: 'droite' },
+                ].map(({ d: m, src, cote }, i) => (
+                  <div key={cote} style={{
+                    width: DEMO_COL, textAlign: 'center',
+                    borderLeft: i === 1 ? '0.5px solid var(--filet)' : undefined,
+                    paddingLeft: i === 1 ? 'var(--e5)' : undefined,
+                    paddingRight: i === 0 ? 'var(--e5)' : undefined,
+                  }}>
+                    <div style={{
+                      width: DEMO_POCHETTE, height: DEMO_POCHETTE, margin: '0 auto',
+                      borderRadius: 'var(--rayon-carte)', overflow: 'hidden',
+                      background: 'var(--onyx-haut)',
+                      border: '0.5px solid var(--filet)',
+                    }}>
+                      {src && (
+                        <img
+                          src={src} alt="" referrerPolicy="no-referrer"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                        />
+                      )}
+                    </div>
+
+                    <div style={{
+                      fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 500,
+                      color: 'var(--ivoire)', marginTop: 'var(--e3)', lineHeight: 1.2,
+                    }}>
+                      {m.titre}
+                    </div>
+                    <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--lin)', marginTop: 2 }}>
+                      {m.artiste}
+                    </div>
+
+                    {/* Bouton d'écoute, comme en jeu : il n'est pas cliquable
+                        ici, mais il doit être là — c'est par lui qu'on juge. */}
+                    <div style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 8,
+                      marginTop: 'var(--e3)', padding: '8px 14px',
+                      borderRadius: 'var(--rayon-controle)',
+                      border: '0.5px solid var(--filet-fort)',
+                      fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--ivoire)',
+                    }}>
+                      <svg width="9" height="11" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
+                        <path d="M0 0v12l10-6z" />
+                      </svg>
+                      Écouter 15 s
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* « vs » posé sur le filet central */}
+              <div style={{
+                position: 'absolute', top: 126, left: 0, right: 0, textAlign: 'center',
+                fontFamily: 'var(--serif, var(--mono))', fontSize: 22, color: 'var(--cendre)',
+                animation: `duelTexteEntree 340ms ${D2_CARTES + 120}ms ease-out both`,
+              }}>
+                vs
+              </div>
+
+              {/* Bas des deux colonnes.
+
+                  Une seule rangée plutôt que deux blocs posés chacun sur une
+                  moitié : `width: 50%` centrait sur la demi-scène et non sur
+                  la colonne, qui est décalée par sa gouttière — d'où des
+                  chiffres désaxés par rapport aux pochettes.
+
+                  Les deux nombres partagent en prime un emplacement de même
+                  hauteur, donc ils tombent sur la même ligne. */}
+              <div style={{
+                position: 'absolute', top: 326, left: 0, right: 0,
+                display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+              }}>
+                {/* Gauche : le chiffre connu */}
+                <div style={{
+                  width: DEMO_COL, textAlign: 'center', paddingRight: 'var(--e5)',
+                  boxSizing: 'border-box',
+                  opacity: 0,
+                  animation: `duelTexteEntree 340ms ${D2_CHIFFRE}ms ease-out both`,
+                }}>
+                  <div style={{
+                    height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 500, lineHeight: 1,
+                    color: 'var(--or)',
+                  }}>
+                    {DEMO_GAUCHE.streams}
+                  </div>
+                  <div className="etiquette-mono" style={{ color: 'var(--cendre)', marginTop: 4 }}>
+                    streams Spotify
+                  </div>
+                </div>
+
+                {/* Droite : la question, puis la réponse au même endroit */}
+                <div style={{
+                  width: DEMO_COL, textAlign: 'center', paddingLeft: 'var(--e5)',
+                  boxSizing: 'border-box',
+                }}>
+                  <div style={{ position: 'relative', height: 26 }}>
+                    <div className="etiquette-mono" style={{
+                      position: 'absolute', inset: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: 'var(--lin)', opacity: 0,
+                      animation: `duelTexteEntree 320ms ${D2_QUESTION}ms ease-out both, demoSort 240ms ${D2_REVEAL - 80}ms ease-in forwards`,
+                    }}>
+                      plus ou moins qu&apos;à gauche ?
+                    </div>
+
+                    <div style={{
+                      position: 'absolute', inset: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 500, lineHeight: 1,
+                      color: 'var(--jade)', opacity: 0,
+                      animation: `duelTexteEntree 340ms ${D2_REVEAL}ms ease-out both`,
+                    }}>
+                      {DEMO_DROITE.streams}
+                    </div>
+                  </div>
+
+                  <div style={{
+                    display: 'flex', gap: 'var(--e2)', justifyContent: 'center', marginTop: 'var(--e3)',
+                  }}>
+                    {[
+                      { txt: 'plus', fleche: '↑', choisi: true },
+                      { txt: 'moins', fleche: '↓', choisi: false },
+                    ].map((b) => (
+                      <div key={b.txt} style={{
+                        width: 104, height: 52, boxSizing: 'border-box',
+                        display: 'inline-flex', flexDirection: 'column',
+                        alignItems: 'center', justifyContent: 'center', gap: 2,
+                        borderRadius: 'var(--rayon-carte)',
+                        background: 'var(--onyx-haut)',
+                        border: '0.5px solid var(--filet-fort)',
+                        opacity: 0,
+                        animation: b.choisi
+                          ? `duelTexteEntree 320ms ${D2_QUESTION + 160}ms ease-out both, demoJuste 380ms ${D2_CLIC + 120}ms ease-out forwards`
+                          : `duelTexteEntree 320ms ${D2_QUESTION + 160}ms ease-out both, demoEcarte 380ms ${D2_CLIC + 120}ms ease-out forwards`,
+                      }}>
+                        <span style={{ fontSize: 15, color: 'var(--or)' }}>{b.fleche}</span>
+                        <span className="etiquette-mono" style={{ color: 'var(--ivoire)' }}>{b.txt}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Ce qu'on gagne : le niveau monte d'un cran.
+
+                 Posé sous la rangée du bas, boutons compris : celle-ci
+                 commence à 252 et descend jusqu'à 356 avec ses cartes de
+                 52 px. Le compteur venait donc se loger dans leur ombre. */}
+              <div style={{
+                position: 'absolute', top: 458, left: 0, right: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--e2)',
+                opacity: 0,
+                animation: `duelTexteEntree 340ms ${D2_NIVEAU}ms ease-out both`,
+              }}>
+                <span className="etiquette-mono" style={{ color: 'var(--cendre)' }}>niveau</span>
+                <span style={{
+                  position: 'relative', display: 'inline-block',
+                  width: 20, height: 30, overflow: 'hidden',
+                  fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 500, lineHeight: '30px',
+                }}>
+                  <span style={{
+                    position: 'absolute', inset: 0, color: 'var(--lin)',
+                    animation: `demoChiffreSort 560ms ${D2_MONTEE}ms cubic-bezier(0.22, 1, 0.36, 1) both`,
+                  }}>1</span>
+                  <span style={{
+                    position: 'absolute', inset: 0, color: 'var(--or)',
+                    animation: `demoChiffreEntre 560ms ${D2_MONTEE}ms cubic-bezier(0.22, 1, 0.36, 1) both`,
+                  }}>2</span>
+                </span>
+              </div>
+
+              {/* Curseur */}
+              <div style={{
+                position: 'absolute', left: 0, top: 0,
+                animation: `demoCurseur ${D2_CURSEUR_DUREE}ms ${D2_CURSEUR}ms cubic-bezier(0.5, 0, 0.2, 1) both`,
+              }}>
+                <div style={{
+                  position: 'absolute', left: -9, top: -9, width: 22, height: 22,
+                  border: '1px solid var(--or-clair)', borderRadius: '50%', opacity: 0,
+                  animation: `demoOnde 460ms ${D2_CLIC - 40}ms ease-out both`,
+                }} />
+                <svg width="16" height="21" viewBox="0 0 16 21" style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.8))' }}>
+                  <path
+                    d="M0 0 L0 17 L4.6 12.9 L7.4 18.6 L10.2 17.3 L7.5 11.8 L13.4 11.8 Z"
+                    fill="var(--ivoire)" stroke="var(--noir)" strokeWidth={1} strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
+            </div>
           </div>
         </>
       ) : (
@@ -317,7 +636,7 @@ function Surcouche({ annonce }) {
               }}
             >
               {restantes === 0
-                ? 'plus de vies'
+                ? 'plus de vie'
                 : `${restantes} vie${restantes > 1 ? 's' : ''} restante${restantes > 1 ? 's' : ''}`}
             </div>
           </div>
@@ -488,6 +807,10 @@ function BoutonChoix({ sens, onClick }) {
 ============================================================ */
 
 export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
+  // Vraie seulement si l'on vient d'arriver sur l'épreuve : useIntro compare
+  // le couple (épreuve, clé de relance) au montage précédent, ce qui sépare
+  // une navigation d'un clic sur « Relancer l'épreuve ».
+  const introAutorisee = useIntro('duel');
   const [phase, setPhase] = useState('chargement'); // chargement | jeu | revelation | fin | erreur
   const [reference, setReference] = useState(null);
   const [challenger, setChallenger] = useState(null);
@@ -669,9 +992,9 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
 
   /**
    * (Re)mélange le pool complet et pose la première paire. Appelé au
-   * chargement, puis à chaque « Nouveau run » depuis l'écran de fin.
+   * chargement, puis à chaque « Recommencer » depuis l'écran de fin.
    */
-  const demarrerRun = useCallback(() => {
+  const demarrerRun = useCallback((avecIntro = false) => {
     couperAudio();
     clearTimeout(minuteurSuiteRef.current);
     clearTimeout(minuteurFinRef.current);
@@ -691,10 +1014,12 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
     setDuel(1);
     setJuste(null);
     setPromotion(false);
-    // L'intro n'a de sens qu'en mode libre : le quotidien n'a ni vies ni
-    // survie à annoncer, et son format court supporte mal quatre secondes
-    // de cérémonie avant la première manche.
-    setAnnonce(daily ? null : { type: 'intro', duree: DUREE_INTRO });
+    /* L'intro n'a de sens qu'en mode libre : le quotidien n'a ni vies ni
+       survie à annoncer, et son format court supporte mal la cérémonie.
+       Elle ne se joue qu'à l'ARRIVÉE sur l'épreuve — pas sur « Recommencer »,
+       qui passe pourtant par la même fonction, ni sur « Relancer l'épreuve »,
+       que useIntro distingue d'une navigation. */
+    setAnnonce(!daily && avecIntro ? { type: 'intro', duree: DUREE_INTRO } : null);
     setMessage('');
     setReference(premiere);
     setChallenger(second);
@@ -720,7 +1045,7 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
 
         morceauxRef.current = morceaux;
         rngRef.current = daily ? seeded('duel') : Math.random;
-        demarrerRun();
+        demarrerRun(introAutorisee);
       } catch (err) {
         if (!vivant) return;
         console.error('Duel — chargement:', err);
@@ -816,7 +1141,16 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
   useEffect(() => {
     if (!annonce) return;
     const t = setTimeout(() => setAnnonce(null), annonce.duree);
-    return () => clearTimeout(t);
+    // Échap passe aussi la présentation, sans avoir à viser le voile. Réservé
+    // à l'intro, pour la même raison que le clic.
+    const surTouche = (e) => {
+      if (e.key === 'Escape' && annonce.type === 'intro') setAnnonce(null);
+    };
+    window.addEventListener('keydown', surTouche);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('keydown', surTouche);
+    };
   }, [annonce]);
 
   /* ---------- Rendu ---------- */
@@ -871,6 +1205,29 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
           from { opacity: 0; transform: scale(0.2); }
           to   { opacity: 1; transform: scale(1); }
         }
+        @keyframes demoSort {
+          to { opacity: 0; transform: translateY(-6px); }
+        }
+        @keyframes demoJuste {
+          to { border-color: var(--jade); color: var(--jade); }
+        }
+        @keyframes demoEcarte {
+          to { opacity: 0.28; }
+        }
+        @keyframes demoOnde {
+          0%   { opacity: 0; transform: scale(0.3); }
+          25%  { opacity: 0.8; transform: scale(0.3); }
+          100% { opacity: 0; transform: scale(2.6); }
+        }
+        @keyframes demoChiffreSort {
+          from { opacity: 1; transform: translateY(0); }
+          to   { opacity: 0; transform: translateY(-30px); }
+        }
+        @keyframes demoChiffreEntre {
+          from { opacity: 0; transform: translateY(30px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes demoCurseur {${keyframesCurseurDemo()}}
         @keyframes duelVoeu {
           from { opacity: 0; transform: scale(0.9); letter-spacing: 0.18em; }
           to   { opacity: 1; transform: scale(1); letter-spacing: normal; }
@@ -913,7 +1270,17 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
         ) : (
           <>
             <Donnee etiquette="niveau" valeur={niveau} accent />
-            <Donnee etiquette="vies" valeur={'●'.repeat(Math.max(0, vies)) + '○'.repeat(VIES - Math.max(0, vies))} />
+            {/* Les deux comptes sont bornés à [0, VIES] : repeat() lève un
+               RangeError sur un nombre négatif, ce qui arrivait dès que
+               `vies` et `VIES` divergeaient — au rechargement à chaud après
+               un changement de la constante, par exemple. */}
+            <Donnee
+              etiquette={`vie${VIES > 1 ? 's' : ''}`}
+              valeur={
+                '●'.repeat(Math.max(0, Math.min(VIES, vies)))
+                + '○'.repeat(Math.max(0, VIES - Math.max(0, Math.min(VIES, vies))))
+              }
+            />
             <Donnee etiquette="record" valeur={`niveau ${record}`} />
           </>
         )}
@@ -1009,17 +1376,17 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
                 : `Ton record de la session reste le niveau ${record}.`}
             </p>
             <button
-              onClick={demarrerRun}
+              onClick={() => demarrerRun(false)}
               style={{ ...btn(true, false), marginTop: 'var(--e4)' }}
             >
-              Nouveau run
+              Recommencer
             </button>
           </div>
         )
       )}
 
       {/* ---- Surcouche : placée en dernier pour passer au-dessus de tout ---- */}
-      {annonce && <Surcouche annonce={annonce} />}
+      {annonce && <Surcouche annonce={annonce} onPasser={() => setAnnonce(null)} />}
     </div>
   );
 }

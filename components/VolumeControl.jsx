@@ -1,6 +1,6 @@
 'use client';
 import { useRef } from 'react';
-import { useVolume, ecrireVolume } from '@/utils/volume';
+import { useNiveau, ecrireVolume, useActif, ecrireActif } from '@/utils/volume';
 
 /**
  * Curseur de volume pour les pages d'épreuve.
@@ -16,8 +16,16 @@ import { useVolume, ecrireVolume } from '@/utils/volume';
  * second clic le restaure — exactement comme sur la page d'accueil.
  */
 export default function VolumeControl({ compact = false }) {
-  const volume = useVolume();
-  const coupe = volume === 0;
+  /* Le curseur affiche le NIVEAU, pas le volume effectif : une coupure ne doit
+     pas ramener la poignée à zéro, sinon le réglage est perdu et le
+     rétablissement repart d'une valeur arbitraire. */
+  const volume = useNiveau();
+  const actif = useActif();
+  /* Coupé si le niveau est à zéro OU si l'ambiance a été éteinte depuis
+     l'accueil. Sans ce second cas, le bouton affichait un haut-parleur intact
+     alors que le site était silencieux, et le rétablir ici n'avait aucun
+     effet — il fallait retourner sur l'accueil. */
+  const coupe = volume === 0 || !actif;
   const taille = compact ? 28 : 34;
 
   // Mémorise le dernier niveau non nul, pour le restaurer au clic suivant.
@@ -26,11 +34,17 @@ export default function VolumeControl({ compact = false }) {
   const dernierVolumeRef = useRef(0.5);
   if (volume > 0) dernierVolumeRef.current = volume;
 
+  /* Les deux réglages basculent ensemble : couper ici éteint aussi l'ambiance,
+     rétablir la rallume. C'est la seule façon d'avoir un contrôle qui tienne
+     sa promesse depuis n'importe quelle page — un bouton « son coupé » qui ne
+     lève que la moitié de la coupure n'est pas un bouton, c'est un piège. */
   function basculerCoupure() {
     if (coupe) {
-      ecrireVolume(dernierVolumeRef.current || 0.5);
+      if (volume === 0) ecrireVolume(dernierVolumeRef.current || 0.5);
+      ecrireActif(true);
     } else {
       ecrireVolume(0);
+      ecrireActif(false);
     }
   }
 
@@ -109,7 +123,13 @@ export default function VolumeControl({ compact = false }) {
         max="1"
         step="0.01"
         value={volume}
-        onChange={(e) => ecrireVolume(parseFloat(e.target.value))}
+        onChange={(e) => {
+          const v = parseFloat(e.target.value);
+          ecrireVolume(v);
+          // Remonter le curseur depuis zéro rallume l'ambiance : sinon le son
+          // resterait absent alors que le curseur affiche un niveau.
+          if (v > 0 && !actif) ecrireActif(true);
+        }}
         aria-label="Volume du son de jeu"
         aria-valuetext={`${Math.round(volume * 100)} %`}
         className="mb-volume-e"

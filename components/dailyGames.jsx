@@ -6,6 +6,10 @@ import { useVolume } from '@/utils/volume';
 import { useIntro } from '@/utils/intro';
 import IntroArtiste, { ResultatArtiste, RES_ARTISTE_TOTAL } from './IntroArtiste';
 import IntroPochette, { ResultatPochette, RES_POCHETTE_TOTAL } from './IntroPochette';
+import IntroSeconde, { ResultatSeconde, RES_SECONDE_TOTAL } from './IntroSeconde';
+import IntroBPM, { ResultatBPM, RES_BPM_TOTAL } from './IntroBPM';
+import IntroInstrument, { ResultatInstrument, RES_INSTRUMENT_TOTAL } from './IntroInstrument';
+import IntroRefrain, { ResultatRefrain, RES_REFRAIN_TOTAL } from './IntroRefrain';
 
 /* ============================================================
    UTILITAIRES SEED — même défi pour tous dans le Quotidien,
@@ -112,11 +116,24 @@ export function useLecteurAudio() {
   // la suivante : on garde la valeur en ref pour les démarrages, et on la
   // pousse sur l'élément audio à chaque changement.
   const volumeRef = useRef(volume);
+  /* Atténuation ponctuelle, indépendante du curseur global : elle permet à un
+     jeu de faire de la place à un autre son — le métronome de l'épreuve BPM,
+     qui doit rester audible par-dessus l'extrait. Vaut 1 partout ailleurs. */
+  const attenuationRef = useRef(1);
+
+  function appliquerVolume() {
+    if (audioRef.current) audioRef.current.volume = volumeRef.current * attenuationRef.current;
+  }
+
   useEffect(() => {
-    const v = Math.max(0, Math.min(1, Number(volume) || 0));
-    volumeRef.current = v;
-    if (audioRef.current) audioRef.current.volume = v;
+    volumeRef.current = Math.max(0, Math.min(1, Number(volume) || 0));
+    appliquerVolume();
   }, [volume]);
+
+  function attenuer(coef) {
+    attenuationRef.current = Math.max(0, Math.min(1, Number(coef) || 0));
+    appliquerVolume();
+  }
 
   function arreter() {
     clearTimeout(timerRef.current);
@@ -146,7 +163,7 @@ export function useLecteurAudio() {
   function jouer(url, secondes, { depart = 0, onFin } = {}) {
     arreter();
     const a = new Audio(url);
-    a.volume = volumeRef.current;
+    a.volume = volumeRef.current * attenuationRef.current;
     audioRef.current = a;
     finRef.current = onFin ?? null;
     if (depart) a.currentTime = depart;
@@ -179,7 +196,7 @@ export function useLecteurAudio() {
 
   function reprendre() {
     if (!audioRef.current || !pauseRef.current) return;
-    audioRef.current.volume = volumeRef.current;
+    audioRef.current.volume = volumeRef.current * attenuationRef.current;
     audioRef.current.play().catch((e) => console.error('Lecture impossible:', e));
     if (restantRef.current > 0) {
       departRef.current = Date.now();
@@ -194,7 +211,7 @@ export function useLecteurAudio() {
     pauseRef.current ? reprendre() : pause();
   }
 
-  return { jouer, arreter, pause, reprendre, basculer, enLecture, enPause };
+  return { jouer, arreter, pause, reprendre, basculer, attenuer, enLecture, enPause };
 }
 
 export const inputStyle = {
@@ -1054,8 +1071,25 @@ export function JeuPochette({ onDone, daily = false }) {
 
 /* ================= 3 · TROUVE LE BPM ================= */
 const BPM_MIN = 60, BPM_MAX = 180;
+const BPM_EXTRAIT_SEC = 15;
+/* Le métronome tourne en boucle jusqu'à nouveau clic, et se programme UN
+   BATTEMENT À LA FOIS. Par tranches de huit, bouger le curseur ne changeait
+   rien avant la tranche suivante — jusqu'à quatre secondes d'attente. Chaque
+   battement relit le tempo courant : le réglage s'entend au coup d'après. */
+const BPM_AVANCE = 0.06;    // secondes de marge pour programmer le battement suivant
 
-export function JeuBPM({ onDone }) {
+export function JeuBPM({ onDone, daily = false }) {
+  // Manche 0 : le morceau du jour, tiré par la graine — identique pour tous.
+  const [manche, setManche] = useState(0);
+  // L'intro ne se joue qu'à l'arrivée sur l'épreuve, pas sur une relance.
+  const [intro, setIntro] = useState(useIntro('tempo'));
+  // Surcouche de résultat, posée à la validation puis retirée seule.
+  const [resultat, setResultat] = useState(null);
+  // Le bilan du bas attend que le voile soit levé : deux fois le même chiffre
+  // au même instant se contrediraient.
+  const [bilan, setBilan] = useState(false);
+  const bilanTimer = useRef(null);
+
   const [track, setTrack] = useState(null);
   const [realBpm, setRealBpm] = useState(null);
   const [loadError, setLoadError] = useState(false);
@@ -1064,40 +1098,150 @@ export function JeuBPM({ onDone }) {
   const [status, setStatus] = useState('Chargement du morceau du jour…');
   const [score, setScore] = useState(null);
   const [tone, setTone] = useState(null);
-  const { jouer, arreter } = useLecteurAudio();
+  const [metroActif, setMetroActif] = useState(false);
+  const [chargementAudio, setChargementAudio] = useState(false);
+  const metroTimer = useRef(null);
+  const clickRef = useRef(null);     // voix unique du métronome
+  const filtreRef = useRef(null);    // passe-bande qui le resserre
+  const limiteurRef = useRef(null);  // garde-fou contre l'écrêtage
+  const metroActifRef = useRef(false);
+  const guessRef = useRef(110);
+  const dernierBeatRef = useRef(0);   // date du dernier battement joué
+  const indexBeatRef = useRef(0);
+  const volume = useVolume();
+  const { jouer, arreter, basculer, attenuer, enLecture, enPause } = useLecteurAudio();
+
+  /* Voix du métronome : toujours un MembraneSynth — donc une percussion, dans
+     la famille de l'épreuve Rythme — mais adouci pour qu'on puisse le laisser
+     tourner sous l'extrait sans fatigue.
+
+     C'est exactement la frappe de l'épreuve Rythme : un NoiseSynth en bruit
+     blanc, mêmes réglages d'enveloppe. Le joueur qui a réglé son oreille sur
+     cette épreuve retrouve le même repère ici — c'est tout l'intérêt de ne pas
+     inventer un troisième timbre.
+
+     Trois réglages, parce qu'ici le métronome peut tourner en continu alors
+     que dans le Rythme il ne dure qu'une mesure :
+
+     · bruit ROSE plutôt que blanc — même famille, mais son énergie décroît
+       avec la fréquence au lieu d'être plate, ce qui retire le sifflement
+       aigu qui fatigue à la longue ;
+     · déclin court (60 ms) et PASSE-BANDE plutôt que passe-bas : ne garder
+       qu'une tranche autour de 1,6 kHz transforme le « chhh » en tic net.
+       Un passe-bas laissait tout le grave passer, d'où un son sale ;
+     · LIMITEUR en sortie. C'était la vraie cause du grain : pousser le gain
+       de +9 dB sur un bruit à large bande écrêtait les crêtes, et un
+       écrêtage numérique s'entend comme de la distorsion granuleuse. Le
+       limiteur tient le niveau sans jamais dépasser, donc on peut viser fort
+       proprement.
+
+     Une seule voix, sans temps fort : ici on ne cherche pas le début de la
+     mesure, seulement la vitesse. */
+  useEffect(() => {
+    let annule = false;
+    import('tone').then((T) => {
+      if (annule) return;
+      setTone(T);
+      // Limiteur au ras du maximum : il ne sert plus qu'à empêcher
+      // l'écrêtage, tout le niveau utile passe.
+      const limiteur = new T.Limiter(-0.5).toDestination();
+      // Passe-bande élargi : un Q de 1,1 ne laissait qu'une tranche étroite
+      // du spectre, ce qui bridait le niveau perçu. Plus ouvert, la frappe
+      // porte davantage à réglage égal, sans redevenir stridente.
+      const adoucisseur = new T.Filter({
+        type: 'bandpass', frequency: 1800, rolloff: -12, Q: 0.6,
+      }).connect(limiteur);
+      clickRef.current = new T.NoiseSynth({
+        noise: { type: 'pink' },
+        envelope: { attack: 0.001, decay: 0.06, sustain: 0 },
+      }).connect(adoucisseur);
+      filtreRef.current = adoucisseur;
+      limiteurRef.current = limiteur;
+    });
+    return () => {
+      annule = true;
+      metroActifRef.current = false;
+      clearTimeout(metroTimer.current);
+      try { clickRef.current?.dispose(); filtreRef.current?.dispose(); limiteurRef.current?.dispose(); } catch {}
+    };
+  }, []);
+
+  // Le curseur de volume agit sur le synthé DÉJÀ créé, pas seulement sur les
+  // suivants : sans cet effet, le réglage resterait sans effet en cours de
+  // lecture.
+  function appliquerGainMetro(actif = true) {
+    if (!tone || !clickRef.current) return;
+    clickRef.current.volume.value = actif && volume > 0
+      ? 20 + tone.gainToDb(volume)
+      : -Infinity;
+  }
 
   useEffect(() => {
-    import('tone').then(setTone);
-    load();
+    appliquerGainMetro(metroActifRef.current);
+  }, [tone, volume]);
+
+  /* Déplacer le curseur pendant que le métronome tourne doit s'entendre tout
+     de suite. Relire le tempo au battement suivant suffisait en théorie, mais
+     à 60 BPM cela laissait jusqu'à une seconde d'attente : on croyait devoir
+     relâcher la souris. On replanifie donc le prochain battement à partir du
+     dernier joué, avec le nouvel intervalle. */
+  useEffect(() => {
+    guessRef.current = guess;
+    if (!metroActifRef.current || !tone) return;
+    clearTimeout(metroTimer.current);
+    const spb = 60 / guess;
+    // On repart du dernier battement pour ne pas casser la pulsation ; si ce
+    // point est déjà passé, on prend le prochain instant utile.
+    const suivant = Math.max(dernierBeatRef.current + spb, tone.now() + 0.04);
+    metroTimer.current = setTimeout(
+      () => programmerBattement(suivant, indexBeatRef.current + 1),
+      Math.max(0, (suivant - tone.now() - BPM_AVANCE) * 1000)
+    );
+  }, [guess, tone]);
+  useEffect(() => { load(); }, [manche]);
+  useEffect(() => () => {
+    clearTimeout(metroTimer.current);
+    clearTimeout(bilanTimer.current);
   }, []);
+
+  useEffect(() => {
+    if (resultat === null) return;
+    const t = setTimeout(() => setResultat(null), RES_BPM_TOTAL);
+    return () => clearTimeout(t);
+  }, [resultat]);
 
   async function load() {
     setLoadError(false);
-    setStatus('Chargement du morceau du jour…');
+    setStatus('Chargement du morceau…');
     try {
-      const rng = seeded('bpm');
+      const rng = manche === 0 ? seeded('bpm') : Math.random;
       // Essaie jusqu'à 5 artistes différents (certains n'ont aucun BPM chez Deezer)
       const artistStart = Math.floor(rng() * ARTISTS.length);
       let found = null;
 
-      for (let a = 0; a < 5 && !found; a++) {
+      for (let a = 0; a < 8 && !found; a++) {
         const artist = ARTISTS[(artistStart + a * 17) % ARTISTS.length];
         const tracks = await searchTracks(artist.nom, { limit: 25 });
         if (!tracks.length) continue;
 
         const start = Math.floor(rng() * tracks.length);
-        for (let i = 0; i < Math.min(tracks.length, 6); i++) {
+        for (let i = 0; i < Math.min(tracks.length, 10); i++) {
           const t = tracks[(start + i) % tracks.length];
           const d = await trackDetails(t.trackId);
-          if (d.bpm && d.bpm > 0) { found = { ...t, bpm: Math.round(d.bpm) }; break; }
+          const bpm = d.bpm ? Math.round(d.bpm) : 0;
+          // Le morceau doit être ATTEIGNABLE avec le curseur, dont l'échelle
+          // s'arrête à BPM_MIN et BPM_MAX. Un tempo hors bornes rendait la
+          // partie injouable — le repère de la bonne réponse se collait au
+          // bord et le score plafonnait sans qu'on puisse mieux faire.
+          if (bpm >= BPM_MIN && bpm <= BPM_MAX) { found = { ...t, bpm }; break; }
         }
       }
 
-      if (!found) throw new Error('Aucun BPM trouvé après plusieurs artistes');
+      if (!found) throw new Error(`Aucun morceau entre ${BPM_MIN} et ${BPM_MAX} BPM après plusieurs artistes`);
 
       setTrack(found);
       setRealBpm(found.bpm);
-      setStatus('Écoute l\'extrait (7 s), règle le curseur, puis valide.');
+      setStatus(`Écoute l'extrait, règle le tempo, puis valide.`);
     } catch (err) {
       console.error('Erreur BPM:', err);
       setLoadError(true);
@@ -1106,169 +1250,452 @@ export function JeuBPM({ onDone }) {
   }
 
   async function playClip() {
-    if (!track) return;
-    const url = (await freshPreviewUrl(track.trackId)) ?? track.previewUrl;
-    jouer(url, 7);
+    if (!track || chargementAudio) return;
+    if (enLecture) { basculer(); return; }
+    setChargementAudio(true);
+    try {
+      const url = (await freshPreviewUrl(track.trackId)) ?? track.previewUrl;
+      if (url) jouer(url, BPM_EXTRAIT_SEC);
+    } catch (err) {
+      console.error('BPM — lecture:', err);
+    } finally {
+      setChargementAudio(false);
+    }
   }
 
+  /* Bascule : un clic lance, un autre arrête. Le métronome ne s'interrompt
+     pas tout seul — on règle un tempo en l'écoutant tourner, pas en le
+     relançant toutes les huit mesures. */
   async function testMetro() {
-    if (!tone) return;
+    if (!tone || !clickRef.current) return;
+    if (metroActifRef.current) { stopMetro(); return; }
+
     await tone.start();
-    const synth = new tone.MembraneSynth({
-      pitchDecay: 0.005, octaves: 3,
-      oscillator: { type: 'square' },
-      envelope: { attack: 0.001, decay: 0.08, sustain: 0 },
-    }).toDestination();
-    synth.volume.value = 6;
-    const t0 = tone.now() + 0.15;
-    const spb = 60 / guess;
-    for (let b = 0; b < 6; b++) {
-      synth.triggerAttackRelease(b === 0 ? 'A5' : 'E5', '32n', t0 + b * spb);
-    }
-    setTimeout(() => synth.dispose(), (6 * spb + 1) * 1000);
+    metroActifRef.current = true;
+    setMetroActif(true);
+    appliquerGainMetro(true);
+    dernierBeatRef.current = 0;
+    indexBeatRef.current = 0;
+    // L'extrait recule pendant que le métronome bat : les deux occupent la
+    // même bande de fréquences, monter le métronome seul ne l'aurait pas
+    // rendu plus lisible.
+    attenuer(0.18);
+    programmerBattement(tone.now() + 0.15, 0);
+  }
+
+  function stopMetro() {
+    metroActifRef.current = false;
+    clearTimeout(metroTimer.current);
+    setMetroActif(false);
+    attenuer(1);
+    /* Le minuteur n'annule que les battements PAS ENCORE programmés. Tone
+       planifie le suivant jusqu'à 60 ms à l'avance, et un son déjà posé sur
+       sa timeline sonnera quoi qu'il arrive : on coupe donc le gain, seul
+       moyen de le faire taire. Il est rétabli au prochain démarrage. */
+    appliquerGainMetro(false);
+  }
+
+  /* Programme UN battement, puis se rappelle juste avant le suivant.
+     `t` est daté sur l'horloge de Tone, pas sur celle du navigateur : c'est
+     ce qui garde le tempo régulier même si le fil principal est occupé. Le
+     setTimeout ne sert qu'à revenir à temps pour programmer la suite. */
+  function programmerBattement(t, index) {
+    if (!metroActifRef.current || !tone) return;
+    dernierBeatRef.current = t;
+    indexBeatRef.current = index;
+
+    // Toutes les pulsations sonnent pareil : même note, même durée. Un temps
+    // fort dessinerait une mesure là où l'épreuve ne demande qu'une vitesse.
+    clickRef.current?.triggerAttackRelease('16n', t);
+
+    // Le tempo est relu ICI, à chaque battement : déplacer le curseur pendant
+    // que le métronome tourne s'entend dès la pulsation suivante.
+    const spb = 60 / guessRef.current;
+    const suivant = t + spb;
+    metroTimer.current = setTimeout(
+      () => programmerBattement(suivant, index + 1),
+      Math.max(20, (suivant - tone.now() - BPM_AVANCE) * 1000)
+    );
   }
 
   function validate() {
     if (done || realBpm === null) return;
     setDone(true);
+    // Couper les DEUX sources : l'extrait et le métronome. Sans stopMetro, le
+    // métronome continuait de battre sous le voile de score.
     arreter();
+    stopMetro();
     const diff = Math.abs(guess - realBpm);
     const s = Math.round(Math.max(0, diff <= 2 ? 10 : 10 - (diff - 2) * 0.4) * 10) / 10;
-    setScore(s);
     onDone(s);
-    setStatus(diff === 0
-      ? `Tempo exact. ${track.artistName} — ${track.trackName}.`
-      : `${diff} BPM d'écart. ${track.artistName} — ${track.trackName}.`);
+    setResultat(s);
+    bilanTimer.current = setTimeout(() => {
+      setScore(s);
+      setBilan(true);
+    }, RES_BPM_TOTAL);
+    // Rien à dire ici : l'écart s'affiche juste au-dessus en couleur, le
+    // morceau et le BPM réel dans le bilan. La ligne d'état se tait plutôt
+    // que de répéter l'un ou l'autre.
+    setStatus('');
+  }
+
+  function relancer() {
+    arreter();
+    stopMetro();
+    clearTimeout(bilanTimer.current);
+    setResultat(null);
+    setBilan(false);
+    setManche((m) => m + 1);
+    setTrack(null);
+    setRealBpm(null);
+    setGuess(110);
+    setDone(false);
+    setScore(null);
+    setMetroActif(false);
   }
 
   // Position d'une valeur sur la barre, en pourcentage
   const pos = (v) => ((Math.min(Math.max(v, BPM_MIN), BPM_MAX) - BPM_MIN) / (BPM_MAX - BPM_MIN)) * 100;
   const juste = done && Math.abs(guess - realBpm) <= 2;
   const couleurResultat = !done ? 'var(--or)' : juste ? 'var(--jade)' : 'rgba(226, 75, 74, 0.75)';
+  /* Le disque ne prend l'or que pendant qu'il bat : au repos il reste ivoire,
+     comme le disque d'écoute de « Une seconde de plus ». La barre de réglage,
+     elle, garde `couleurResultat` — c'est elle qui porte le verdict. */
+  const couleurDisque = done ? couleurResultat : metroActif ? 'var(--or)' : 'var(--ivoire)';
+  const joue = enLecture && !enPause;
 
   return (
-    <div style={panel}>
+    <div style={{ ...panel, position: 'relative', textAlign: 'center' }}>
       <style>{`
         @keyframes reveleCible {
           from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
           to   { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
+        @keyframes bpmHalo {
+          0%   { opacity: 0.5; transform: scale(1); }
+          100% { opacity: 0;   transform: scale(1.45); }
+        }
+        @keyframes bpmBattement {
+          0%   { transform: scale(1);    opacity: 1; }
+          22%  { transform: scale(1.07); opacity: 1; }
+          100% { transform: scale(1);    opacity: 1; }
+        }
+        @keyframes bpmApparition {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
 
+      {intro && <IntroBPM onFin={() => setIntro(false)} />}
+      {resultat !== null && (
+        <ResultatBPM
+          score={resultat}
+          detail={track ? `${track.trackName} — ${track.artistName}, ${realBpm} BPM` : null}
+        />
+      )}
+
       <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Trouve le BPM</h3>
-      <p className="description" style={{ marginBottom: 'var(--e4)' }}>
-        Sept secondes d'écoute, puis règle le curseur. Le métronome est là pour comparer.
+      <p className="description" style={{ maxWidth: 470, margin: '0 auto var(--e5)' }}>
+        Le BPM est le nombre de battements par minute. Écoute l&apos;extrait, règle le tempo,
+        et compare-le au métronome.
       </p>
 
       {loadError ? (
         <button onClick={load} style={btn(true, false)}>Réessayer le chargement</button>
       ) : (
         <>
-          <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap' }}>
-            <button onClick={playClip} disabled={!track} style={btn(false, !track)}
-              onMouseEnter={survolOr} onMouseLeave={sortieOr}>Écouter l'extrait (7 s)</button>
-            <button onClick={testMetro} disabled={!track} style={btn(false, !track)}
-              onMouseEnter={survolOr} onMouseLeave={sortieOr}>Tester mon métronome</button>
-            <button onClick={validate} disabled={!track || done} style={btn(true, !track || done)}>Valider</button>
+          {/* ---- Le tempo choisi : élément central, et métronome d'essai ----
+               Le disque bat à la vitesse réglée : c'est la définition même du
+               BPM, montrée plutôt qu'écrite. */}
+          <div style={{ position: 'relative', width: 150, height: 150, margin: '0 auto var(--e4)' }}>
+            {/* Halo qui s'échappe pendant que le métronome tourne, repris de
+                l'épreuve « Une seconde de plus » : il dit que le son sort,
+                le battement du disque dit à quelle vitesse. Sa durée suit le
+                tempo, donc une onde par pulsation. */}
+            {metroActif && (
+              <span style={{
+                position: 'absolute', inset: 0, borderRadius: '50%',
+                border: '1px solid var(--or)', pointerEvents: 'none',
+                animation: `bpmHalo ${(60 / guess).toFixed(3)}s ease-out infinite`,
+              }} />
+            )}
+            <button
+              onClick={testMetro}
+              disabled={!tone || done}
+              style={{
+                width: '100%', height: '100%', borderRadius: '50%',
+                display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center', gap: 'var(--e3)',
+                background: 'var(--onyx-haut)',
+                border: `1px solid ${metroActif ? 'var(--or)' : 'var(--filet-fort)'}`,
+                color: couleurDisque,
+                cursor: !track || !tone || done ? 'default' : 'pointer',
+                transition: 'border-color var(--transition-courte)',
+                animation: metroActif
+                  ? `bpmBattement ${(60 / guess).toFixed(3)}s ease-out infinite`
+                  : 'none',
+              }}
+              aria-label={metroActif
+                ? 'Arrêter le métronome'
+                : `Écouter un métronome à ${guess} battements par minute`}
+            >
+              {/* Même bascule de glyphe que sur le disque d'écoute : c'est lui
+                  qui dit sans ambiguïté que le métronome tourne. */}
+              {metroActif ? (
+                <svg width="13" height="16" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
+                  <rect x="0" y="0" width="3" height="12" />
+                  <rect x="7" y="0" width="3" height="12" />
+                </svg>
+              ) : (
+                <svg width="13" height="16" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
+                  <path d="M0 0v12l10-6z" />
+                </svg>
+              )}
+              <span style={{ display: 'block', lineHeight: 1 }}>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 34, fontWeight: 500 }}>
+                  {guess}
+                </span>
+                <span className="etiquette-mono" style={{ display: 'block', color: 'var(--cendre)', marginTop: 7 }}>
+                  bpm
+                </span>
+              </span>
+            </button>
           </div>
 
-          {/* Barre de réglage + repère de la bonne réponse après validation */}
-          <div style={{ position: 'relative', marginTop: 'var(--e6)', paddingTop: done ? 'var(--e6)' : 0, transition: 'padding-top var(--transition-courte)' }}>
+          <div className="etiquette-mono" style={{ color: 'var(--cendre)', marginBottom: 'var(--e5)' }}>
+            {done ? 'tempo validé'
+              : metroActif ? 'clique pour arrêter le métronome'
+                : 'clique pour entendre ce tempo'}
+          </div>
 
-            {done && (
-              <div style={{
-                position: 'absolute', top: 0, left: `${pos(realBpm)}%`, bottom: -4,
-                transform: 'translateX(-50%)',
-                display: 'flex', flexDirection: 'column', alignItems: 'center',
-                animation: 'reveleCible 320ms ease-out both',
-                pointerEvents: 'none', zIndex: 3,
-              }}>
-                <div className="etiquette-mono" style={{
-                  color: 'var(--noir)', background: 'var(--jade)',
-                  padding: '3px 8px', borderRadius: 'var(--rayon-controle)',
-                  whiteSpace: 'nowrap', fontWeight: 500,
-                }}>
-                  {realBpm} bpm
-                </div>
+          {/* ---- Réglage ---- */}
+          <div style={{ maxWidth: 520, margin: '0 auto' }}>
+            <div style={{
+              position: 'relative',
+              paddingTop: done ? 'var(--e6)' : 0,
+              transition: 'padding-top var(--transition-courte)',
+            }}>
+              {done && (
                 <div style={{
-                  width: 2, flex: 1, background: 'var(--jade)',
-                  boxShadow: '0 0 10px var(--jade)', marginTop: 4,
+                  position: 'absolute', top: 0, left: `${pos(realBpm)}%`, bottom: -4,
+                  transform: 'translateX(-50%)',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  animation: 'reveleCible 320ms ease-out both',
+                  pointerEvents: 'none', zIndex: 3,
+                }}>
+                  <div className="etiquette-mono" style={{
+                    color: 'var(--noir)', background: 'var(--jade)',
+                    padding: '3px 8px', borderRadius: 'var(--rayon-controle)',
+                    whiteSpace: 'nowrap', fontWeight: 500,
+                  }}>
+                    {realBpm} bpm
+                  </div>
+                  <div style={{
+                    width: 2, flex: 1, background: 'var(--jade)',
+                    boxShadow: '0 0 10px var(--jade)', marginTop: 4,
+                  }} />
+                </div>
+              )}
+
+              {/* Piste dessinée : l'apparence native de l'input est masquée en CSS */}
+              <div style={{
+                position: 'absolute', left: 0, right: 0, top: done ? 'calc(var(--e6) + 8px)' : 8, height: 4,
+                borderRadius: 2, background: 'var(--filet)', pointerEvents: 'none',
+              }}>
+                <div style={{
+                  position: 'absolute', left: 0, top: 0, bottom: 0,
+                  width: `${pos(guess)}%`, borderRadius: 2,
+                  background: couleurResultat,
+                  boxShadow: done ? `0 0 14px ${couleurResultat}` : 'none',
+                  transition: 'background var(--transition-courte), box-shadow var(--transition-courte)',
                 }} />
               </div>
-            )}
 
-            {/* Piste dessinée : l'apparence native de l'input est masquée en CSS */}
-            <div style={{
-              position: 'absolute', left: 0, right: 0, top: done ? 'calc(var(--e6) + 8px)' : 8, height: 4,
-              borderRadius: 2, background: 'var(--filet)', pointerEvents: 'none',
-            }}>
-              <div style={{
-                position: 'absolute', left: 0, top: 0, bottom: 0,
-                width: `${pos(guess)}%`, borderRadius: 2,
-                background: couleurResultat,
-                boxShadow: done ? `0 0 14px ${couleurResultat}` : 'none',
-                transition: 'background var(--transition-courte), box-shadow var(--transition-courte)',
-              }} />
+              <input
+                className="curseur-nu"
+                type="range" min={BPM_MIN} max={BPM_MAX} value={guess}
+                onChange={(e) => {
+                  const v = +e.target.value;
+                  // Ref d'abord : le planificateur lit celle-ci, pas l'état,
+                  // et un effet peut être différé par React.
+                  guessRef.current = v;
+                  setGuess(v);
+                }}
+                disabled={done}
+                aria-label="Tempo proposé, en battements par minute"
+                style={{ width: '100%', position: 'relative', zIndex: 2 }}
+              />
             </div>
 
-            <input
-              className="curseur-nu"
-              type="range" min={BPM_MIN} max={BPM_MAX} value={guess}
-              onChange={(e) => setGuess(+e.target.value)}
-              disabled={done}
-              style={{ width: '100%', position: 'relative', zIndex: 2 }}
-            />
+            {/* Bornes de l'échelle : sans elles, on ne sait pas ce qu'on règle. */}
+            <div style={{
+              display: 'flex', justifyContent: 'space-between',
+              fontFamily: 'var(--mono)', fontSize: 10.5, letterSpacing: '0.08em',
+              color: 'var(--cendre)', marginTop: 6,
+            }}>
+              <span>{BPM_MIN} lent</span>
+              <span>{BPM_MAX} rapide</span>
+            </div>
           </div>
 
-          <div style={{ marginTop: 'var(--e3)', fontSize: 14 }}>
-            Ta proposition :{' '}
-            <span style={{ fontFamily: 'var(--mono)', color: couleurResultat, transition: 'color var(--transition-courte)' }}>
-              {guess} BPM
-            </span>
-            {done && (
-              <span style={{ marginLeft: 'var(--e3)', color: juste ? 'var(--jade)' : 'rgba(226, 75, 74, 0.9)' }}>
-                {guess === realBpm ? 'tempo exact'
-                  : guess < realBpm ? `${realBpm - guess} BPM trop lent`
-                  : `${guess - realBpm} BPM trop rapide`}
-              </span>
-            )}
+          {/* ---- Commandes ---- */}
+          <div style={{
+            display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap',
+            justifyContent: 'center', marginTop: 'var(--e5)',
+          }}>
+            <button
+              onClick={playClip}
+              disabled={!track || chargementAudio}
+              style={{
+                ...btn(false, !track || chargementAudio),
+                display: 'inline-flex', alignItems: 'center', gap: 'var(--e2)',
+                borderColor: joue ? 'var(--or)' : 'var(--filet-fort)',
+                color: joue ? 'var(--or)' : 'var(--ivoire)',
+              }}
+            >
+              {joue ? (
+                <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
+                  <rect x="0" y="0" width="3" height="12" />
+                  <rect x="7" y="0" width="3" height="12" />
+                </svg>
+              ) : (
+                <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
+                  <path d="M0 0v12l10-6z" />
+                </svg>
+              )}
+              {chargementAudio ? 'Chargement…'
+                : joue ? 'Pause'
+                  : enPause ? 'Reprendre'
+                    : `Écouter l'extrait (${BPM_EXTRAIT_SEC} s)`}
+            </button>
+
+            <button onClick={validate} disabled={!track || done} style={btn(true, !track || done)}>
+              Valider
+            </button>
           </div>
+
+          {done && (
+            <div style={{
+              marginTop: 'var(--e3)', fontFamily: 'var(--sans)', fontSize: 13,
+              color: juste ? 'var(--jade)' : 'rgba(226, 75, 74, 0.9)',
+            }}>
+              {guess === realBpm ? 'Tempo exact.'
+                : guess < realBpm ? `${realBpm - guess} BPM trop lent.`
+                  : `${guess - realBpm} BPM trop rapide.`}
+            </div>
+          )}
         </>
       )}
 
-      <p style={statusStyle}>{status}</p>
-      <ScoreBox score={score} />
+      {/* La ligne d'état ne sert qu'en cours de partie : après validation,
+         tout ce qu'elle pourrait dire est déjà affiché ailleurs. */}
+      {!done && <p style={statusStyle}>{status}</p>}
+
+      {/* ---- Bilan ---- */}
+      {score !== null && bilan && (
+        <div style={{
+          marginTop: 'var(--e4)', paddingTop: 'var(--e4)',
+          borderTop: '1px solid var(--or)', textAlign: 'center',
+          animation: 'bpmApparition 340ms ease-out both',
+        }}>
+          <div className="score-affiche" style={{
+            color: score >= 9.5 ? 'var(--jade)' : score < 4 ? 'var(--carmin)' : 'var(--ivoire)',
+          }}>
+            {score.toFixed(1).replace('.', ',')} <span style={{ color: 'var(--cendre)' }}>/ 10</span>
+          </div>
+          <p className="description" style={{ marginTop: 'var(--e2)' }}>
+            <span style={{ color: 'var(--ivoire)' }}>{track?.trackName}</span> — {track?.artistName},
+            {' '}<span style={{ color: 'var(--or)' }}>{realBpm} BPM</span>
+          </p>
+
+          {!daily && (
+            <button onClick={relancer} style={{ ...btn(true, false), marginTop: 'var(--e4)' }}>
+              Nouveau morceau
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 /* ================= 4 · UNE SECONDE DE PLUS ================= */
+
+/* Comparaison tolérante aux fautes de frappe — mais proportionnée.
+
+   Une distance de Levenshtein plafonnée à 2 quelle que soit la longueur
+   acceptait n'importe quoi de court : après normalisation, « 6и6 » devient
+   « 66 », et deux corrections suffisent à rejoindre un nom bref. D'où trois
+   garde-fous : une longueur minimale, une tolérance qui croît avec la taille
+   du mot, et un écart de longueur borné par cette même tolérance. */
+function proche(saisie, cible) {
+  if (!saisie || !cible) return false;
+  if (saisie === cible) return true;
+  if (saisie.length < 4 || cible.length < 4) return false;
+  const tolerance = Math.min(2, Math.floor(Math.min(saisie.length, cible.length) / 5));
+  if (tolerance === 0) return false;
+  if (Math.abs(saisie.length - cible.length) > tolerance) return false;
+  return lev(saisie, cible) <= tolerance;
+}
+
 const SEC_DURATIONS = [1, 2, 4, 7, 11, 16];
+/* Plafond de saisie. Assez large pour les titres à rallonge — « Everything I
+   Wanted », « We Don't Talk About Bruno », les versions « (feat. …) » — mais
+   assez bas pour qu'une ligne de bruit ne puisse pas déformer la mise en page.
+   80 caractères couvrent la quasi-totalité du catalogue. */
+const SEC_MAX_SAISIE = 80;
 const SEC_POINTS = [10, 8, 6, 4, 2, 1];
 
-export function JeuSeconde({ onDone }) {
+export function JeuSeconde({ onDone, daily = false }) {
+  // Manche 0 : le morceau du jour, tiré par la graine — identique pour tous.
+  // Manches suivantes (bouton « Nouveau morceau ») : tirage libre.
+  const [manche, setManche] = useState(0);
+  // L'intro ne se joue qu'à l'arrivée sur l'épreuve, pas sur une relance.
+  const [intro, setIntro] = useState(useIntro('une-seconde'));
+  // Surcouche de résultat, posée à la fin de la partie puis retirée seule.
+  const [resultat, setResultat] = useState(null);
+  // Le bilan du bas attend que le voile soit levé : deux fois le même chiffre
+  // au même instant se contrediraient.
+  const [bilan, setBilan] = useState(false);
+  const bilanTimer = useRef(null);
+
   const [track, setTrack] = useState(null);
   const [loadError, setLoadError] = useState(false);
   const [input, setInput] = useState('');
   const [tries, setTries] = useState(0);
-  const [tried, setTried] = useState([]);
+  const [tried, setTried] = useState([]);          // { texte, verdict }
   const [artistFound, setArtistFound] = useState(false);
   const [done, setDone] = useState(false);
-  const [playing, setPlaying] = useState(false);
   const [status, setStatus] = useState('Chargement du morceau du jour…');
   const [score, setScore] = useState(null);
+  const [erreur, setErreur] = useState(false);
+  const erreurTimer = useRef(null);
   const artistFoundAtRef = useRef(0);
-  const { jouer } = useLecteurAudio();
+  /* Vraie le temps qu'un nouveau morceau se charge. Sans elle, « Nouveau
+     morceau » vidait l'écran d'un coup et le remplissait tout aussi sec :
+     rien ne disait qu'un tirage avait eu lieu. */
+  const [rechargement, setRechargement] = useState(false);
+  const [chargementAudio, setChargementAudio] = useState(false);
+  const { jouer, arreter, basculer, enLecture, enPause } = useLecteurAudio();
+
+  useEffect(() => { load(); }, [manche]);
+  useEffect(() => () => {
+    clearTimeout(erreurTimer.current);
+    clearTimeout(bilanTimer.current);
+  }, []);
 
   useEffect(() => {
-    load();
-  }, []);
+    if (resultat === null) return;
+    const t = setTimeout(() => setResultat(null), RES_SECONDE_TOTAL);
+    return () => clearTimeout(t);
+  }, [resultat]);
 
   async function load() {
     setLoadError(false);
-    setStatus('Chargement du morceau du jour…');
+    setRechargement(true);
+    setStatus('Chargement du morceau…');
     try {
-      const rng = seeded('seconde');
+      const rng = manche === 0 ? seeded('seconde') : Math.random;
       const artist = ARTISTS[Math.floor(rng() * ARTISTS.length)];
       let tracks = await searchTracks(artist.nom, { limit: 25 });
       if (!tracks.length) throw new Error('Aucun résultat');
@@ -1277,120 +1704,345 @@ export function JeuSeconde({ onDone }) {
       tracks = hits.length >= 3 ? hits : [...tracks].sort((a, b) => b.rank - a.rank).slice(0, 8);
       const t = tracks[Math.floor(rng() * tracks.length)];
       setTrack(t);
-      setStatus(`Devine le titre OU l'artiste. Tu entends ${SEC_DURATIONS[0]} seconde pour commencer.`);
+      setStatus(`Écoute ${SEC_DURATIONS[0]} seconde, puis propose un titre ou un artiste.`);
+      // Un court battement avant de rendre la main : un tirage instantané ne
+      // se voit pas, et l'écran semblerait n'avoir pas bougé. Juste de quoi
+      // laisser la sortie se jouer, pas de quoi faire attendre.
+      await new Promise((r) => setTimeout(r, 180));
+      setRechargement(false);
     } catch (err) {
       console.error('Erreur seconde:', err);
       setLoadError(true);
+      setRechargement(false);
       setStatus('Impossible de charger le morceau.');
     }
   }
 
+  function signalerErreur() {
+    clearTimeout(erreurTimer.current);
+    setErreur(true);
+    erreurTimer.current = setTimeout(() => setErreur(false), 700);
+  }
+
+  const dureeCourante = done ? 30 : SEC_DURATIONS[Math.min(tries, SEC_DURATIONS.length - 1)];
+
   async function play() {
-    if (!track) return;
-    const url = (await freshPreviewUrl(track.trackId)) ?? track.previewUrl;
-    const dur = done ? 30 : SEC_DURATIONS[Math.min(tries, SEC_DURATIONS.length - 1)];
-    setPlaying(true);
-    jouer(url, dur, { onFin: () => setPlaying(false) });
+    if (!track || chargementAudio) return;
+    if (enLecture) { basculer(); return; }
+    setChargementAudio(true);
+    try {
+      const url = (await freshPreviewUrl(track.trackId)) ?? track.previewUrl;
+      if (url) jouer(url, dureeCourante);
+    } catch (err) {
+      console.error('Seconde — lecture:', err);
+    } finally {
+      setChargementAudio(false);
+    }
   }
 
   function finish(pts, msg) {
-    setScore(pts); setDone(true); onDone(pts);
+    arreter();
+    setDone(true); onDone(pts);
     setStatus(msg);
+    setResultat(pts);
+    bilanTimer.current = setTimeout(() => {
+      setScore(pts);
+      setBilan(true);
+    }, RES_SECONDE_TOTAL);
+  }
+
+  function relancer() {
+    arreter();
+    clearTimeout(bilanTimer.current);
+    setResultat(null);
+    setBilan(false);
+    setManche((m) => m + 1);
+    setTrack(null);
+    setInput('');
+    setTries(0);
+    setTried([]);
+    setArtistFound(false);
+    setDone(false);
+    setScore(null);
+    setErreur(false);
   }
 
   function fail(passed) {
     const next = tries + 1;
     setTries(next);
+    arreter();
     if (next >= SEC_DURATIONS.length) {
       const half = artistFound ? Math.max(1, Math.round(SEC_POINTS[artistFoundAtRef.current] / 2)) : 0;
-      finish(half, `Perdu… c'était « ${track.trackName} » de ${track.artistName}.${half ? ` (+${half} pts pour l'artiste)` : ''}`);
+      finish(half, `Perdu — c'était « ${track.trackName} » de ${track.artistName}.`);
     } else {
-      setStatus(`${passed ? 'Passé' : 'Raté'} — tu entends maintenant ${SEC_DURATIONS[next]} secondes. ${SEC_DURATIONS.length - next} essai(s) restant(s).`);
+      setStatus(`${passed ? 'Extrait allongé' : 'Raté'} — tu entends maintenant ${SEC_DURATIONS[next]} secondes.`);
     }
   }
 
   function guess() {
     if (done || !track || !input.trim()) return;
-    const g = input.trim();
+    const g = input.trim().slice(0, SEC_MAX_SAISIE);
     setInput('');
-    setTried([...tried, g]);
     const a = normTitle(g);
-    const titleOk = a === normTitle(track.trackName)
-      || (a.length > 3 && normTitle(track.trackName).includes(a))
-      || lev(a, normTitle(track.trackName)) <= 2;
-    const artistOk = norm(g) === norm(track.artistName) || lev(norm(g), norm(track.artistName)) <= 2;
+    const cibleTitre = normTitle(track.trackName);
+    const cibleArtiste = norm(track.artistName);
+    const saisieArtiste = norm(g);
+
+    // Une saisie qui ne contient aucun caractère exploitable n'est pas une
+    // proposition : elle ne consomme pas d'essai.
+    if (!a && !saisieArtiste) {
+      setStatus('Saisie vide — écris un titre ou un artiste.');
+      signalerErreur();
+      return;
+    }
+
+    const titleOk = a === cibleTitre
+      || (a.length >= 4 && cibleTitre.includes(a))
+      || proche(a, cibleTitre);
+    const artistOk = saisieArtiste === cibleArtiste || proche(saisieArtiste, cibleArtiste);
 
     if (titleOk) {
-      finish(SEC_POINTS[tries], `🎉 Exact ! C'était « ${track.trackName} » de ${track.artistName}.`);
+      setTried([...tried, { texte: g, verdict: 'titre' }]);
+      finish(SEC_POINTS[tries], `🎉 Exact — « ${track.trackName} » de ${track.artistName}.`);
     } else if (artistOk && !artistFound) {
+      setTried([...tried, { texte: g, verdict: 'artiste' }]);
       setArtistFound(true);
       artistFoundAtRef.current = tries;
-      setStatus(`👍 Artiste trouvé : ${track.artistName} ! Maintenant le titre pour le score plein — ou continue de rater, tu garderas la moitié.`);
+      setStatus(`Artiste trouvé. Le titre vaut encore le score plein.`);
     } else if (artistOk && artistFound) {
-      setStatus('Tu as déjà trouvé l\'artiste — cherche le titre maintenant !');
+      signalerErreur();
+      setStatus('Artiste déjà trouvé — cherche le titre.');
     } else {
+      setTried([...tried, { texte: g, verdict: 'faux' }]);
+      signalerErreur();
       fail(false);
     }
   }
 
+  const joue = enLecture && !enPause;
+  const restants = SEC_DURATIONS.length - tries;
+
   return (
-    <div style={panel}>
+    <div style={{ ...panel, position: 'relative', textAlign: 'center' }}>
+      <style>{`
+        @keyframes secJeton {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes secOnde {
+          0%   { opacity: 0.5; transform: scale(1); }
+          100% { opacity: 0;   transform: scale(1.45); }
+        }
+        @keyframes secApparition {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
+      {intro && <IntroSeconde onFin={() => setIntro(false)} />}
+      {resultat !== null && (
+        <ResultatSeconde
+          score={resultat}
+          detail={track ? `${track.trackName} — ${track.artistName}` : null}
+        />
+      )}
+
       <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Une seconde de plus</h3>
-      <p className="description" style={{ marginBottom: 'var(--e4)' }}>
-        Devine le <strong>titre</strong> (score plein) ou l'<strong>artiste</strong> (moitié des points).
-        Chaque erreur allonge l'extrait : {SEC_DURATIONS.join(' → ')} s.
+      <p className="description" style={{ maxWidth: 470, margin: '0 auto var(--e5)' }}>
+        Trouve le titre pour le score plein, l&apos;artiste pour la moitié.
+        Chaque erreur allonge l&apos;extrait.
       </p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${SEC_DURATIONS.length}, 1fr)`, gap: 6, marginBottom: 'var(--e4)' }}>
-        {SEC_DURATIONS.map((d, i) => (
-          <div key={d} style={{
-            height: 6, borderRadius: 3,
-            background: i <= tries || done ? 'var(--or)' : 'var(--onyx-haut)',
-            border: '0.5px solid var(--filet)',
-            transition: 'background var(--transition-courte)',
-          }} title={`${d} s`} />
-        ))}
+      {/* ---- Bloc de jeu ----
+           Il s'efface pendant le tirage puis remonte : le mouvement dit qu'un
+           nouveau morceau est arrivé, ce qu'un simple changement de contenu
+           ne montrerait pas. La `key` sur la manche force le remontage, sans
+           quoi React réutiliserait les mêmes nœuds et l'entrée ne se
+           déclencherait pas. */}
+      <div
+        key={`manche-${manche}`}
+        style={{
+          opacity: rechargement ? 0 : 1,
+          transform: rechargement ? 'translateY(6px)' : 'none',
+          transition: 'opacity 180ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1)',
+          animation: rechargement ? 'none' : 'secApparition 260ms cubic-bezier(0.22, 1, 0.36, 1) both',
+        }}
+      >
+
+      {/* ---- Bouton d'écoute : le geste central de l'épreuve ---- */}
+      <div style={{ position: 'relative', width: 132, height: 132, margin: '0 auto var(--e4)' }}>
+        {/* Onde de lecture, en fond : elle dit que le son tourne sans rien
+            ajouter à lire. */}
+        {joue && (
+          <span style={{
+            position: 'absolute', inset: 0, borderRadius: '50%',
+            border: '1px solid var(--or)', pointerEvents: 'none',
+            animation: 'secOnde 1600ms ease-out infinite',
+          }} />
+        )}
+        <button
+          onClick={play}
+          disabled={!track || chargementAudio}
+          style={{
+            width: '100%', height: '100%', borderRadius: '50%',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 'var(--e3)',
+            background: 'var(--onyx-haut)',
+            border: `1px solid ${joue ? 'var(--or)' : 'var(--filet-fort)'}`,
+            color: joue ? 'var(--or)' : 'var(--ivoire)',
+            cursor: !track || chargementAudio ? 'default' : 'pointer',
+            opacity: !track || chargementAudio ? 0.5 : 1,
+            transition: 'border-color var(--transition-courte), color var(--transition-courte)',
+          }}
+          aria-label={joue ? 'Mettre en pause' : `Écouter ${dureeCourante} secondes`}
+        >
+          {joue ? (
+            <svg width="16" height="19" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
+              <rect x="0" y="0" width="3" height="12" />
+              <rect x="7" y="0" width="3" height="12" />
+            </svg>
+          ) : (
+            <svg width="16" height="19" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
+              <path d="M0 0v12l10-6z" />
+            </svg>
+          )}
+          <span style={{ display: 'block', lineHeight: 1 }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 20, fontWeight: 500 }}>
+              {dureeCourante}
+            </span>
+            {/* L'unité vit sous le nombre, en cendre : elle se lit une fois
+                puis s'oublie, alors que le chiffre change à chaque palier. */}
+            <span className="etiquette-mono" style={{ display: 'block', color: 'var(--cendre)', marginTop: 7 }}>
+              seconde{dureeCourante > 1 ? 's' : ''}
+            </span>
+          </span>
+        </button>
       </div>
 
-      {artistFound && !done && (
-        <p style={{ color: 'var(--jade)', fontSize: 13, marginBottom: 'var(--e3)' }}>
-          Artiste trouvé : {track.artistName}
-        </p>
-      )}
+      {/* ---- Palier d'écoute : on voit ce qu'on a déjà dépensé et ce qu'il reste ---- */}
+      <div style={{
+        display: 'flex', gap: 6, justifyContent: 'center',
+        marginBottom: 'var(--e3)', flexWrap: 'wrap',
+      }}>
+        {SEC_DURATIONS.map((d, i) => {
+          const passe = i < tries || done;
+          const actuel = i === tries && !done;
+          return (
+            <span key={d} style={{
+              fontFamily: 'var(--mono)', fontSize: 11, letterSpacing: '0.04em',
+              padding: '4px 9px', borderRadius: 'var(--rayon-controle)',
+              background: actuel ? 'var(--onyx-haut)' : 'transparent',
+              border: `${actuel ? '1px' : '0.5px'} solid ${actuel ? 'var(--or)' : 'var(--filet)'}`,
+              color: actuel ? 'var(--or)' : passe ? 'var(--cendre)' : 'var(--lin)',
+              transition: 'border-color var(--transition-courte), color var(--transition-courte)',
+            }}>
+              {d} s
+            </span>
+          );
+        })}
+      </div>
+
+      <div className="etiquette-mono" style={{ color: 'var(--cendre)', marginBottom: 'var(--e5)' }}>
+        {done ? 'partie terminée' : `${restants} essai${restants > 1 ? 's' : ''} restant${restants > 1 ? 's' : ''}`}
+      </div>
 
       {loadError ? (
         <button onClick={load} style={btn(true, false)}>Réessayer le chargement</button>
       ) : (
         <>
-          <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap', marginBottom: 'var(--e3)' }}>
-            <button onClick={play} disabled={!track || playing} style={btn(false, !track || playing)}
-              onMouseEnter={survolOr} onMouseLeave={sortieOr}>
-              Écouter ({done ? '30' : SEC_DURATIONS[Math.min(tries, SEC_DURATIONS.length - 1)]} s)
-            </button>
-            <button onClick={() => fail(true)} disabled={!track || done || tries >= SEC_DURATIONS.length - 1}
-              style={btn(false, !track || done || tries >= SEC_DURATIONS.length - 1)}
-              onMouseEnter={survolOr} onMouseLeave={sortieOr}>
-              Plus long
-            </button>
-          </div>
-          <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap' }}>
-            <input value={input} onChange={(e) => setInput(e.target.value)}
+          <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap', justifyContent: 'center' }}>
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && guess()}
               placeholder={artistFound ? 'Titre du morceau…' : 'Titre ou artiste…'}
-              disabled={done || !track} style={inputStyle} />
+              disabled={done || !track}
+              maxLength={SEC_MAX_SAISIE}
+              style={{
+                ...inputStyle,
+                border: erreur ? '1px solid var(--carmin)' : inputStyle.border,
+                transition: 'border-color var(--transition-courte)',
+              }}
+            />
             <button onClick={guess} disabled={done || !track} style={btn(true, done || !track)}>Valider</button>
           </div>
+
+          {/* Passer coûte un palier : c'est une décision, pas une commande de
+              lecture — d'où le retrait à l'écart du bouton principal. */}
+          {!done && (
+            <div style={{ marginTop: 'var(--e3)' }}>
+              <button
+                onClick={() => fail(true)}
+                disabled={!track || tries >= SEC_DURATIONS.length - 1}
+                onMouseEnter={survolOr} onMouseLeave={sortieOr}
+                style={btn(false, !track || tries >= SEC_DURATIONS.length - 1)}
+              >
+                Allonger l&apos;extrait
+              </button>
+            </div>
+          )}
         </>
       )}
 
-      {tried.length > 0 && !done && (
-        <p className="description" style={{ marginTop: 'var(--e3)' }}>
-          Déjà essayé : {tried.join(' · ')}
-        </p>
+      {/* ---- Propositions déjà faites ---- */}
+      {tried.length > 0 && (
+        <div style={{
+          display: 'flex', gap: 5, justifyContent: 'center', flexWrap: 'wrap',
+          maxWidth: 460, margin: 'var(--e4) auto 0',
+        }}>
+          {tried.map((t, i) => {
+            const teinte = t.verdict === 'faux' ? 'rgba(226, 75, 74, 0.65)' : 'var(--jade)';
+            const filet = t.verdict === 'faux' ? 'rgba(226, 75, 74, 0.3)' : 'var(--jade)';
+            return (
+              <span key={`${t.texte}-${i}`} title={t.texte} style={{
+                fontFamily: 'var(--sans)', fontSize: 12,
+                padding: '4px 9px', borderRadius: 'var(--rayon-controle)',
+                background: 'var(--onyx-haut)',
+                color: teinte, border: `0.5px solid ${filet}`,
+                // Un jeton ne dépasse jamais sa rangée : le texte complet
+                // reste accessible au survol.
+                maxWidth: 220, overflow: 'hidden',
+                textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                animation: 'secJeton 300ms cubic-bezier(0.22, 1, 0.36, 1) both',
+              }}>
+                {t.texte}
+              </span>
+            );
+          })}
+        </div>
       )}
 
+      </div>
+
       <p style={statusStyle}>{status}</p>
-      <ScoreBox score={score} />
+
+      {/* ---- Bilan ---- */}
+      {score !== null && bilan && (
+        <div style={{
+          marginTop: 'var(--e4)', paddingTop: 'var(--e4)',
+          borderTop: '1px solid var(--or)', textAlign: 'center',
+          animation: 'secApparition 340ms ease-out both',
+        }}>
+          <div className="score-affiche" style={{
+            color: score >= 9.5 ? 'var(--jade)' : score < 4 ? 'var(--carmin)' : 'var(--ivoire)',
+          }}>
+            {score.toFixed(1).replace('.', ',')} <span style={{ color: 'var(--cendre)' }}>/ 10</span>
+          </div>
+          <p className="description" style={{ marginTop: 'var(--e2)' }}>
+            <span style={{ color: 'var(--ivoire)' }}>{track?.trackName}</span> — {track?.artistName}
+          </p>
+
+          {!daily && (
+            <button
+              onClick={relancer}
+              disabled={rechargement}
+              style={{ ...btn(true, rechargement), marginTop: 'var(--e4)' }}
+            >
+              {rechargement ? 'Chargement…' : 'Nouveau morceau'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1440,21 +2092,87 @@ const MELODIES_CLASSIQUES = [
   { nom: 'Frère Jacques (traditionnel)', notes: ['C4', 'D4', 'E4', 'C4', 'C4', 'D4', 'E4', 'C4'], gap: 0.35 },
 ];
 
-export function JeuInstrument({ onDone }) {
-  const target = useMemo(() => INSTRUMENTS[Math.floor(seeded('instrument')() * INSTRUMENTS.length)], []);
-  const melodie = useMemo(() => MELODIES_CLASSIQUES[Math.floor(seeded('instrumentMelodie')() * MELODIES_CLASSIQUES.length)], []);
+export function JeuInstrument({ onDone, daily = false }) {
+  // L'intro ne se joue qu'à l'arrivée sur l'épreuve, pas sur une relance.
+  const [intro, setIntro] = useState(useIntro('instrument'));
+  // Manche 0 : l'instrument du jour, tiré par la graine — identique pour tous.
+  // Manches suivantes (bouton « Nouvel instrument ») : tirage libre.
+  const [manche, setManche] = useState(0);
+  const target = useMemo(
+    () => (manche === 0
+      ? INSTRUMENTS[Math.floor(seeded('instrument')() * INSTRUMENTS.length)]
+      : INSTRUMENTS[Math.floor(Math.random() * INSTRUMENTS.length)]),
+    [manche]
+  );
+  const melodie = useMemo(
+    () => (manche === 0
+      ? MELODIES_CLASSIQUES[Math.floor(seeded('instrumentMelodie')() * MELODIES_CLASSIQUES.length)]
+      : MELODIES_CLASSIQUES[Math.floor(Math.random() * MELODIES_CLASSIQUES.length)]),
+    [manche]
+  );
+
   const [done, setDone] = useState(false);
   const [picked, setPicked] = useState(null);
+  const [famille, setFamille] = useState(null);   // famille en cours de choix
+  /* Vraie le temps du changement d'instrument. Sans elle, « Nouvel instrument »
+     remplaçait le contenu d'un coup : rien ne disait qu'un tirage avait eu
+     lieu, puisque l'écran de choix est le même à chaque manche. */
+  const [rechargement, setRechargement] = useState(false);
+  // Surcouche de résultat, posée au choix puis retirée seule.
+  const [resultat, setResultat] = useState(null);
+  // Le bilan du bas attend que le voile soit levé : deux fois le même chiffre
+  // au même instant se contrediraient.
+  const [bilan, setBilan] = useState(false);
+  const bilanTimer = useRef(null);
   const [loadingSound, setLoadingSound] = useState(false);
-  const [status, setStatus] = useState('Écoute le timbre mystère, puis choisis l\'instrument.');
+  const [joue, setJoue] = useState(false);
+  const [status, setStatus] = useState('Écoute l\'instrument mystère, puis retrouve-le.');
   const [score, setScore] = useState(null);
   const [tone, setTone] = useState(null);
   const samplerRef = useRef(null);
+  const finTimer = useRef(null);
+  const rythmeRef = useRef(null);
+  const noteTimer = useRef(null);        // prochaine note de la mélodie
+  const transitionTimer = useRef(null);  // changement d'instrument
+  const volume = useVolume();
+
+  useEffect(() => {
+    if (resultat === null) return;
+    const t = setTimeout(() => setResultat(null), RES_INSTRUMENT_TOTAL);
+    return () => clearTimeout(t);
+  }, [resultat]);
 
   useEffect(() => {
     import('tone').then(setTone);
-    return () => samplerRef.current?.dispose();
+    return () => {
+      clearTimeout(finTimer.current);
+      clearTimeout(noteTimer.current);
+      clearTimeout(transitionTimer.current);
+      clearTimeout(bilanTimer.current);
+      samplerRef.current?.dispose();
+      rythmeRef.current?.forEach((v) => { try { v.dispose(); } catch {} });
+    };
   }, []);
+
+  // Un nouvel instrument demande un nouveau sampler : celui en mémoire joue
+  // encore l'ancien timbre.
+  useEffect(() => {
+    samplerRef.current?.dispose();
+    samplerRef.current = null;
+  }, [target]);
+
+  // Le curseur de volume agit sur le sampler DÉJÀ chargé : sans cet effet, il
+  // n'avait aucun effet sur cette épreuve.
+  function appliquerGain() {
+    if (!tone || !samplerRef.current) return;
+    samplerRef.current.volume.value = volume > 0 ? tone.gainToDb(volume) : -Infinity;
+  }
+
+  // Le curseur de volume agit sur le sampler DÉJÀ chargé : sans cet effet, il
+  // n'aurait aucun effet sur cette épreuve.
+  useEffect(() => {
+    appliquerGain();
+  }, [tone, volume, loadingSound]);
 
   // Ne garde que les échantillons réellement présents sur le serveur
   async function existingUrls(dir, candidates) {
@@ -1470,13 +2188,66 @@ export function JeuInstrument({ onDone }) {
     return urls;
   }
 
+  function marquerFin(secondes) {
+    clearTimeout(finTimer.current);
+    setJoue(true);
+    finTimer.current = setTimeout(() => setJoue(false), secondes * 1000);
+  }
+
+  /* Arrêt de la mélodie en cours.
+
+     Il suffit d'annuler le minuteur de la note suivante et de relâcher celle
+     qui sonne : rien d'autre n'est programmé. C'est tout l'intérêt de poser
+     les notes une par une — les couper au gain les laissait sur la timeline
+     de Tone, et elles ressortaient par-dessus la mélodie suivante. */
+  function stopSon() {
+    clearTimeout(finTimer.current);
+    clearTimeout(noteTimer.current);
+    setJoue(false);
+    try {
+      samplerRef.current?.releaseAll?.();
+      /* Fondu de 40 ms par-dessus le relâchement : la coupe est perçue comme
+         immédiate, sans le clic d'une interruption brutale.
+
+         Le gain N'EST PAS rétabli après coup. Le déclenchement d'une note est
+         posé quelques millisecondes à l'avance ; si la pause tombe dans cet
+         intervalle, la note attaque quand même et dure une demi-seconde.
+         Rétablir le gain à 140 ms la rendait audible — c'était la note unique
+         qui repartait après la pause. Le silence tient donc jusqu'au prochain
+         départ, qui remet le gain lui-même. */
+      samplerRef.current?.volume?.rampTo(-60, 0.04);
+    } catch {}
+    rythmeRef.current?.forEach((v) => { try { v.dispose(); } catch {} });
+    rythmeRef.current = null;
+  }
+
+  /* Joue la note d'indice `i`, puis programme la suivante. Le déclenchement
+     lui-même reste daté sur l'horloge de Tone — le minuteur ne sert qu'à
+     revenir à temps, l'imprécision de setTimeout ne s'entend donc pas. */
+  function jouerNote(i) {
+    if (!tone || !samplerRef.current || i >= melodie.notes.length) return;
+    const cfg = SAMPLES[target];
+    const note = tone.Frequency(melodie.notes[i]).transpose(cfg.shift);
+    samplerRef.current.triggerAttackRelease(note, '4n', tone.now() + 0.02);
+    if (i + 1 < melodie.notes.length) {
+      noteTimer.current = setTimeout(() => jouerNote(i + 1), melodie.gap * 1000);
+    }
+  }
+
   async function play() {
-    if (!tone) return;
+    if (!tone || loadingSound) return;
+    // Bascule : un clic lance, un autre arrête.
+    if (joue) { stopSon(); return; }
     await tone.start();
+    // Le fondu d'un arrêt précédent laisse le gain au plancher : on annule sa
+    // rampe puis on rétablit le niveau avant la première note.
+    try { samplerRef.current?.volume?.cancelScheduledValues?.(tone.now()); } catch {}
+    appliquerGain();
 
     // Cas particulier : la boîte à rythmes est électronique par nature → synthèse
     if (target === 'Boîte à rythmes') {
       const t0 = tone.now() + 0.15;
+      const gain = volume > 0 ? tone.gainToDb(volume) : -Infinity;
       const kick = new tone.MembraneSynth({
         pitchDecay: 0.008, octaves: 2,
         envelope: { attack: 0.001, decay: 0.15, sustain: 0 },
@@ -1485,10 +2256,13 @@ export function JeuInstrument({ onDone }) {
         noise: { type: 'white' },
         envelope: { attack: 0.001, decay: 0.12, sustain: 0 },
       }).toDestination();
-      clap.volume.value = -4;
+      kick.volume.value = gain;
+      clap.volume.value = volume > 0 ? -4 + tone.gainToDb(volume) : -Infinity;
       [0, 0.5, 1, 1.5].forEach((d) => kick.triggerAttackRelease('C2', '16n', t0 + d));
       [0.25, 0.75, 1.25, 1.75].forEach((d) => clap.triggerAttackRelease('16n', t0 + d));
-      setTimeout(() => { kick.dispose(); clap.dispose(); }, 3500);
+      rythmeRef.current = [kick, clap];
+      marquerFin(2.1);
+      setTimeout(() => { kick.dispose(); clap.dispose(); rythmeRef.current = null; }, 3500);
       return;
     }
 
@@ -1501,11 +2275,17 @@ export function JeuInstrument({ onDone }) {
           const s = new tone.Sampler({
             urls,
             baseUrl: SAMPLE_BASE + cfg.dir + '/',
-            release: 1,
+            // Une seconde d'extinction rendait l'arrêt mou : releaseAll ne
+            // fait que déclencher cette descente. Un tiers de seconde reste
+            // naturel pour un instrument acoustique et coupe franchement.
+            release: 0.3,
             onload: () => { samplerRef.current = s; resolve(); },
             onerror: (e) => reject(e),
           }).toDestination();
         });
+        if (samplerRef.current) {
+          samplerRef.current.volume.value = volume > 0 ? tone.gainToDb(volume) : -Infinity;
+        }
       } catch (e) {
         console.error('Échec chargement samples:', e);
         setLoadingSound(false);
@@ -1515,24 +2295,49 @@ export function JeuInstrument({ onDone }) {
       setLoadingSound(false);
     }
 
-    const cfg = SAMPLES[target];
-    const t0 = tone.now() + 0.15;
-    melodie.notes.forEach((n, i) => {
-      const note = tone.Frequency(n).transpose(cfg.shift);
-      samplerRef.current.triggerAttackRelease(note, '4n', t0 + i * melodie.gap);
-    });
+    jouerNote(0);
+    marquerFin(melodie.notes.length * melodie.gap + 0.6);
   }
 
   function pick(n) {
     if (done) return;
+    stopSon();
     setDone(true);
     setPicked(n);
-    let s = 0, msg = 'Raté !';
-    if (n === target) { s = 10; msg = '🎉 Exact !'; }
-    else if (FAMILLES[n] === FAMILLES[target]) { s = 5; msg = `Presque — bonne famille (${FAMILLES[target]}) !`; }
-    setScore(s);
+    let s = 0, msg = `C'était ${target}.`;
+    if (n === target) { s = 10; msg = `🎉 Exact — c'était bien ${target}.`; }
+    else if (FAMILLES[n] === FAMILLES[target]) {
+      s = 5; msg = `Bonne famille, mauvais instrument — c'était ${target}.`;
+    }
     onDone(s);
-    setStatus(`${msg} C'était : ${target}.`);
+    setStatus(msg);
+    setResultat(s);
+    bilanTimer.current = setTimeout(() => {
+      setScore(s);
+      setBilan(true);
+    }, RES_INSTRUMENT_TOTAL);
+  }
+
+  function relancer() {
+    stopSon();
+    clearTimeout(bilanTimer.current);
+    clearTimeout(transitionTimer.current);
+    setRechargement(true);
+
+    /* Le contenu ne change qu'une fois la sortie jouée : remplacer pendant le
+       fondu ferait apparaître le nouvel écran à moitié effacé. */
+    transitionTimer.current = setTimeout(() => {
+      setResultat(null);
+      setBilan(false);
+      setManche((m) => m + 1);
+      setDone(false);
+      setPicked(null);
+      setFamille(null);
+      setScore(null);
+      setJoue(false);
+      setStatus('Écoute l\'instrument mystère, puis retrouve-le.');
+      setRechargement(false);
+    }, 200);
   }
 
   // Boutons groupés par famille pour rester lisibles
@@ -1541,48 +2346,298 @@ export function JeuInstrument({ onDone }) {
     return acc;
   }, {});
 
+  const familleCible = FAMILLES[target];
+
   return (
-    <div style={panel}>
-      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Trouve l'instrument</h3>
-      <p className="description" style={{ marginBottom: 'var(--e4)' }}>
-        Un instrument mystère joue « {melodie.nom} » — vrai son acoustique.
-        Bonne famille mais mauvais instrument = 5 points.
+    <div style={{ ...panel, position: 'relative', textAlign: 'center' }}>
+      <style>{`
+        @keyframes instHalo {
+          0%   { opacity: 0.5; transform: scale(1); }
+          100% { opacity: 0;   transform: scale(1.45); }
+        }
+        @keyframes instApparition {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
+      {intro && <IntroInstrument onFin={() => setIntro(false)} />}
+      {resultat !== null && (
+        <ResultatInstrument score={resultat} detail={`${target} — groupe ${FAMILLES[target].toLowerCase()}`} />
+      )}
+
+      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Trouve l&apos;instrument</h3>
+      <p className="description" style={{ maxWidth: 470, margin: '0 auto var(--e5)' }}>
+        Un instrument joue une mélodie connue. Le bon groupe vaut cinq points,
+        le bon instrument en vaut dix.
       </p>
 
-      <button onClick={play} disabled={!tone || loadingSound}
-        style={{ ...btn(true, !tone || loadingSound), marginBottom: 'var(--e4)' }}>
-        {loadingSound ? 'Chargement du son…' : 'Écouter le timbre'}
-      </button>
+      {/* ---- Corps de l'épreuve ----
+           Il s'efface pendant le tirage puis remonte : le mouvement dit qu'un
+           nouvel instrument est arrivé, ce qu'un simple changement de contenu
+           ne montrerait pas — l'écran de choix, lui, ne bouge pas d'une manche
+           à l'autre. La `key` sur la manche force le remontage, sans quoi React
+           réutiliserait les mêmes nœuds et l'entrée ne se déclencherait pas. */}
+      <div
+        key={`manche-${manche}`}
+        style={{
+          opacity: rechargement ? 0 : 1,
+          transform: rechargement ? 'translateY(6px)' : 'none',
+          transition: 'opacity 180ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1)',
+          animation: rechargement ? 'none' : 'instApparition 280ms cubic-bezier(0.22, 1, 0.36, 1) both',
+        }}
+      >
 
-      {Object.entries(parFamille).map(([fam, list]) => (
-        <div key={fam} style={{ marginBottom: 'var(--e3)' }}>
-          <div className="etiquette-mono" style={{ color: 'var(--cendre)', marginBottom: 'var(--e1)' }}>
-            {fam}
+      {/* ---- Le timbre : élément central de l'épreuve ---- */}
+      <div style={{ position: 'relative', width: 132, height: 132, margin: '0 auto var(--e3)' }}>
+        {joue && (
+          <span style={{
+            position: 'absolute', inset: 0, borderRadius: '50%',
+            border: '1px solid var(--or)', pointerEvents: 'none',
+            animation: 'instHalo 1600ms ease-out infinite',
+          }} />
+        )}
+        <button
+          onClick={play}
+          disabled={!tone || loadingSound}
+          style={{
+            width: '100%', height: '100%', borderRadius: '50%',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 'var(--e3)',
+            background: 'var(--onyx-haut)',
+            border: `1px solid ${joue ? 'var(--or)' : 'var(--filet-fort)'}`,
+            color: joue ? 'var(--or)' : 'var(--ivoire)',
+            cursor: !tone || loadingSound ? 'default' : 'pointer',
+            opacity: !tone || loadingSound ? 0.5 : 1,
+            transition: 'border-color var(--transition-courte), color var(--transition-courte)',
+          }}
+          aria-label={joue ? 'Arrêter le timbre' : 'Écouter le timbre mystère'}
+        >
+          {joue ? (
+            <svg width="15" height="18" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
+              <rect x="0" y="0" width="3" height="12" />
+              <rect x="7" y="0" width="3" height="12" />
+            </svg>
+          ) : (
+            <svg width="15" height="18" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
+              <path d="M0 0v12l10-6z" />
+            </svg>
+          )}
+          <span className="etiquette-mono" style={{ color: 'var(--cendre)' }}>
+            {loadingSound ? 'chargement' : joue ? 'pause' : 'instrument mystère'}
+          </span>
+        </button>
+      </div>
+
+      {/* La mélodie n'est pas la réponse : la nommer retire une inconnue et
+          concentre l'écoute sur le timbre, qui est l'objet de l'épreuve. */}
+      <div className="etiquette-mono" style={{ color: 'var(--cendre)', marginBottom: 'var(--e5)' }}>
+        {melodie.nom}
+      </div>
+
+      {/* ---- Choix en deux temps ----
+           La famille d'abord, l'instrument ensuite. Vingt-et-un boutons posés
+           d'un coup font un mur qu'on parcourt sans lire ; six familles se
+           choisissent d'un regard. La hiérarchie existait déjà dans le
+           barème — la bonne famille vaut cinq points — elle devient ici la
+           mécanique du jeu au lieu d'une note de bas de page. */}
+      {!famille && !done && (
+        <>
+          <div style={{
+            fontFamily: 'var(--sans)', fontSize: 14, color: 'var(--ivoire)',
+            marginBottom: 'var(--e3)',
+          }}>
+            Quel groupe d&apos;instruments entends-tu ?
           </div>
-          <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap' }}>
-            {list.map((n) => (
-              <button key={n} onClick={() => pick(n)} disabled={done}
+          {/* Grille plutôt que flex : trois colonnes fixes garantissent deux
+             lignes de trois, là où le retour à la ligne automatique dépendait
+             de la largeur des noms. Sous 560 px, on retombe à deux colonnes. */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+            gap: 'var(--e2)', maxWidth: 560, margin: '0 auto',
+          }}>
+          {Object.entries(parFamille).map(([fam, list]) => (
+            <button
+              key={fam}
+              onClick={() => setFamille(fam)}
+              onMouseEnter={survolOr}
+              onMouseLeave={sortieOr}
+              style={{
+                ...btn(false, false),
+                // Plus large et plus basse : la hauteur venait des exemples
+                // qui repassaient à la ligne, pas du remplissage. Élargir les
+                // cartes règle donc le problème mieux que rogner le padding.
+                width: '100%', height: 58, boxSizing: 'border-box',
+                padding: '0 var(--e2)',
+                display: 'inline-flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center', gap: 2,
+              }}
+            >
+              <span style={{ fontSize: 14, fontWeight: 500 }}>{fam}</span>
+              {/* Deux exemples plutôt qu'un décompte : « Cordes frottées » ne
+                  dit rien à qui ne fait pas de musique, « violon, violoncelle »
+                  se comprend sans rien connaître. */}
+              <span style={{
+                fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--lin)',
+                maxWidth: '100%', whiteSpace: 'nowrap',
+                overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>
+                {list.slice(0, 2).map((x) => x.toLowerCase()).join(', ')}
+                {list.length > 2 ? '…' : ''}
+              </span>
+            </button>
+          ))}
+          </div>
+        </>
+      )}
+
+      {famille && !done && (
+        <div>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            gap: 'var(--e3)', marginBottom: 'var(--e4)',
+          }}>
+            <button
+              onClick={() => setFamille(null)}
+              onMouseEnter={survolOr}
+              onMouseLeave={sortieOr}
+              aria-label="Revenir au choix du groupe d'instruments"
+              style={{ ...btn(false, false), padding: '5px 11px', fontSize: 12.5 }}
+            >
+              ← Retour
+            </button>
+            {/* Le groupe choisi reste sous les yeux : c'est le contexte du
+                choix en cours, et il justifie la liste réduite. */}
+            <span style={{ fontFamily: 'var(--sans)', fontSize: 15, fontWeight: 500, color: 'var(--ivoire)' }}>
+              {famille}
+            </span>
+          </div>
+
+          <div style={{
+            fontFamily: 'var(--sans)', fontSize: 13.5, color: 'var(--lin)',
+            marginBottom: 'var(--e3)',
+          }}>
+            Lequel de ces instruments est-ce ?
+          </div>
+
+          {/* Une seule ligne : `nowrap` empêche le retour à la ligne et les
+             boutons se resserrent d'eux-mêmes — cinq guitares tiennent sans
+             qu'une « Basse » esseulée passe en dessous. `minWidth: 0` est ce
+             qui autorise un élément flex à rétrécir sous la taille de son
+             texte, sans quoi la ligne déborderait au lieu de s'ajuster. */}
+          <div style={{
+            display: 'flex', gap: 6, flexWrap: 'nowrap',
+            justifyContent: 'center', alignItems: 'stretch',
+          }}>
+            {parFamille[famille].map((n) => (
+              <button
+                key={n} onClick={() => pick(n)}
+                onMouseEnter={survolOr} onMouseLeave={sortieOr}
                 style={{
-                  ...btn(false, done),
-                  padding: '8px 13px', fontSize: 13,
-                  ...(done && n === target
-                    ? { background: 'var(--onyx-haut)', color: 'var(--jade)', border: '1px solid var(--jade)', opacity: 1 }
-                    : {}),
-                  ...(done && n === picked && n !== target
-                    ? { background: 'var(--onyx-haut)', color: 'rgba(226, 75, 74, 0.9)', border: '1px solid rgba(226, 75, 74, 0.6)', opacity: 1 }
-                    : {}),
+                  ...btn(false, false),
+                  padding: '9px 12px', fontSize: 13.5,
+                  minWidth: 0, whiteSpace: 'nowrap',
                 }}
-                onMouseEnter={(ev) => { if (!done) survolOr(ev); }}
-                onMouseLeave={(ev) => { if (!done) sortieOr(ev); }}>
+              >
                 {n}
               </button>
             ))}
           </div>
         </div>
-      ))}
+      )}
 
-      <p style={statusStyle}>{status}</p>
-      <ScoreBox score={score} />
+      {/* ---- Révélation : la bonne famille et le bon instrument ---- */}
+      {done && (
+        <div>
+          <div className="etiquette-mono" style={{ color: 'var(--lin)', marginBottom: 'var(--e2)' }}>
+            {familleCible}
+          </div>
+          {/* `nowrap` et `minWidth: 0`, comme à la sélection : les cinq cordes
+             pincées passaient à la ligne, et la révélation ne ressemblait plus
+             à l'écran qu'on venait de quitter. */}
+          <div style={{
+            display: 'flex', gap: 6, flexWrap: 'nowrap', justifyContent: 'center',
+          }}>
+            {parFamille[familleCible].map((n) => {
+              const juste = n === target;
+              const rate = n === picked && n !== target;
+              return (
+                <span key={n} style={{
+                  fontFamily: 'var(--sans)', fontSize: 13.5,
+                  padding: '9px 12px', borderRadius: 'var(--rayon-controle)',
+                  minWidth: 0, whiteSpace: 'nowrap',
+                  background: 'var(--onyx-haut)',
+                  color: juste ? 'var(--jade)' : rate ? 'rgba(226, 75, 74, 0.9)' : 'var(--cendre)',
+                  border: `${juste || rate ? '1px' : '0.5px'} solid ${
+                    juste ? 'var(--jade)' : rate ? 'rgba(226, 75, 74, 0.6)' : 'var(--filet)'}`,
+                }}>
+                  {n}
+                </span>
+              );
+            })}
+          </div>
+
+          {/* Si la réponse venait d'une autre famille, on la montre aussi :
+              sans elle, on ne voit pas ce qu'on a joué. */}
+          {picked && FAMILLES[picked] !== familleCible && (
+            <>
+              <div className="etiquette-mono" style={{
+                color: 'var(--lin)', margin: 'var(--e4) 0 var(--e2)',
+              }}>
+                ton choix · {FAMILLES[picked]}
+              </div>
+              {/* Même rangée flex que la famille de la réponse : un span
+                  inline posé seul ne se calait pas sur le rythme du dessus. */}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
+                <span style={{
+                  fontFamily: 'var(--sans)', fontSize: 13.5,
+                  padding: '9px 14px', borderRadius: 'var(--rayon-controle)',
+                  background: 'var(--onyx-haut)',
+                  color: 'rgba(226, 75, 74, 0.9)',
+                  border: '1px solid rgba(226, 75, 74, 0.6)',
+                }}>
+                  {picked}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      </div>
+
+      {/* La ligne d'état ne sert qu'avant la réponse : après, la révélation
+         montre les instruments et le bilan donne le nom et le groupe. */}
+      {!done && <p style={statusStyle}>{status}</p>}
+
+      {/* ---- Bilan ---- */}
+      {score !== null && bilan && (
+        <div style={{
+          marginTop: 'var(--e5)', paddingTop: 'var(--e5)',
+          borderTop: '1px solid var(--or)', textAlign: 'center',
+          animation: 'instApparition 340ms ease-out both',
+        }}>
+          <div className="score-affiche" style={{
+            color: score >= 9.5 ? 'var(--jade)' : score < 4 ? 'var(--carmin)' : 'var(--ivoire)',
+          }}>
+            {score.toFixed(1).replace('.', ',')} <span style={{ color: 'var(--cendre)' }}>/ 10</span>
+          </div>
+          <p className="description" style={{ marginTop: 'var(--e2)' }}>
+            <span style={{ color: 'var(--or)' }}>{target}</span> — famille {familleCible.toLowerCase()}
+          </p>
+
+          {!daily && (
+            <button
+              onClick={relancer}
+              disabled={rechargement}
+              style={{ ...btn(true, rechargement), marginTop: 'var(--e4)' }}
+            >
+              {rechargement ? 'Tirage…' : 'Nouvel instrument'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1736,7 +2791,98 @@ export function JeuParoles({ onDone }) {
 }
 
 /* ================= 7 · COMPLÈTE LE REFRAIN ================= */
-export function JeuRefrain({ onDone }) {
+const REFRAIN_EXTRAIT_SEC = 10;
+const REFRAIN_ESSAIS = 5;
+/* Un cinquième des mots révélé par essai raté : après quatre erreurs, quatre
+   cinquièmes de la ligne sont visibles et le dernier essai reste jouable. */
+const REFRAIN_POINTS = [10, 8, 6, 4, 2];
+/* L'extrait se débloque après le troisième essai raté — assez tard pour que
+   l'écoute reste une aide et non la solution. */
+const REFRAIN_AUDIO_DES = 3;
+
+/* Indices d'identification, donnés dans l'ordre du plus large au plus précis :
+   l'artiste réduit le champ, le titre le referme presque. Les révéler à
+   contretemps — le titre avant l'artiste — n'apporterait rien, puisque le
+   titre suffit à retrouver les paroles. */
+const REFRAIN_ARTISTE_DES = 2;
+const REFRAIN_TITRE_DES = 4;
+
+/* Ligne masquée : un trait par lettre, les mots séparés par un vrai espace.
+   Compter les lettres donne une prise réelle — on voit qu'un mot fait trois
+   caractères ou onze, ce qu'une suite de tirets identiques ne disait pas.
+   La ponctuation reste visible : elle ne se devine pas et structure la phrase. */
+function LigneMasquee({ texte, motsReveles = 0, tout = false }) {
+  const mots = texte.split(/\s+/).filter(Boolean);
+
+  /* On retient combien de mots étaient déjà visibles au rendu précédent :
+     seuls les NOUVEAUX s'animent. Sans cette mémoire, toute la ligne
+     rejouerait son apparition à chaque essai, et on ne verrait plus ce qui
+     vient de se dévoiler. */
+  const precedent = useRef(0);
+  const seuil = precedent.current;
+  useEffect(() => { precedent.current = tout ? mots.length : motsReveles; }, [motsReveles, tout, mots.length]);
+
+  return (
+    <div style={{
+      display: 'flex', flexWrap: 'wrap', gap: '0 10px',
+      justifyContent: 'center', alignItems: 'flex-end',
+      minHeight: 26,
+    }}>
+      {mots.map((mot, i) => {
+        const revele = tout || i < motsReveles;
+        if (revele) {
+          const nouveau = i >= seuil;
+          return (
+            <span key={i} style={{
+              fontFamily: 'var(--sans)', fontSize: 15, color: 'var(--or)', lineHeight: 1.4,
+              // Les mots arrivent en cascade, dans l'ordre de lecture : un
+              // bloc qui apparaît d'un coup ne se lit pas, une cascade si.
+              animation: nouveau
+                ? `refMot 420ms ${(i - seuil) * 70}ms cubic-bezier(0.22, 1, 0.36, 1) both`
+                : 'none',
+            }}>
+              {mot}
+            </span>
+          );
+        }
+        return (
+          <span key={i} style={{ display: 'inline-flex', gap: 3, alignItems: 'flex-end' }}>
+            {mot.split('').map((c, j) => (
+              /[a-zA-ZÀ-ÿ0-9]/.test(c) ? (
+                <span key={j} style={{
+                  display: 'inline-block', width: 9, height: 14,
+                  borderBottom: '1.5px solid var(--or)',
+                  // Les traits pâlissent doucement à l'arrivée d'un mot : le
+                  // regard suit le remplacement au lieu de subir un saut.
+                  animation: 'refTrait 320ms ease-out both',
+                }} />
+              ) : (
+                <span key={j} style={{
+                  fontFamily: 'var(--sans)', fontSize: 15, color: 'var(--cendre)', lineHeight: 1.4,
+                }}>
+                  {c}
+                </span>
+              )
+            ))}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+export function JeuRefrain({ onDone, daily = false }) {
+  // Manche 0 : le refrain du jour, tiré par la graine — identique pour tous.
+  const [manche, setManche] = useState(0);
+  // L'intro ne se joue qu'à l'arrivée sur l'épreuve, pas sur une relance.
+  const [intro, setIntro] = useState(useIntro('refrain'));
+  // Surcouche de résultat, posée à la fin de la partie puis retirée seule.
+  const [resultat, setResultat] = useState(null);
+  // Le bilan du bas attend que le voile soit levé : deux fois le même chiffre
+  // au même instant se contrediraient.
+  const [bilan, setBilan] = useState(false);
+  const bilanTimer = useRef(null);
+
   const [track, setTrack] = useState(null);
   const [context, setContext] = useState([]);
   const [answer, setAnswer] = useState('');
@@ -1744,47 +2890,123 @@ export function JeuRefrain({ onDone }) {
   const [input, setInput] = useState('');
   const [tries, setTries] = useState(0);
   const [done, setDone] = useState(false);
-  const [status, setStatus] = useState('Chargement du refrain du jour…');
+  const [status, setStatus] = useState('Recherche de paroles…');
   const [score, setScore] = useState(null);
-  const { jouer } = useLecteurAudio();
+  const [erreur, setErreur] = useState(false);
+  const [chargementAudio, setChargementAudio] = useState(false);
+  // Vraie tant que la recherche de paroles n'a pas abouti. Elle peut durer
+  // plusieurs secondes : sans marque visible, le panneau vide passe pour une
+  // panne.
+  const [chargement, setChargement] = useState(true);
+  const erreurTimer = useRef(null);
+  const { jouer, arreter, basculer, enLecture, enPause } = useLecteurAudio();
+
+  useEffect(() => { load(); }, [manche]);
+  useEffect(() => () => {
+    clearTimeout(erreurTimer.current);
+    clearTimeout(bilanTimer.current);
+  }, []);
 
   useEffect(() => {
-    load();
-  }, []);
+    if (resultat === null) return;
+    const t = setTimeout(() => setResultat(null), RES_REFRAIN_TOTAL);
+    return () => clearTimeout(t);
+  }, [resultat]);
+
+  // Pose le voile, puis le bilan une fois qu'il s'est levé.
+  function terminerPartie(pts, phrase) {
+    arreter();
+    setDone(true);
+    onDone(pts);
+    setStatus(phrase);
+    setResultat(pts);
+    bilanTimer.current = setTimeout(() => {
+      setScore(pts);
+      setBilan(true);
+    }, RES_REFRAIN_TOTAL);
+  }
 
   async function load() {
     setLoadError(false);
-    setStatus('Chargement du refrain du jour…');
+    setChargement(true);
+    setStatus('Recherche de paroles…');
     try {
-      const rng = seeded('refrain');
+      const rng = manche === 0 ? seeded('refrain') : Math.random;
       const artistStart = Math.floor(rng() * ARTISTS.length);
 
-      for (let a = 0; a < 5; a++) {
+      /* Les paroles sont interrogées EN PARALLÈLE.
+
+         La version séquentielle enchaînait jusqu'à trente appels l'un après
+         l'autre en attendant chaque réponse : avec une API de paroles qui
+         répond en 300 à 800 ms et un taux de réussite faible, l'attente se
+         comptait en dizaines de secondes. Ici les six candidats d'un artiste
+         partent ensemble, et on ne paie que la plus lente des six.
+
+         L'ordre reste celui du tirage : on retient le premier candidat VALIDE
+         de la liste, pas le premier arrivé — sinon le morceau dépendrait de la
+         latence réseau, et le défi quotidien ne serait plus identique pour
+         tous les joueurs. */
+      /* Deux formes de titre sont tentées : la version normalisée — sans
+         « (feat. …) » ni « - Remaster » — puis le titre brut. Les bases de
+         paroles indexent tantôt l'une, tantôt l'autre, et n'essayer que la
+         première faisait échouer des morceaux pourtant présents. */
+      const chercherParoles = async (t) => {
+        const titres = [normTitle(t.trackName), t.trackName]
+          .filter((v, i, arr) => v && arr.indexOf(v) === i);
+
+        for (const title of titres) {
+          try {
+            const res = await fetch(
+              `/api/lyrics?${new URLSearchParams({ artist: t.artistName, title })}`
+            );
+            if (!res.ok) continue;
+            const data = await res.json();
+            const seq = extractSequence(data.lyrics, rng);
+            if (seq) return seq;
+          } catch {
+            /* réseau : on tente la forme suivante */
+          }
+        }
+        return null;
+      };
+
+      /* Dix artistes au lieu de cinq. La base est passée de 108 à 199 noms,
+         dont beaucoup de scène francophone et de niche que l'API de paroles
+         ne couvre pas : le taux d'échec par artiste a monté, et cinq essais
+         ne suffisaient plus à trouver une séquence exploitable. */
+      for (let a = 0; a < 10; a++) {
         const artist = ARTISTS[(artistStart + a * 17) % ARTISTS.length];
+        // Le point de suspension progresse à chaque artiste : sans ça, une
+        // recherche longue ressemble à un écran figé.
+        setStatus(`Recherche de paroles${'.'.repeat((a % 3) + 1)}`);
+
         const tracks = await searchTracks(artist.nom, { limit: 25 });
         if (!tracks.length) continue;
 
         const start = Math.floor(rng() * tracks.length);
-        for (let i = 0; i < Math.min(tracks.length, 6); i++) {
-          const t = tracks[(start + i) % tracks.length];
-          const res = await fetch(`/api/lyrics?${new URLSearchParams({ artist: t.artistName, title: normTitle(t.trackName) })}`);
-          if (!res.ok) continue;
-          const data = await res.json();
-          const seq = extractSequence(data.lyrics, rng);
-          if (seq) {
-            setTrack(t);
-            setContext(seq.context);
-            setAnswer(seq.answer);
-            setStatus(`« ${t.trackName} » de ${t.artistName} — tape la ligne qui suit. 2 essais (10 puis 5 pts).`);
-            return;
-          }
+        const candidats = Array.from(
+          { length: Math.min(tracks.length, 6) },
+          (_, i) => tracks[(start + i) % tracks.length]
+        );
+
+        const sequences = await Promise.all(candidats.map(chercherParoles));
+        const idx = sequences.findIndex(Boolean);
+
+        if (idx !== -1) {
+          setTrack(candidats[idx]);
+          setContext(sequences[idx].context);
+          setAnswer(sequences[idx].answer);
+          setStatus('Tape la ligne qui manque.');
+          setChargement(false);
+          return;
         }
       }
       throw new Error('Aucune parole exploitable après plusieurs artistes');
     } catch (err) {
       console.error('Erreur refrain:', err);
       setLoadError(true);
-      setStatus('Impossible de charger un refrain aujourd\'hui.');
+      setChargement(false);
+      setStatus('Impossible de charger des paroles aujourd\'hui.');
     }
   }
 
@@ -1792,7 +3014,14 @@ export function JeuRefrain({ onDone }) {
   function extractSequence(lyrics, rng) {
     if (!lyrics) return null;
     const lines = lyrics.split('\n').map((l) => l.trim());
-    const validAt = (i) => lines[i] && lines[i].length > 10 && lines[i].length < 80;
+    /* Bornes élargies : entre 10 et 80 caractères, on écartait les refrains
+       courts — très fréquents en pop — et les vers longs. Les lignes de
+       structure entre crochets, « [Refrain] » ou « [Verse 2] », sont en
+       revanche exclues : ce ne sont pas des paroles. */
+    const validAt = (i) => lines[i]
+      && lines[i].length > 6
+      && lines[i].length < 100
+      && !/^[[(]/.test(lines[i]);
     const candidates = [];
     for (let i = 0; i + 3 < lines.length; i++) {
       if (validAt(i) && validAt(i + 1) && validAt(i + 2) && validAt(i + 3)) {
@@ -1804,16 +3033,41 @@ export function JeuRefrain({ onDone }) {
     return { context: [lines[i], lines[i + 1], lines[i + 2]], answer: lines[i + 3] };
   }
 
-  // Indice du 2e essai : la moitié des mots révélée
-  function hint() {
-    const words = answer.split(/\s+/);
-    return words.map((w, i) => (i < Math.ceil(words.length / 2) ? w : '_'.repeat(Math.max(3, w.length)))).join(' ');
+  function signalerErreur() {
+    clearTimeout(erreurTimer.current);
+    setErreur(true);
+    erreurTimer.current = setTimeout(() => setErreur(false), 700);
   }
 
   async function playClip() {
-    if (!track) return;
-    const url = (await freshPreviewUrl(track.trackId)) ?? track.previewUrl;
-    jouer(url, 10);
+    if (!track || chargementAudio) return;
+    if (enLecture) { basculer(); return; }
+    setChargementAudio(true);
+    try {
+      const url = (await freshPreviewUrl(track.trackId)) ?? track.previewUrl;
+      if (url) jouer(url, REFRAIN_EXTRAIT_SEC);
+    } catch (err) {
+      console.error('Refrain — lecture:', err);
+    } finally {
+      setChargementAudio(false);
+    }
+  }
+
+  function relancer() {
+    arreter();
+    clearTimeout(bilanTimer.current);
+    setResultat(null);
+    setBilan(false);
+    setChargement(true);
+    setManche((m) => m + 1);
+    setTrack(null);
+    setContext([]);
+    setAnswer('');
+    setInput('');
+    setTries(0);
+    setDone(false);
+    setScore(null);
+    setErreur(false);
   }
 
   function guess() {
@@ -1824,60 +3078,277 @@ export function JeuRefrain({ onDone }) {
     const tolerance = Math.max(2, Math.floor(b.length / 5)); // ~20% d'erreurs tolérées
     const ok = a === b || lev(a, b) <= tolerance;
     if (ok) {
-      const pts = tries === 0 ? 10 : 5;
-      setScore(pts); setDone(true); onDone(pts);
-      setStatus(`🎉 Exact ! La ligne était : « ${answer} »`);
-    } else if (tries >= 1) {
-      setScore(0); setDone(true); onDone(0);
-      setStatus(`Perdu… la ligne était : « ${answer} »`);
-    } else {
-      setTries(1);
-      setStatus('Raté — dernier essai (5 pts max) : moitié des mots révélée + extrait audio débloqué.');
+      terminerPartie(REFRAIN_POINTS[Math.min(tries, REFRAIN_POINTS.length - 1)], 'Exact.');
+      return;
     }
+
+    const suivant = tries + 1;
+    signalerErreur();
+    if (suivant >= REFRAIN_ESSAIS) {
+      setTries(suivant);
+      terminerPartie(0, 'Perdu.');
+      return;
+    }
+
+    setTries(suivant);
+    /* Le message nomme ce qui vient d'apparaître : un indice qui surgit sans
+       être annoncé passe inaperçu quand le regard est sur la ligne de mots. */
+    const gain = suivant === REFRAIN_ARTISTE_DES ? ' L\'artiste est révélé.'
+      : suivant === REFRAIN_AUDIO_DES ? ' L\'extrait se débloque.'
+        : suivant === REFRAIN_TITRE_DES ? ' Le titre est révélé.'
+          : '';
+    const restants = REFRAIN_ESSAIS - suivant;
+    setStatus(`Raté — d'autres mots apparaissent.${gain} `
+      + `${restants} essai${restants > 1 ? 's' : ''} restant${restants > 1 ? 's' : ''}.`);
   }
 
-  return (
-    <div style={panel}>
-      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Complète le refrain</h3>
-      <p className="description" style={{ marginBottom: 'var(--e4)' }}>
-        Trois lignes du morceau te sont données — tape la ligne suivante. Fautes et accents tolérés.
-      </p>
+  /* Un cinquième des mots par essai raté. On arrondit vers le haut pour
+     qu'une ligne courte révèle quand même quelque chose dès le premier raté ;
+     le dernier mot n'est jamais donné avant la fin. */
+  const nbMots = answer ? answer.split(/\s+/).filter(Boolean).length : 0;
+  const motsReveles = done ? nbMots
+    : Math.min(nbMots - 1, Math.ceil((nbMots * tries) / REFRAIN_ESSAIS));
+  const joue = enLecture && !enPause;
+  const audioDispo = (tries >= REFRAIN_AUDIO_DES || done) && !!track;
 
-      {context.length > 0 && (
-        <blockquote style={{
-          borderLeft: '1px solid var(--or)', background: 'var(--onyx-haut)', borderRadius: 0,
-          padding: 'var(--e3) var(--e5)', whiteSpace: 'pre-line',
-          marginBottom: 'var(--e4)', color: 'var(--ivoire)',
-        }}>
-          {context.join('\n')}
-          {'\n'}
-          <span style={{ color: 'var(--or)' }}>{done ? answer : tries >= 1 ? hint() : '␣␣␣␣␣␣␣␣␣␣␣␣ ?'}</span>
-        </blockquote>
+  return (
+    <div style={{ ...panel, position: 'relative', textAlign: 'center' }}>
+      <style>{`
+        @keyframes refOnde {
+          from { background-position: 200% 0; }
+          to   { background-position: -200% 0; }
+        }
+        @keyframes refAttente {
+          0%, 100% { opacity: 0.2; }
+          50%      { opacity: 0.75; }
+        }
+        @keyframes refMot {
+          from { opacity: 0; transform: translateY(6px) scale(0.96); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes refTrait {
+          from { opacity: 0.35; }
+          to   { opacity: 1; }
+        }
+        @keyframes refApparition {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
+      {intro && <IntroRefrain onFin={() => setIntro(false)} />}
+      {resultat !== null && (
+        <ResultatRefrain
+          score={resultat}
+          ligne={answer}
+          detail={track ? `${track.trackName} — ${track.artistName}` : null}
+        />
       )}
 
-      {(tries >= 1 || done) && track && (
-        <div style={{ marginBottom: 'var(--e4)' }}>
-          <button onClick={playClip} style={btn(false, false)}
-            onMouseEnter={survolOr} onMouseLeave={sortieOr}>
-            Écouter l'extrait (10 s)
-          </button>
+      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Complète le refrain</h3>
+      <p className="description" style={{ maxWidth: 470, margin: '0 auto var(--e5)' }}>
+        Trois lignes du morceau, puis la tienne. Chaque erreur dévoile des mots
+        et coûte deux points.
+      </p>
+
+      {/* ---- Attente ----
+           Un squelette aux dimensions du vrai bloc plutôt qu'une simple ligne
+           de texte : la mise en page ne saute pas à l'arrivée des paroles, et
+           l'ondulation dit que quelque chose travaille — un panneau figé, non. */}
+      {chargement && (
+        <div style={{
+          maxWidth: 560, margin: '0 auto var(--e5)',
+          padding: 'var(--e5) var(--e4)',
+          background: 'var(--onyx-haut)',
+          borderRadius: 'var(--rayon-carte)',
+          border: '0.5px solid var(--filet)',
+        }}>
+          {[86, 74, 62].map((largeur, i) => (
+            <div key={i} style={{
+              height: 13, width: `${largeur}%`, margin: '0 auto var(--e3)',
+              borderRadius: 3,
+              background: 'linear-gradient(90deg, var(--filet) 25%, var(--filet-fort) 50%, var(--filet) 75%)',
+              backgroundSize: '200% 100%',
+              animation: `refOnde 1500ms ${i * 140}ms linear infinite`,
+            }} />
+          ))}
+
+          {/* Les traits de la ligne à trouver sont déjà là, en attente : le
+              joueur voit ce qui l'attend avant même que le texte arrive. */}
+          <div style={{
+            marginTop: 'var(--e4)', paddingTop: 'var(--e3)',
+            borderTop: '0.5px solid var(--filet)',
+            display: 'flex', gap: 10, justifyContent: 'center',
+          }}>
+            {[3, 5, 4, 6].map((lettres, i) => (
+              <span key={i} style={{ display: 'inline-flex', gap: 3 }}>
+                {Array.from({ length: lettres }, (_, j) => (
+                  <span key={j} style={{
+                    display: 'inline-block', width: 9, height: 14,
+                    borderBottom: '1.5px solid var(--or)',
+                    opacity: 0.25,
+                    animation: `refAttente 1400ms ${(i * 5 + j) * 60}ms ease-in-out infinite`,
+                  }} />
+                ))}
+              </span>
+            ))}
+          </div>
         </div>
       )}
 
+      {/* ---- Les paroles ---- */}
+      {!chargement && context.length > 0 && (
+        <div style={{
+          maxWidth: 560, margin: '0 auto var(--e5)',
+          padding: 'var(--e5) var(--e4)',
+          background: 'var(--onyx-haut)',
+          borderRadius: 'var(--rayon-carte)',
+          border: '0.5px solid var(--filet)',
+        }}>
+          {context.map((l, i) => (
+            <div key={i} style={{
+              fontFamily: 'var(--sans)', fontSize: 15, lineHeight: 1.7,
+              // Les lignes données s'éteignent en remontant : la dernière est
+              // celle qui précède la réponse, c'est elle qu'on relit.
+              color: i === context.length - 1 ? 'var(--ivoire)' : 'var(--lin)',
+            }}>
+              {l}
+            </div>
+          ))}
+
+          <div style={{
+            marginTop: 'var(--e3)', paddingTop: 'var(--e3)',
+            borderTop: '0.5px solid var(--filet)',
+          }}>
+            <LigneMasquee texte={answer} motsReveles={motsReveles} tout={done} />
+          </div>
+        </div>
+      )}
+
+      {/* ---- Indices ----
+           Chaque étiquette occupe une place réservée dès le départ : sans
+           hauteur fixe, l'arrivée du second indice décalerait tout le bas du
+           panneau, et le champ de saisie sauterait sous le curseur. */}
+      {!chargement && !loadError && track && (
+        <div style={{
+          display: 'flex', gap: 'var(--e2)', justifyContent: 'center',
+          minHeight: 30, marginBottom: 'var(--e4)',
+        }}>
+          {[
+            { visible: tries >= REFRAIN_ARTISTE_DES || done, etiquette: 'artiste', valeur: track.artistName },
+            { visible: tries >= REFRAIN_TITRE_DES || done, etiquette: 'titre', valeur: track.trackName },
+          ].map(({ visible, etiquette, valeur }) => (
+            <span
+              key={etiquette}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                padding: '5px 12px', borderRadius: 'var(--rayon-controle)',
+                background: 'var(--onyx-haut)',
+                border: '0.5px solid var(--filet-fort)',
+                maxWidth: 260, whiteSpace: 'nowrap',
+                overflow: 'hidden', textOverflow: 'ellipsis',
+                opacity: visible ? 1 : 0,
+                transform: visible ? 'none' : 'translateY(6px)',
+                transition: 'opacity 380ms ease, transform 380ms cubic-bezier(0.22, 1, 0.36, 1)',
+                pointerEvents: visible ? 'auto' : 'none',
+              }}
+            >
+              <span className="etiquette-mono" style={{ color: 'var(--cendre)' }}>{etiquette}</span>
+              <span style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--ivoire)' }}>
+                {valeur}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* ---- Saisie ---- */}
       {loadError ? (
         <button onClick={load} style={btn(true, false)}>Réessayer le chargement</button>
       ) : (
-        <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap' }}>
-          <input value={input} onChange={(e) => setInput(e.target.value)}
+        <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap', justifyContent: 'center' }}>
+          <input
+            value={input} onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && guess()}
             placeholder="La ligne suivante…" disabled={done || !answer}
-            style={{ ...inputStyle, minWidth: 320 }} />
+            maxLength={120}
+            style={{
+              ...inputStyle, minWidth: 320,
+              border: erreur ? '1px solid var(--carmin)' : inputStyle.border,
+              transition: 'border-color var(--transition-courte)',
+            }}
+          />
           <button onClick={guess} disabled={done || !answer} style={btn(true, done || !answer)}>Valider</button>
         </div>
       )}
 
-      <p style={statusStyle}>{status}</p>
-      <ScoreBox score={score} />
+      {/* ---- Extrait, débloqué au second essai ----
+           Pas de survolOr/sortieOr : le survol écraserait l'or de l'état
+           « en lecture » et le sortir le repasserait en ivoire. */}
+      {audioDispo && (
+        <div style={{ marginTop: 'var(--e3)' }}>
+          <button
+            onClick={playClip}
+            disabled={chargementAudio}
+            style={{
+              ...btn(false, chargementAudio),
+              display: 'inline-flex', alignItems: 'center', gap: 'var(--e2)',
+              borderColor: joue ? 'var(--or)' : 'var(--filet-fort)',
+              color: joue ? 'var(--or)' : 'var(--ivoire)',
+            }}
+          >
+            {joue ? (
+              <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
+                <rect x="0" y="0" width="3" height="12" />
+                <rect x="7" y="0" width="3" height="12" />
+              </svg>
+            ) : (
+              <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
+                <path d="M0 0v12l10-6z" />
+              </svg>
+            )}
+            {chargementAudio ? 'Chargement…'
+              : joue ? 'Pause'
+                : enPause ? 'Reprendre'
+                  : `Écouter l'extrait (${REFRAIN_EXTRAIT_SEC} s)`}
+          </button>
+        </div>
+      )}
+
+      {/* ---- Essais restants ---- */}
+      {!done && answer && (
+        <div className="etiquette-mono" style={{ color: 'var(--cendre)', marginTop: 'var(--e4)' }}>
+          {tries === REFRAIN_ESSAIS - 1
+            ? `dernier essai · ${REFRAIN_POINTS[tries]} points`
+            : `${REFRAIN_ESSAIS - tries} essais · ${REFRAIN_POINTS[tries]} points`}
+        </div>
+      )}
+
+      {!done && <p style={statusStyle}>{status}</p>}
+
+      {/* ---- Bilan ---- */}
+      {score !== null && bilan && (
+        <div style={{
+          marginTop: 'var(--e5)', paddingTop: 'var(--e5)',
+          borderTop: '1px solid var(--or)', textAlign: 'center',
+          animation: 'refApparition 340ms ease-out both',
+        }}>
+          <div className="score-affiche" style={{
+            color: score >= 9.5 ? 'var(--jade)' : score < 4 ? 'var(--carmin)' : 'var(--ivoire)',
+          }}>
+            {score.toFixed(1).replace('.', ',')} <span style={{ color: 'var(--cendre)' }}>/ 10</span>
+          </div>
+          <p className="description" style={{ marginTop: 'var(--e2)' }}>
+            <span style={{ color: 'var(--ivoire)' }}>{track?.trackName}</span> — {track?.artistName}
+          </p>
+
+          {!daily && (
+            <button onClick={relancer} style={{ ...btn(true, false), marginTop: 'var(--e4)' }}>
+              Nouveau refrain
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -82,7 +82,7 @@ function keyframesCurseur() {
   `;
 }
 
-function SurcoucheIntro({ onNote }) {
+function SurcoucheIntro({ onNote, onPasser }) {
   // Les sons sont programmés ici, sur les délais qui datent déjà les notes à
   // l'écran : une seule source de vérité, donc aucune dérive possible entre
   // ce qu'on voit et ce qu'on entend.
@@ -96,7 +96,18 @@ function SurcoucheIntro({ onNote }) {
   return (
     <div
       data-acc-surcouche
+      onClick={onPasser}
+      role="button"
+      tabIndex={0}
+      aria-label="Passer la présentation"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onPasser?.();
+        }
+      }}
       style={{
+        cursor: 'pointer',
         position: 'absolute',
         inset: 0,
         borderRadius: 'inherit',
@@ -113,7 +124,6 @@ function SurcoucheIntro({ onNote }) {
         WebkitBackdropFilter: 'blur(4px)',
         animation: `accVoile ${INTRO_TOTAL}ms ease-out both`,
       }}
-      aria-hidden="true"
     >
       {/* Tout l'acte s'efface d'un bloc : un seul wrapper animé plutôt que
           cinq sorties à synchroniser. */}
@@ -452,6 +462,17 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
     synth.volume.value = volume > 0 ? Tone.gainToDb(volume) : -Infinity;
   }, [volume, pianoPret]);
 
+  /* Passer la présentation.
+
+     Le démontage de la surcouche annule les minuteurs des notes À VENIR — sa
+     fonction de nettoyage s'en charge — mais pas celles qui résonnent déjà :
+     un sampler continue de sonner jusqu'au relâchement. D'où le releaseAll,
+     sans lequel on couperait l'image en laissant l'accord dans le vide. */
+  function passerIntro() {
+    try { synthRef.current?.releaseAll?.(); } catch {}
+    setIntro(false);
+  }
+
   /* Note de l'intro. Le volume n'a rien à régler ici : le sampler est déjà
      asservi au curseur de la page par l'effet ci-dessus.
 
@@ -740,7 +761,7 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
   ];
 
   return (
-    <div style={{ background: 'var(--onyx)', border: '0.5px solid var(--filet)', borderRadius: 'var(--rayon-carte)', padding: 'var(--e6)', marginBottom: 'var(--e4)', position: 'relative' }}>
+    <div style={{ background: 'var(--onyx)', border: '0.5px solid var(--filet)', borderRadius: 'var(--rayon-carte)', padding: 'var(--e6)', marginBottom: 'var(--e4)', position: 'relative', textAlign: 'center' }}>
       <style>{`
         @keyframes notePop {
           0% { transform: scale(0); opacity: 0; }
@@ -791,11 +812,11 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
       `}</style>
 
       <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Retrouve l'accord</h3>
-      <p className="description" style={{ marginBottom: 'var(--e4)' }}>
+      <p className="description" style={{ maxWidth: 470, margin: '0 auto var(--e4)' }}>
         Écoute la cible, pose tes notes sur la portée, ajuste-les en les glissant, puis valide.
       </p>
 
-      <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap', marginBottom: 'var(--e3)' }}>
+      <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 'var(--e3)' }}>
         {boutons.map((b) => (
           <button key={b.label} onClick={b.onClick} disabled={b.disabled}
             onMouseEnter={b.primaire ? undefined : survolOr}
@@ -825,7 +846,7 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
         onMouseUp={endDrag}
         viewBox="0 0 700 215"
         width="100%"
-        style={{ maxWidth: 700, display: 'block', cursor: dragIndex !== null ? 'grabbing' : 'crosshair', marginTop: 'var(--e2)', userSelect: 'none' }}
+        style={{ maxWidth: 700, display: 'block', margin: 'var(--e2) auto 0', cursor: dragIndex !== null ? 'grabbing' : 'crosshair', userSelect: 'none' }}
       >
         {LINES_Y.map(y => (
           <line key={y} x1={20} y1={y} x2={680} y2={y} stroke="var(--filet-fort)" strokeWidth={1} />
@@ -886,7 +907,12 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
       </svg>
 
       {/* Sélecteur de mode d'écoute */}
-      <div style={{ display: 'flex', gap: 'var(--e2)', marginTop: 'var(--e4)', flexWrap: 'wrap' }}>
+      {/* Bornée puis centrée : à pleine largeur, deux cartes de 350 px se
+         lisent comme deux panneaux et non comme un choix. */}
+      <div style={{
+        display: 'flex', gap: 'var(--e2)', marginTop: 'var(--e4)', flexWrap: 'wrap',
+        justifyContent: 'center', maxWidth: 560, marginLeft: 'auto', marginRight: 'auto',
+      }}>
         {[
           { on: true, titre: 'Mode découverte', desc: 'les notes sonnent au survol' },
           { on: false, titre: 'Mode silencieux', desc: 'les notes sonnent seulement au clic' },
@@ -946,7 +972,7 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
       )}
 
       {/* ---- Surcouches : placées en dernier pour passer au-dessus de tout ---- */}
-      {intro && <SurcoucheIntro onNote={jouerNoteIntro} />}
+      {intro && <SurcoucheIntro onNote={jouerNoteIntro} onPasser={passerIntro} />}
       {resultat !== null && <SurcoucheResultat score={resultat} />}
     </div>
   );

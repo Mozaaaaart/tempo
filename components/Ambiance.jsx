@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ecrireVolume, ecrireActif } from '@/utils/volume';
 
 /**
  * Ambiance sonore — nappe d'accords, voix soliste et chœur.
@@ -568,6 +569,24 @@ export default function Ambiance({ couperSi = false, compact = false }) {
     return arreter;
   }, [demarrer, arreter]);
 
+  /* Les réglages peuvent être modifiés ailleurs — par le curseur des pages
+     d'épreuve, qui écrit sous les mêmes clés. Sans cette écoute, Ambiance
+     gardait son état de montage et se retrouvait en désaccord avec le reste
+     du site dès qu'on revenait sur l'accueil. */
+  useEffect(() => {
+    const surVolume = (ev) => setVolume(ev.detail);
+    const surActif = (ev) => {
+      setActif(ev.detail);
+      if (ev.detail) demarrer();
+    };
+    window.addEventListener('mb:volume-change', surVolume);
+    window.addEventListener('mb:actif-change', surActif);
+    return () => {
+      window.removeEventListener('mb:volume-change', surVolume);
+      window.removeEventListener('mb:actif-change', surActif);
+    };
+  }, [demarrer]);
+
   /** Rampe douce du gain maître. setTargetAtTime évite tout claquement. */
   const viser = useCallback((cible, duree) => {
     const ctx = ctxRef.current;
@@ -628,17 +647,20 @@ export default function Ambiance({ couperSi = false, compact = false }) {
     };
   }, [actif, couperSi, pret]);
 
+  /* L'écriture passe par le module partagé plutôt que par localStorage en
+     direct : lui seul prévient les autres composants montés. Écrire la clé
+     à la main mettait le stockage à jour sans que personne l'apprenne. */
   function basculer() {
     demarrer();                 // reconstruit la chaîne si elle a été fermée
     const suivant = !actif;
     setActif(suivant);
     setOuvert(suivant);
-    try { localStorage.setItem(CLE_ACTIF, suivant ? '1' : '0'); } catch {}
+    ecrireActif(suivant);
   }
 
   function changerVolume(v) {
     setVolume(v);
-    try { localStorage.setItem(CLE_VOLUME, String(v)); } catch {}
+    ecrireVolume(v);
   }
 
   const taille = compact ? 28 : 34;

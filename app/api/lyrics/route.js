@@ -28,8 +28,20 @@ export async function GET(request) {
     }
 
     const data = await res.json();
+    /* `max-age` en plus de `s-maxage` : sans lui, seul le cache partagé de
+       Vercel retenait la réponse, et le NAVIGATEUR repartait en aller-retour à
+       chaque fois. Or l'épreuve Refrain émet sept à treize requêtes de paroles
+       par montage, et le défi du jour la remonte à chaque arrivée : revenir
+       dessus refaisait une douzaine d'allers-retours pour des réponses déjà
+       connues.
+
+       Une heure côté navigateur, une journée côté bord : des paroles ne
+       changent pas, mais on garde la main pour corriger un mauvais extrait
+       dans la journée sans attendre l'expiration chez chaque visiteur. */
     return NextResponse.json(data, {
-      headers: { 'Cache-Control': 's-maxage=86400, stale-while-revalidate=604800' }
+      headers: {
+        'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800',
+      }
     });
   } catch (err) {
     return NextResponse.json(

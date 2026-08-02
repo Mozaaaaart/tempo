@@ -4,6 +4,13 @@ import { panel, btn, seeded, ScoreBox, statusStyle } from '@/components/dailyGam
 import { freshPreviewUrl } from '@/utils/deezer';
 import { useVolume } from '@/utils/volume';
 import { useIntro } from '@/utils/intro';
+import { useEpreuveVisible } from '@/components/ContexteEpreuveVisible';
+import IntroDuelQuotidien from '@/components/IntroDuelQuotidien';
+/* Surcouche de résultat partagée. Elle porte le nom de l'épreuve où elle est
+   née, mais elle est générique — score et détail en props — et c'est déjà
+   celle qu'utilise Humain ou IA. En recopier une seconde ici ferait diverger
+   deux animations qui doivent rester identiques d'une épreuve à l'autre. */
+import { ResultatIA, RES_IA_TOTAL } from '@/components/IntroIA';
 
 /**
  * Épreuve « Duel » — face-à-face de popularité.
@@ -15,15 +22,66 @@ import { useIntro } from '@/utils/intro';
  * Bonne réponse : le challenger glisse à gauche et devient la référence — le
  * chiffre qu'on vient de découvrir sert donc de point de comparaison suivant.
  * Mauvaise réponse : la référence ne bouge pas, seul le challenger est
- * remplacé. Dix duels, un point par bonne réponse, note sur dix.
+ * remplacé. Cinq duels, deux points par bonne réponse, note sur dix.
  *
  * Données : public/data/duels.json, produit hors ligne par
  * scripts/generer-duels.mjs. Chargé par fetch et non par import — 350 Ko
  * dans le bundle JS seraient téléchargés et parsés à chaque visite.
  */
 
+/* ------------------------------------------------------------------
+   CACHE DU POOL, au niveau du module
+
+   duels.json pèse 636 Ko. Le fichier était récupéré et désérialisé à CHAQUE
+   montage : dans le défi du jour, où l'épreuve est remontée à chaque arrivée
+   tant qu'on ne l'a pas entamée, cela refaisait un aller-retour réseau et un
+   JSON.parse de 636 Ko à chaque passage — une dizaine de millisecondes sur le
+   fil principal, plus le filtrage.
+
+   On retient la PROMESSE et non le résultat : deux montages simultanés — ce
+   qui arrive au double montage de StrictMode en développement — partagent
+   alors la même requête au lieu d'en lancer deux.
+
+   Portée module et non composant : c'est justement d'un montage à l'autre
+   qu'il faut se souvenir. Un rechargement de page la vide, ce qui est correct
+   — le fichier est régénéré hors ligne par scripts/generer-duels.mjs.
+
+   En cas d'échec, la promesse est oubliée : sans cela, une panne réseau
+   passagère condamnerait l'épreuve pour toute la durée de la session. */
+let poolPromesse = null;
+
+function chargerPool() {
+  if (poolPromesse) return poolPromesse;
+  poolPromesse = (async () => {
+    const rep = await fetch('/data/duels.json');
+    if (!rep.ok) throw new Error(`HTTP ${rep.status}`);
+    const data = await rep.json();
+    const morceaux = (data?.morceaux ?? []).filter(
+      (m) => m.deezerId && m.streams > 0 && m.pochette
+    );
+    if (morceaux.length < 30) throw new Error('pool insuffisant');
+    return morceaux;
+  })().catch((err) => {
+    poolPromesse = null;
+    throw err;
+  });
+  return poolPromesse;
+}
+
 /** Mode quotidien : format fixe, noté sur dix, une seule tentative. */
-const NB_DUELS_QUOTIDIEN = 10;
+const NB_DUELS_QUOTIDIEN = 5;
+
+/* La note reste sur dix quel que soit le nombre de duels : c'est le barème
+   qui s'adapte, pas l'échelle. Sans cette conversion, passer de dix manches à
+   cinq plafonnait le score à 5 sur 10 — le maximum devenait inatteignable
+   sans qu'aucun message ne le dise. */
+const POINTS_PAR_DUEL = 10 / NB_DUELS_QUOTIDIEN;
+
+/** Note sur dix à partir du nombre de bonnes réponses. Une décimale, comme
+    partout ailleurs sur le site. */
+function noteQuotidienne(bonnes) {
+  return Math.round(bonnes * POINTS_PAR_DUEL * 10) / 10;
+}
 
 /** Mode libre : survie à UNE seule vie. Aucune erreur permise — le score est
     le niveau atteint, comme dans l'épreuve « Humain ou IA ». */
@@ -811,6 +869,18 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
   // le couple (épreuve, clé de relance) au montage précédent, ce qui sépare
   // une navigation d'un clic sur « Relancer l'épreuve ».
   const introAutorisee = useIntro('duel');
+
+  /* Présentation propre au défi du jour.
+
+     Celle du mode libre — montée par `demarrerRun`, et déjà coupée en
+     quotidien par son test `!daily` — met en scène trois vies et un niveau
+     qui monte. Ni l'un ni l'autre n'existe dans le défi : format fixe, aucune
+     vie, note sur dix. Une seconde présentation vaut mieux qu'une seule
+     tordue pour servir les deux modes.
+
+     useIntro doit rester appelé à chaque rendu — le placer derrière le `&&`
+     en ferait un appel conditionnel, ce que React interdit. */
+  const [introQuotidien, setIntroQuotidien] = useState(() => daily && introAutorisee);
   const [phase, setPhase] = useState('chargement'); // chargement | jeu | revelation | fin | erreur
   const [reference, setReference] = useState(null);
   const [challenger, setChallenger] = useState(null);
@@ -826,6 +896,15 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
   const [enPause, setEnPause] = useState(null);       // 'gauche' | 'droite' | null — chargé mais arrêté en cours
   const [chargementAudio, setChargementAudio] = useState(null);
   const [message, setMessage] = useState('');
+  /* Cette épreuve n'utilise pas useLecteurAudio : elle gère son propre
+     élément audio, pour pouvoir suivre le budget d'écoute côté par côté. Elle
+     doit donc lire le contexte de visibilité elle-même. */
+  const visible = useEpreuveVisible();
+  /* Surcouche de fin, posée au dernier duel du défi puis retirée seule. */
+  const [resultat, setResultat] = useState(null);
+  /* Le relevé du bas attend que le voile soit levé : le même chiffre affiché
+     deux fois au même instant, l'un par-dessus l'autre, se contredirait. */
+  const [bilan, setBilan] = useState(false);
   const volume = useVolume();
 
   const poolRef = useRef([]);        // copie mélangée, consommée au fil du run
@@ -841,6 +920,7 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
   const minuteurAudioRef = useRef(null);
   const minuteurSuiteRef = useRef(null);
   const minuteurFinRef = useRef(null);    // laisse la surcouche finir avant l'écran de fin
+  const minuteurBilanRef = useRef(null);  // laisse le voile de résultat se lever
   // Identifiant de la dernière demande d'écoute : freshPreviewUrl est
   // asynchrone, et sans ce garde un double clic rapide sur les deux cartes
   // laisserait la requête la plus lente démarrer par-dessus l'autre.
@@ -1033,15 +1113,8 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
 
     (async () => {
       try {
-        const rep = await fetch('/data/duels.json');
-        if (!rep.ok) throw new Error(`HTTP ${rep.status}`);
-        const data = await rep.json();
+        const morceaux = await chargerPool();
         if (!vivant) return;
-
-        const morceaux = (data?.morceaux ?? []).filter(
-          (m) => m.deezerId && m.streams > 0 && m.pochette
-        );
-        if (morceaux.length < 30) throw new Error('pool insuffisant');
 
         morceauxRef.current = morceaux;
         rngRef.current = daily ? seeded('duel') : Math.random;
@@ -1058,9 +1131,32 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
       couperAudio();
       clearTimeout(minuteurSuiteRef.current);
       clearTimeout(minuteurFinRef.current);
+      clearTimeout(minuteurBilanRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* Le voile de résultat se retire seul : le plateau est déjà figé derrière
+     lui, on ne bloque rien. */
+  useEffect(() => {
+    if (resultat === null) return undefined;
+    const t = setTimeout(() => setResultat(null), RES_IA_TOTAL);
+    return () => clearTimeout(t);
+  }, [resultat]);
+
+  useEffect(() => () => clearTimeout(minuteurBilanRef.current), []);
+
+  /* Sortie d'écran : on coupe l'extrait. Dans le défi, une épreuve entamée
+     reste montée derrière celle qu'on regarde — le démontage, qui coupait le
+     son jusqu'ici, n'a plus lieu. */
+  useEffect(() => {
+    /* Couper une lecture en cours EST un changement d'état : la règle
+       set-state-in-effect vise les cascades de rendus, pas ce cas où
+       l'effet ne se déclenche qu'à la sortie d'écran. */
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!visible) couperAudio();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   /* ---------- Réponse ---------- */
 
@@ -1093,11 +1189,18 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
   function terminer() {
     setAnnonce(null);
     setPhase('fin');
-    if (daily) onDone(bonnesRef.current);
+    if (!daily) return;
+
+    const note = noteQuotidienne(bonnesRef.current);
+    onDone(note);
+    /* Même séquence que les autres épreuves : le voile occupe le panneau le
+       temps que la note soit lue, puis se retire et laisse le relevé. */
+    setResultat(note);
+    minuteurBilanRef.current = setTimeout(() => setBilan(true), RES_IA_TOTAL);
   }
 
   function avancer(ok) {
-    // Mode quotidien : format fixe, dix manches, puis note sur dix.
+    // Mode quotidien : format fixe, NB_DUELS_QUOTIDIEN manches, note sur dix.
     if (daily && duel >= NB_DUELS_QUOTIDIEN) { terminer(); return; }
 
     // Mode libre : seule la perte interrompt le rythme. Sur une bonne
@@ -1353,10 +1456,18 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
 
       {phase === 'fin' && (
         daily ? (
-          <ScoreBox
-            score={bonnesRef.current}
-            detail={`${bonnesRef.current} bonne${bonnesRef.current > 1 ? 's' : ''} réponse${bonnesRef.current > 1 ? 's' : ''} sur ${NB_DUELS_QUOTIDIEN}. Données kworb.net.`}
-          />
+          /* Centré : le panneau de cette épreuve n'aligne pas son contenu au
+             milieu, contrairement à celui de Humain ou IA, et le relevé
+             restait donc collé à gauche. `bilan` le retient tant que le voile
+             n'a pas fini de présenter la note. */
+          bilan && (
+            <div style={{ textAlign: 'center' }}>
+              <ScoreBox
+                score={noteQuotidienne(bonnes)}
+                detail={`${bonnes} bonne${bonnes > 1 ? 's' : ''} réponse${bonnes > 1 ? 's' : ''} sur ${NB_DUELS_QUOTIDIEN}. Données kworb.net.`}
+              />
+            </div>
+          )
         ) : (
           <div style={{
             marginTop: 'var(--e5)', paddingTop: 'var(--e5)',
@@ -1387,6 +1498,29 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
 
       {/* ---- Surcouche : placée en dernier pour passer au-dessus de tout ---- */}
       {annonce && <Surcouche annonce={annonce} onPasser={() => setAnnonce(null)} />}
+
+      {/* Voile de fin du défi : la note en grand, comme sur les autres
+          épreuves. Posé après la surcouche pour passer au-dessus d'elle. */}
+      {resultat !== null && (
+        /* `bonnes` et non `bonnesRef.current` : lire une ref pendant le
+           rendu est interdit, et l'état est tenu à jour à chaque bonne
+           réponse — il vaut donc exactement la même chose ici. */
+        <ResultatIA
+          score={resultat}
+          detail={`${bonnes} bonne${bonnes > 1 ? 's' : ''} réponse${bonnes > 1 ? 's' : ''} sur ${NB_DUELS_QUOTIDIEN}`}
+        />
+      )}
+
+      {/* ---- Présentation du défi du jour ----
+           Exclusive de la précédente : `demarrerRun` ne pose d'annonce de
+           type intro qu'en mode libre, les deux voiles ne peuvent donc pas se
+           superposer. */}
+      {daily && introQuotidien && (
+        <IntroDuelQuotidien
+          manches={NB_DUELS_QUOTIDIEN}
+          onFin={() => setIntroQuotidien(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { setSeedSalt, btn } from '@/components/dailyGames';
+import { tirerVariante } from '@/utils/variante';
 import PageEpreuve from '@/components/PageEpreuve';
 
 /**
@@ -19,12 +20,12 @@ export default function StandaloneGame({ num, titre, description, Jeu }) {
   useEffect(() => { setMounted(true); }, []);
 
   if (mounted) {
-    if (saltRef.current === null) saltRef.current = Math.random().toString(36).slice(2);
+    if (saltRef.current === null) saltRef.current = tirerVariante();
     setSeedSalt(saltRef.current);
   }
 
   function relancer() {
-    saltRef.current = Math.random().toString(36).slice(2);
+    saltRef.current = tirerVariante();
     setSeedSalt(saltRef.current);
     setLastScore(null);
     setRunKey((k) => k + 1);

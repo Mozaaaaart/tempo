@@ -4,6 +4,7 @@ import { ARTISTS } from '@/data/artists';
 import { searchTracks, trackDetails, freshPreviewUrl } from '@/utils/deezer';
 import { useVolume } from '@/utils/volume';
 import { useIntro } from '@/utils/intro';
+import { useEpreuveVisible } from '@/components/ContexteEpreuveVisible';
 import IntroArtiste, { ResultatArtiste, RES_ARTISTE_TOTAL } from './IntroArtiste';
 import IntroPochette, { ResultatPochette, RES_POCHETTE_TOTAL } from './IntroPochette';
 import IntroSeconde, { ResultatSeconde, RES_SECONDE_TOTAL } from './IntroSeconde';
@@ -103,6 +104,11 @@ export const sortieOr = (ev) => {
 ============================================================ */
 export function useLecteurAudio() {
   const volume = useVolume();
+  /* Vraie hors du défi du jour, où il n'y a pas de fournisseur. Dans le défi,
+     une épreuve entamée reste montée quand on en regarde une autre — sans quoi
+     sa progression serait perdue et la tentative unique contournable. Il faut
+     donc lui couper le son quand elle quitte l'écran. */
+  const visible = useEpreuveVisible();
   const audioRef = useRef(null);
   const timerRef = useRef(null);
   const finRef = useRef(null);
@@ -153,6 +159,17 @@ export function useLecteurAudio() {
 
   // Coupe le son au démontage (changement d'épreuve, relance, navigation)
   useEffect(() => arreter, []);
+
+  /* Et à la sortie d'écran, pour les épreuves qui restent montées derrière
+     celle qu'on regarde. Le démontage ne suffit plus : il n'a plus lieu. */
+  useEffect(() => {
+    /* Couper une lecture en cours EST un changement d'état : la règle
+       set-state-in-effect vise les cascades de rendus, pas ce cas où
+       l'effet ne se déclenche qu'à la sortie d'écran. */
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!visible) arreter();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   function terminer() {
     const onFin = finRef.current;
@@ -2951,6 +2968,24 @@ export function JeuRefrain({ onDone, daily = false }) {
          paroles indexent tantôt l'une, tantôt l'autre, et n'essayer que la
          première faisait échouer des morceaux pourtant présents. */
       const chercherParoles = async (t) => {
+        /* Générateur PROPRE à ce candidat, dérivé de son identifiant.
+
+           `rng` est une SUITE, et celle-ci était consommée ici, à l'intérieur
+           d'un Promise.all : les six candidats tiraient leurs numéros dans
+           l'ordre où le réseau répondait, pas dans l'ordre du tirage. La ligne
+           retenue changeait donc d'une exécution à l'autre — et, les tirages
+           suivants se trouvant décalés, le morceau lui-même finissait par
+           changer. Le défi du jour n'était identique pour tous que par chance,
+           et deux passages sur l'épreuve donnaient deux paroles différentes.
+
+           Le tri des candidats était déjà protégé — on retient le premier
+           VALIDE de la liste, pas le premier arrivé — mais pas la
+           consommation du générateur.
+
+           Une graine par trackId règle les deux : elle ne dépend d'aucun
+           ordre, seulement du candidat, et reste la même à chaque montage. */
+        const rngLigne = manche === 0 ? seeded(`refrain:${t.trackId}`) : Math.random;
+
         const titres = [normTitle(t.trackName), t.trackName]
           .filter((v, i, arr) => v && arr.indexOf(v) === i);
 
@@ -2961,7 +2996,7 @@ export function JeuRefrain({ onDone, daily = false }) {
             );
             if (!res.ok) continue;
             const data = await res.json();
-            const seq = extractSequence(data.lyrics, rng);
+            const seq = extractSequence(data.lyrics, rngLigne);
             if (seq) return seq;
           } catch {
             /* réseau : on tente la forme suivante */

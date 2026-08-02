@@ -233,7 +233,7 @@ function construireBrins({ brins, amplitude, hauteur, pas, sections, W, temps = 
   return resultat;
 }
 
-export default function Onde({ variante = 'principale', sections = 5, active = null }) {
+export default function Onde({ variante = 'principale', sections = 5, active = null, complete = false }) {
   const [mobile, setMobile] = useState(false);
   const [largeur, setLargeur] = useState(0);
   const [temps, setTemps] = useState(0);
@@ -243,6 +243,28 @@ export default function Onde({ variante = 'principale', sections = 5, active = n
   const opaciteRef = useRef(0);
   const activeRef = useRef(null);
   activeRef.current = active;
+
+  /* AMPLEUR du segment illuminé, en fraction de la longueur totale du tracé.
+
+     Vaut 1 / sections en temps normal : la lumière couvre exactement une
+     section, c'est elle qui désigne l'élément actif. `complete` la porte à 1,
+     et le tracé s'allume alors sur toute sa longueur.
+
+     Animée comme le reste, par relaxation dans la boucle plutôt que par une
+     transition CSS : la longueur vit dans un stroke-dasharray recalculé à
+     chaque image, CSS n'a aucune prise dessus. La lumière s'ÉTEND donc depuis
+     la section courante au lieu d'apparaître d'un coup — le geste dit
+     « l'ensemble est achevé », ce qu'un basculement instantané ne dirait pas.
+
+     Initialisée à null : la valeur de départ dépend de `sections`, qui n'est
+     pas connu à la création de la ref. */
+  const ampleurRef = useRef(null);
+  /* La CIBLE, et non le booléen : la boucle n'a ainsi pas besoin de lire
+     `sections`, qu'elle capturerait par fermeture alors que ses dépendances
+     ne le déclarent pas. Sans effet aujourd'hui, `sections` étant constant,
+     mais c'est le genre de dette qui se paie le jour où il cesse de l'être. */
+  const ampleurCibleRef = useRef(1 / sections);
+  ampleurCibleRef.current = complete ? 1 : 1 / sections;
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 640px)');
@@ -297,6 +319,12 @@ export default function Onde({ variante = 'principale', sections = 5, active = n
         }
         const kOp = reduit ? 1 : 1 - Math.pow(1 - 0.12, dt);
         opaciteRef.current += ((cible === null ? 0 : 1) - opaciteRef.current) * kOp;
+
+        const ampleurCible = ampleurCibleRef.current;
+        if (ampleurRef.current === null) ampleurRef.current = ampleurCible;
+        // Plus lent que l'opacité : l'étalement doit se voir se produire.
+        const kAmp = reduit ? 1 : 1 - Math.pow(1 - 0.07, dt);
+        ampleurRef.current += (ampleurCible - ampleurRef.current) * kAmp;
 
         setTemps(reduit ? 0 : t - debut);
       }
@@ -374,10 +402,28 @@ export default function Onde({ variante = 'principale', sections = 5, active = n
           <g fill="none" stroke={`url(#${idOr})`} opacity={opaciteRef.current}>
             {brinsCalcules.map((b, i) => {
               const ratio = centreAnime(b, i);
-              const segCoeur = b.total / sections;
+              const ampleur = ampleurRef.current ?? 1 / sections;
+
+              /* Le CENTRE glisse vers le milieu du tracé à mesure que la
+                 lumière s'étend.
+
+                 Sans ça, le segment reste calé sur la section active : une
+                 fois porté à la longueur entière, il déborde d'un côté — où
+                 le tracé le rogne — et manque de l'autre. Avec une épreuve
+                 près du bord, il n'en restait visible qu'un peu plus de la
+                 moitié.
+
+                 À pleine ampleur le centre vaut donc 0,5, l'écart de phase
+                 s'annule et le tracé est couvert d'un bout à l'autre. */
+              const etendue = sections > 1
+                ? Math.max(0, Math.min(1, (ampleur - 1 / sections) / (1 - 1 / sections)))
+                : 1;
+              const centre = ratio + (0.5 - ratio) * etendue;
+
+              const segCoeur = b.total * ampleur;
               const segHalo = segCoeur * 1.45;
-              const offCoeur = segCoeur / 2 - ratio * b.total;
-              const offHalo = segHalo / 2 - ratio * b.total;
+              const offCoeur = segCoeur / 2 - centre * b.total;
+              const offHalo = segHalo / 2 - centre * b.total;
               return (
                 <g key={`o${i}`}>
                   <path

@@ -66,8 +66,17 @@ export async function GET(request) {
       console.warn(`Deezer — aucune piste pour « ${term} » (total: ${data?.total ?? 0})`);
     }
 
+    /* Même raison que pour les paroles : sans `max-age`, le navigateur ne
+       retenait rien et chaque remontage d'épreuve relançait ses recherches.
+
+       Dix minutes seulement côté navigateur, contre une heure au bord : les
+       URL d'extrait Deezer expirent, et une réponse trop vieille servie depuis
+       le disque donnerait un `previewUrl` mort — que le code sait déjà
+       rafraîchir, mais autant ne pas provoquer le cas. */
     return NextResponse.json(data, {
-      headers: { 'Cache-Control': 's-maxage=3600, stale-while-revalidate=86400' },
+      headers: {
+        'Cache-Control': 'public, max-age=600, s-maxage=3600, stale-while-revalidate=86400',
+      },
     });
   } catch (err) {
     return NextResponse.json(

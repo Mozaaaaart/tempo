@@ -6,6 +6,7 @@ import { searchTracks, trackDetails, freshPreviewUrl } from '@/utils/deezer';
 import { seeded, panel, btn, statusStyle, useLecteurAudio } from '@/components/dailyGames';
 import { useIntro } from '@/utils/intro';
 import IntroIA, { ResultatIA, RES_IA_TOTAL, DefaiteIA, DEFAITE_IA_TOTAL } from '@/components/IntroIA';
+import IntroIAQuotidien from '@/components/IntroIAQuotidien';
 
 const normName = (s) => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
 
@@ -335,7 +336,21 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
           to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
-      {intro && <IntroIA onFin={() => setIntro(false)} />}
+      {/* Deux présentations, jamais ensemble. Celle du mode libre ouvre sur
+          « Mode survie » et une vie qui bat ; le défi n'a ni survie ni vie,
+          son format est fixe et une erreur ne coûte que ses points. Le même
+          booléen pilote les deux, si bien que le compteur de niveau reste
+          gelé pendant l'une comme pendant l'autre. */}
+      {intro && (daily
+        ? (
+          <IntroIAQuotidien
+            manches={DAILY_ROUNDS}
+            secondes={EXTRAIT_SEC}
+            onFin={() => setIntro(false)}
+          />
+        )
+        : <IntroIA onFin={() => setIntro(false)} />
+      )}
       {resultat !== null && (
         <ResultatIA score={resultat} detail={`${dailyGoodRef.current} bonne(s) réponse(s) sur ${DAILY_ROUNDS}`} />
       )}

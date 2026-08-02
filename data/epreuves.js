@@ -70,7 +70,7 @@ export const EPREUVES = [
     num: '09',
     nom: 'Duel',
     court: 'Duel',
-    desc: 'Deux morceaux, un seul a plus de streams. Dix duels pour trancher.',
+    desc: 'Deux morceaux, un seul a plus de streams. Cinq duels pour trancher.',
 },
   {
     slug: 'refrain',

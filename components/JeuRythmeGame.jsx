@@ -3,6 +3,12 @@ import { useEffect, useRef, useState } from 'react';
 import { panel, seeded } from '@/components/dailyGames';
 import { useVolume } from '@/utils/volume';
 import { useIntro } from '@/utils/intro';
+import IntroRythmeQuotidien from '@/components/IntroRythmeQuotidien';
+/* Surcouche de résultat partagée. Elle porte le nom de l'épreuve où elle est
+   née, mais elle est générique — score et détail en props — et c'est déjà
+   celle qu'utilisent Humain ou IA et Duel. En recopier une troisième ici
+   ferait diverger des animations qui doivent rester identiques. */
+import { ResultatIA, RES_IA_TOTAL } from '@/components/IntroIA';
 
 /* Gains propres à chaque synthé, en dB. Le volume global de l'en-tête s'y
    AJOUTE au lieu de les remplacer : le clap doit rester plus fort que le
@@ -128,8 +134,12 @@ function trajetCurseur() {
   return etapes;
 }
 
-const DAILY_ROUNDS = 3;
-const DAILY_LEVELS = [2, 3, 5]; // 3 patterns du jour : grilles 8, 10 puis 12 cases
+const DAILY_ROUNDS = 5;
+/* Un niveau par manche — le tableau doit avoir exactement DAILY_ROUNDS
+   entrées, sinon DAILY_LEVELS[dailyRoundRef.current] renvoie undefined à la
+   dernière manche et levelConfig repart sur une grille vide. La progression
+   reste douce : 8, 10, 10, 12, 12 cases. */
+const DAILY_LEVELS = [2, 3, 4, 5, 6];
 
 // La grille s'agrandit avec le niveau → rythmes de plus en plus variés
 const STEPS_BY_LEVEL = [8, 8, 10, 10, 12, 12, 16];
@@ -718,11 +728,20 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
   const [lastScore, setLastScore] = useState(null);
   const [dailyRound, setDailyRound] = useState(0);
   const [annonce, setAnnonce] = useState(null); // { type, restantes, finale, duree }
+  /* Voile de fin du défi, posé à la dernière manche puis retiré seul. */
+  const [resultat, setResultat] = useState(null);
+  /* Le bilan du bas attend que le voile soit levé : le même chiffre affiché
+     deux fois au même instant, l'un par-dessus l'autre, se contredirait. */
+  const [bilan, setBilan] = useState(false);
+  /* Moyenne et détail figés à la fin de la série. En état et non lus depuis
+     dailyScoresRef au rendu : lire une ref pendant le rendu est interdit, et
+     ces valeurs ne bougent plus une fois la série close. */
+  const [bilanQuotidien, setBilanQuotidien] = useState(null);
   // Vraie pendant toute la présentation : le tableau de bord attend qu'elle
   // soit finie pour faire rouler son compteur.
   const introEnCours = annonce?.type === 'intro';
   const [status, setStatus] = useState(daily
-    ? 'Trois patterns, un seul essai chacun. Ton score est la moyenne.'
+    ? `${DAILY_ROUNDS} patterns, un seul essai chacun. Ton score est la moyenne.`
     : 'Le niveau monte tant que tu tiens. Trois vies.');
 
   const toneRef = useRef(null);
@@ -743,6 +762,7 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
   const dailyRoundRef = useRef(0);
   const dailyScoresRef = useRef([]);
   const dailyDoneRef = useRef(false);
+  const minuteurBilanRef = useRef(null);   // laisse le voile de résultat se lever
 
   const volume = useVolume();
   const volumeRef = useRef(volume);
@@ -806,6 +826,28 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
     setAnnonce({ type: 'intro', duree: DUREE_INTRO });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* Présentation propre au défi du jour.
+
+     Celle du mode libre, juste au-dessus, montre des vies qui s'éteignent et
+     un niveau qui monte : deux règles qui n'existent pas dans le défi, où le
+     format est fixe et la note une moyenne. D'où deux présentations
+     distinctes plutôt qu'une seule tordue pour servir les deux modes.
+
+     useIntro doit rester appelé à chaque rendu — le placer derrière le `&&`
+     en ferait un appel conditionnel, ce que React interdit. D'où la lecture
+     de `introAutorisee`, déjà calculée ci-dessus, dans l'initialiseur. */
+  const [introQuotidien, setIntroQuotidien] = useState(() => daily && introAutorisee);
+
+  /* Le voile de résultat se retire seul : le plateau est déjà figé derrière
+     lui, on ne bloque rien. */
+  useEffect(() => {
+    if (resultat === null) return undefined;
+    const t = setTimeout(() => setResultat(null), RES_IA_TOTAL);
+    return () => clearTimeout(t);
+  }, [resultat]);
+
+  useEffect(() => () => clearTimeout(minuteurBilanRef.current), []);
 
   function stopAll() {
     timersRef.current.forEach(clearTimeout);
@@ -1027,6 +1069,14 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
         setRunActif(false);
         setStatus(`Terminé : ${dailyScoresRef.current.map(x => x.toFixed(1)).join(' · ')} → moyenne ${avg} sur 10.`);
         if (!dailyDoneRef.current) { dailyDoneRef.current = true; onDone(avg); }
+
+        /* Même séquence que les autres épreuves : le voile occupe le panneau
+           le temps que la note soit lue, puis se retire et laisse le bilan.
+           Le détail est figé maintenant — la série est close, il ne bougera
+           plus, et le rendu n'aura pas à relire une ref. */
+        setBilanQuotidien({ moyenne: avg, notes: [...dailyScoresRef.current] });
+        setResultat(avg);
+        minuteurBilanRef.current = setTimeout(() => setBilan(true), RES_IA_TOTAL);
       } else {
         levelRef.current = DAILY_LEVELS[dailyRoundRef.current];
         setLevel(levelRef.current);
@@ -1413,8 +1463,10 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
         <p className="lin" style={{ fontSize: 13, minHeight: '1.5em', marginTop: 'var(--e3)' }}>{status}</p>
       )}
 
-      {/* Écran de fin */}
-      {phase === 'gameover' && (
+      {/* Écran de fin. En quotidien il attend que le voile ait fini de
+          présenter la note ; en mode libre il n'y a pas de voile, donc rien
+          à attendre. */}
+      {phase === 'gameover' && (!daily || bilan) && (
         <div style={{
           marginTop: 'var(--e5)', paddingTop: 'var(--e5)',
           borderTop: '1px solid var(--or)', textAlign: 'center',
@@ -1422,13 +1474,14 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
         }}>
           {daily ? (
             <>
-              <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>score de l'épreuve</div>
+              <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>score de l&apos;épreuve</div>
               <div className="score-affiche" style={{ fontSize: 38, marginTop: 'var(--e2)' }}>
-                {(dailyScoresRef.current.reduce((a, b) => a + b, 0) / DAILY_ROUNDS).toFixed(1).replace('.', ',')}
+                {(bilanQuotidien?.moyenne ?? 0).toFixed(1).replace('.', ',')}
                 <span style={{ color: 'var(--cendre)' }}> / 10</span>
               </div>
               <p className="description" style={{ marginTop: 'var(--e2)' }}>
-                Détail des trois patterns : {dailyScoresRef.current.map((x) => x.toFixed(1).replace('.', ',')).join(' · ')}
+                Détail des {DAILY_ROUNDS} patterns :{' '}
+                {(bilanQuotidien?.notes ?? []).map((x) => x.toFixed(1).replace('.', ',')).join(' · ')}
               </p>
             </>
           ) : (
@@ -1471,6 +1524,26 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
 
       {/* ---- Surcouche : placée en dernier pour passer au-dessus de tout ---- */}
       {annonce && <Surcouche annonce={annonce} onPasser={() => setAnnonce(null)} />}
+
+      {/* Voile de fin du défi : la note en grand, comme sur les autres
+          épreuves. Posé après la surcouche pour passer au-dessus d'elle. */}
+      {resultat !== null && bilanQuotidien && (
+        <ResultatIA
+          score={resultat}
+          detail={`Moyenne de ${DAILY_ROUNDS} patterns : ${bilanQuotidien.notes.map((x) => x.toFixed(1).replace('.', ',')).join(' · ')}`}
+        />
+      )}
+
+      {/* ---- Présentation du défi du jour ----
+           Exclusive de la précédente : `annonce` de type intro n'est jamais
+           posée en mode quotidien, les deux voiles ne peuvent donc pas se
+           superposer. */}
+      {daily && introQuotidien && (
+        <IntroRythmeQuotidien
+          manches={DAILY_ROUNDS}
+          onFin={() => setIntroQuotidien(false)}
+        />
+      )}
     </div>
   );
 }

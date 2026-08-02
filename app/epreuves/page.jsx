@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { tirerVariante } from '@/utils/variante';
 import Onde from '@/components/Onde';
 import { setSeedSalt, JeuArtiste, JeuPochette, JeuBPM, JeuSeconde, JeuInstrument, JeuParoles, JeuRefrain } from '@/components/dailyGames';
 import JeuAccordsGame from '@/components/JeuAccordsGame';
@@ -53,7 +54,7 @@ export default function Epreuves() {
   }, []);
 
   if (monte) {
-    if (saltRef.current === null) saltRef.current = Math.random().toString(36).slice(2);
+    if (saltRef.current === null) saltRef.current = tirerVariante();
     setSeedSalt(saltRef.current);
   }
 
@@ -67,7 +68,7 @@ export default function Epreuves() {
   }
 
   function relancer() {
-    saltRef.current = Math.random().toString(36).slice(2);
+    saltRef.current = tirerVariante();
     setSeedSalt(saltRef.current);
     setCles((c) => c.map((v, k) => (k === index ? v + 1 : v)));
   }

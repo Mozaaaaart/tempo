@@ -6,6 +6,7 @@ import Onde from '@/components/Onde';
 import { EPREUVES } from '@/data/epreuves';
 import { EpreuveContext } from '@/components/EpreuveContext';
 import VolumeControl from '@/components/VolumeControl';
+import EnTete from '@/components/EnTete';
 
 /**
  * Enveloppe des dix épreuves.
@@ -132,7 +133,13 @@ export default function EpreuvesLayout({ children }) {
 
   return (
     <EpreuveContext.Provider value={ctx}>
-      <main className="contenu">
+      {/* En-tête commun, variante sobre : pas de filet or, celui-ci signale
+          le défi du jour. La barre est collante — sur une page de jeu haute de
+          deux écrans, le repère d'identité et le retour à l'accueil ne doivent
+          pas disparaître au défilement. */}
+      <EnTete liens={[{ href: '/quotidien', libelle: 'défi du jour' }]} />
+
+      <main className="contenu epreuve-page" style={{ paddingTop: 'var(--e6)' }}>
         <style>{`
           @keyframes glisseDroite {
             from { transform: translateX(42px); opacity: 0 }
@@ -145,26 +152,47 @@ export default function EpreuvesLayout({ children }) {
           @media (prefers-reduced-motion: reduce) {
             .glissiere { animation: none !important }
           }
-        `}</style>
 
-        {/* En-tête, identique à l'accueil, avec le curseur de volume en plus :
-            c'est ici, et non sur l'accueil, qu'on écoute des extraits de jeu. */}
-        <header style={{ display: 'flex', alignItems: 'center', gap: 'var(--e3)', marginBottom: 'var(--e7)' }}>
-          <Link href="/" style={{
-            width: 34, height: 34, borderRadius: '50%', border: '1px solid var(--or)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'var(--serif)', fontSize: 15, color: 'var(--or)', flexShrink: 0,
-          }}>MB</Link>
-          <div style={{ flex: 1 }}>
-            <Link href="/" style={{ fontSize: 14, fontWeight: 500, color: 'var(--ivoire)' }}>
-              Mozart Benchmark
-            </Link>
-            <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>évaluation auditive</div>
-          </div>
-          <nav style={{ display: 'flex', gap: 'var(--e4)', fontSize: 12 }}>
-            <Link href="/" style={{ color: 'var(--lin)' }}>accueil</Link>
-          </nav>
-        </header>
+          /* ---- Entrée de la page ----
+             Les blocs se posent du haut vers le bas, mais PLUS VITE que sur
+             l'accueil : 360 ms par bloc, 60 ms entre deux, soit sept dixièmes
+             de seconde en tout contre une seconde trois.
+
+             La différence est voulue. L'accueil est une page qu'on regarde,
+             où la descente fait partie de la présentation ; ici on vient
+             jouer, et tout ce qui retarde le premier clic se paie. L'entrée
+             doit se sentir sans se subir.
+
+             Le layout n'est JAMAIS démonté quand on passe d'une épreuve à
+             l'autre — c'est tout son intérêt, l'onde y garde sa boucle. La
+             cascade ne se joue donc qu'à la première arrivée, et le carrousel
+             ne clignote pas à chaque changement d'épreuve.
+
+             Le bloc de style est le premier enfant et occupe la position 1 :
+             il n'est pas rendu, mais il compte dans la numérotation. D'où des
+             délais qui commencent à nth-child(2).
+
+             L'onde, en position 3, n'est pas animée : elle porte déjà son
+             propre mouvement, et lui superposer une entrée reviendrait à
+             animer une animation.
+
+             Aucun accent grave dans ce bloc : il vit dans un gabarit, et un
+             backtick isolé y refermerait la chaîne CSS en plein milieu. */
+          .epreuve-page > *:nth-child(n+2) {
+            animation: epreuveEntree 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+          }
+          .epreuve-page > *:nth-child(2) { animation-delay: 50ms; }
+          .epreuve-page > *:nth-child(3) { animation: none; }
+          .epreuve-page > *:nth-child(4) { animation-delay: 170ms; }
+          .epreuve-page > *:nth-child(5) { animation-delay: 230ms; }
+          .epreuve-page > *:nth-child(6) { animation-delay: 290ms; }
+          .epreuve-page > *:nth-child(7) { animation-delay: 350ms; }
+
+          @keyframes epreuveEntree {
+            from { opacity: 0; transform: translateY(8px); }
+            to   { opacity: 1; transform: translateY(0); }
+          }
+        `}</style>
 
         {/* Titre de l'épreuve · carte du défi.
             Le titre change avec l'URL mais n'est pas remonté : pas de saut. */}

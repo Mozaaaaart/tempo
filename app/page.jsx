@@ -69,7 +69,67 @@ export default function Accueil() {
   }
 
   return (
-    <main className="contenu">
+    <main className="contenu accueil">
+      {/* ---- Entrée de la page ----
+          Les neuf blocs se posent l'un après l'autre, du haut vers le bas.
+          Même grammaire que la barre d'en-tête : 420 ms, même courbe, même
+          décalage d'une cinquantaine de millisecondes. Arriver ici depuis une
+          épreuve ne doit pas ressembler à un rechargement.
+
+          Le bloc de style est le PREMIER enfant et occupe donc la position 1,
+          d'où des délais qui commencent à nth-child(2). Il n'est pas rendu —
+          un élément style est en display none — mais il compte dans la
+          numérotation.
+
+          L'onde, en position 6, n'est pas animée : elle porte déjà son propre
+          mouvement, et lui superposer une entrée reviendrait à animer une
+          animation. Le document de design lui réserve tout le mouvement de la
+          page, c'est le moins qu'on puisse faire que de ne pas la bousculer.
+
+          Aucun accent grave dans ce bloc : il vit dans un gabarit, et un
+          backtick isolé y refermerait la chaîne CSS en plein milieu. */}
+      <style>{`
+        .accueil > *:nth-child(n+2) {
+          animation: accueilEntree 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+        .accueil > *:nth-child(2) { animation-delay: 90ms; }
+        .accueil > *:nth-child(3) { animation-delay: 230ms; }
+        .accueil > *:nth-child(4) { animation-delay: 360ms; }
+        .accueil > *:nth-child(5) { animation-delay: 490ms; }
+        .accueil > *:nth-child(6) { animation: none; }
+        .accueil > *:nth-child(7) { animation: none; }
+        .accueil > *:nth-child(8) { animation-delay: 1180ms; }
+        .accueil > *:nth-child(9) { animation-delay: 1300ms; }
+        .accueil > *:nth-child(10) { animation-delay: 1420ms; }
+
+        /* ---- Les cinq épreuves, une par une ----
+           La grille elle-même n'est plus animée : ses COLONNES le sont, de
+           gauche à droite. Animer les deux aurait multiplié les opacités
+           l'une par l'autre et donné une entrée trouble.
+
+           Les délais reprennent la place que la grille occupait dans la
+           descente — 690 ms — puis avancent de 100 ms par colonne. La ligne
+           de description qui suit attend la dernière : elle commente la
+           grille, elle ne peut pas arriver avant elle.
+
+           Le pas est plus serré que celui des blocs (100 ms contre 130) :
+           cinq éléments alignés se lisent comme une série, et une série qui
+           traîne devient une attente. */
+        .grille-epreuves > * {
+          animation: accueilEntree 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+        .grille-epreuves > *:nth-child(1) { animation-delay: 690ms; }
+        .grille-epreuves > *:nth-child(2) { animation-delay: 790ms; }
+        .grille-epreuves > *:nth-child(3) { animation-delay: 890ms; }
+        .grille-epreuves > *:nth-child(4) { animation-delay: 990ms; }
+        .grille-epreuves > *:nth-child(5) { animation-delay: 1090ms; }
+
+        @keyframes accueilEntree {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
       {/* 1 — En-tête.
           ATTENTION : ne monter qu'UN SEUL <Ambiance> par page. Deux instances
           créent deux AudioContext indépendants qui jouent simultanément —

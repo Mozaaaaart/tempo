@@ -778,11 +778,61 @@ export default function Quotidien() {
           }
 
           /* Sommaire du seuil */
+          /* ---- Le programme du seuil ----
+             Même forme que les colonnes de l'accueil et les onglets du
+             carrousel : un filet supérieur, le numéro, l'intitulé. C'est déjà
+             la manière dont le site nomme ses épreuves ; la reprendre les rend
+             reconnaissables au lieu d'en faire une liste de plus.
+
+             Le filet passe à l'or au survol, comme partout ailleurs — le bloc
+             cesse d'être une énumération inerte et devient un aperçu qu'on
+             parcourt. */
           .q-sommaire {
             display: grid;
             grid-template-columns: repeat(5, 1fr);
-            gap: var(--e3) var(--e2);
+            gap: var(--e4) var(--e3);
             text-align: left;
+          }
+          .q-sommaire-item {
+            padding-top: var(--e2);
+            border-top: 0.5px solid var(--filet);
+            transition: border-color var(--transition-courte);
+          }
+          .q-sommaire-item:hover { border-top-color: var(--or); }
+
+          /* ---- Entrée du seuil ----
+             Les blocs se posent du haut vers le bas, à la cadence des autres
+             pages. Les dix épreuves entrent ensuite une par une, de gauche à
+             droite : elles se lisent comme une série, et une série qui arrive
+             d'un bloc ne se compte pas.
+
+             Le pas des épreuves est resserré à 55 ms — dix éléments, contre
+             cinq sur l'accueil : au pas de l'accueil, la seule liste
+             occuperait une seconde entière. */
+          .q-seuil > *:nth-child(1) { animation: qSeuilEntree 460ms 80ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+          .q-seuil > *:nth-child(2) { animation: qSeuilEntree 460ms 180ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+          .q-seuil > *:nth-child(3) { animation: qSeuilEntree 460ms 300ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+          .q-seuil > *:nth-child(4) { animation: qSeuilEntree 460ms 400ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+          .q-seuil > *:nth-child(6) { animation: qSeuilEntree 460ms 1120ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+          .q-seuil > *:nth-child(7) { animation: qSeuilEntree 460ms 1220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+          .q-sommaire-item {
+            animation: qSeuilEntree 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+          }
+          .q-sommaire-item:nth-child(1)  { animation-delay: 520ms; }
+          .q-sommaire-item:nth-child(2)  { animation-delay: 575ms; }
+          .q-sommaire-item:nth-child(3)  { animation-delay: 630ms; }
+          .q-sommaire-item:nth-child(4)  { animation-delay: 685ms; }
+          .q-sommaire-item:nth-child(5)  { animation-delay: 740ms; }
+          .q-sommaire-item:nth-child(6)  { animation-delay: 795ms; }
+          .q-sommaire-item:nth-child(7)  { animation-delay: 850ms; }
+          .q-sommaire-item:nth-child(8)  { animation-delay: 905ms; }
+          .q-sommaire-item:nth-child(9)  { animation-delay: 960ms; }
+          .q-sommaire-item:nth-child(10) { animation-delay: 1015ms; }
+
+          @keyframes qSeuilEntree {
+            from { opacity: 0; transform: translateY(8px); }
+            to   { opacity: 1; transform: translateY(0); }
           }
 
           @media (max-width: 640px) {
@@ -848,48 +898,83 @@ export default function Quotidien() {
             Affiché tant qu'aucune épreuve n'a été entamée. Un clic pour
             entrer : c'est peu, et ça lève toute ambiguïté sur ce qui suit. */}
         {auSeuil && (
-          <div style={{
+          <div className="q-seuil" style={{
             marginTop: 'var(--e6)', padding: 'var(--e7) var(--e5)',
             border: '1px solid var(--or)', borderRadius: 'var(--rayon-carte)',
             textAlign: 'center',
           }}>
             <div className="etiquette-mono">défi du jour</div>
 
-            {/* La date EST le titre de l'édition. Taille fluide : « 12
-                septembre 2026 » fait le double de « 2 mai 2026 » et ne doit
-                pas se casser en deux lignes. */}
+            {/* La date EST le titre de l'édition, et elle porte donc la
+                typographie des titres de page : Geist Sans, 500, interlettrage
+                serré.
+
+                Elle était en Instrument Serif. Le document de design réserve
+                cette police au monogramme, aux chiffres romains et aux
+                citations — trois emplois brefs et ornementaux. Une date
+                française complète y devenait un corps étranger : aucune autre
+                page du site ne fait parler le serif aussi longuement.
+
+                Taille fluide malgré tout : « 12 septembre 2026 » fait le
+                double de « 2 mai 2026 » et ne doit pas se casser en deux
+                lignes sur un petit écran. */}
             <div style={{
-              fontFamily: 'var(--serif)',
-              fontSize: 'clamp(26px, 6vw, 46px)',
-              lineHeight: 1.05,
+              fontFamily: 'var(--sans)',
+              fontSize: 'clamp(26px, 5vw, 38px)',
+              fontWeight: 500,
+              letterSpacing: '-0.02em',
+              lineHeight: 1.15,
               marginTop: 'var(--e2)',
               color: 'var(--ivoire)',
             }}>
               {dateDuJour}
             </div>
 
-            {restant && (
-              <div className="description" style={{ marginTop: 'var(--e2)' }}>
-                il reste {restant}
-              </div>
-            )}
+            {/* Emplacement RÉSERVÉ, rendu même vide.
+
+                L'échéance n'existe qu'après le montage — l'heure locale ne
+                s'hydrate pas. Rendue conditionnellement, elle apparaîtrait
+                comme un enfant de plus et décalerait la position de tous ses
+                voisins, donc leurs délais d'entrée : la cascade se rejouerait
+                sous les yeux du joueur. La hauteur minimale évite en prime que
+                le bloc saute quand la valeur arrive. */}
+            <div className="description" style={{ marginTop: 'var(--e2)', minHeight: '1.4em' }}>
+              {restant ? `il reste ${restant}` : ''}
+            </div>
 
             <p style={{ fontSize: 14, marginTop: 'var(--e5)', maxWidth: 460, marginInline: 'auto' }}>
               {EPREUVES.length}{' '}épreuves à la suite, une tentative chacune. Le tirage est le
               même pour tous les candidats du jour, et il change à minuit.
             </p>
 
-            {/* Le programme annoncé d'avance : on sait ce qu'on signe. */}
+            {/* ---------- Le programme ----------
+                On annonce d'avance ce qu'on signe.
+
+                Chaque épreuve reprend la forme des colonnes de l'accueil et
+                des onglets du carrousel : filet supérieur, numéro en mono
+                cendre, intitulé au-dessous. Cette forme est déjà celle par
+                laquelle le site nomme ses épreuves — la reprendre ici les rend
+                reconnaissables au lieu d'en faire une liste de plus.
+
+                Les intitulés passent en ivoire et gagnent un demi-point : ils
+                étaient en lin sur 12 px, ce qui les faisait lire comme une
+                mention accessoire alors qu'ils sont le contenu du bloc. */}
             <div className="q-sommaire" style={{
-              marginTop: 'var(--e6)', paddingTop: 'var(--e4)',
+              marginTop: 'var(--e6)', paddingTop: 'var(--e5)',
               borderTop: '0.5px solid var(--filet)',
             }}>
               {EPREUVES.map((x) => (
-                <div key={x.slug}>
-                  <div className="mono" style={{ fontSize: 10, letterSpacing: '0.06em', color: 'var(--cendre)' }}>
+                <div key={x.slug} className="q-sommaire-item">
+                  <div className="mono" style={{
+                    fontSize: 10, letterSpacing: '0.09em', color: 'var(--cendre)',
+                  }}>
                     {x.num}
                   </div>
-                  <div style={{ fontSize: 12, marginTop: 2, color: 'var(--lin)' }}>{x.court}</div>
+                  <div style={{
+                    fontSize: 12.5, marginTop: 3, lineHeight: 1.3, color: 'var(--ivoire)',
+                  }}>
+                    {x.court}
+                  </div>
                 </div>
               ))}
             </div>

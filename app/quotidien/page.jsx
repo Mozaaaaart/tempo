@@ -668,6 +668,74 @@ export default function Quotidien() {
              remplirait jusqu'à l'étape courante : sauter la 02 pour aller à
              la 05 laisse la 02 éteinte, donc visible comme manquante. Le
              curseur clair, lui, dit seulement où l'on se trouve. */
+          /* ---- Entrée de la page ----
+             Repérage par CLASSE et non par nth-child, contrairement à
+             l'accueil et aux épreuves : cette page rend des blocs
+             conditionnels — le seuil, le relevé final — et le rang d'un
+             élément y change selon l'état. Une numérotation se serait
+             décalée toute seule.
+
+             L'onde se DÉROULE de gauche à droite : un rognage animé, pas une
+             mise à l'échelle, qui aurait comprimé le tracé et donc déformé la
+             silhouette pendant l'apparition. Sa boucle interne continue de
+             tourner dessous — ce qu'on découvre est vivant.
+
+             900 ms, comme sur les épreuves : on vient jouer, tout ce qui
+             retarde le premier clic se paie. */
+          .q-tete {
+            animation: qEntree 360ms 50ms cubic-bezier(0.22, 1, 0.36, 1) both;
+          }
+          .q-onde {
+            animation: qOnde 900ms 120ms cubic-bezier(0.35, 0, 0.35, 1) both;
+          }
+          .q-nav {
+            animation: qEntree 360ms 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+          }
+          .q-scene {
+            animation: qEntree 360ms 980ms cubic-bezier(0.22, 1, 0.36, 1) both;
+          }
+
+          @keyframes qOnde {
+            from { clip-path: inset(0 100% 0 0); }
+            to   { clip-path: inset(0 0 0 0); }
+          }
+          @keyframes qEntree {
+            from { opacity: 0; transform: translateY(8px); }
+            to   { opacity: 1; transform: translateY(0); }
+          }
+
+          /* ---- Les dix segments, calés sur le passage de l'onde ----
+             Chaque segment s'allume à l'instant où le bord du rognage franchit
+             son centre — 5, 15, 25 % et ainsi de suite. Les délais viennent de
+             l'inversion de la courbe du déroulé : celle-ci n'étant pas
+             linéaire, un pas constant aurait fait dériver les segments par
+             rapport à l'onde qui les survole.
+
+             Fondu seul, sans translation : un trait de 3 px qui monte de huit
+             pixels se lit comme un défaut d'affichage, pas comme une entrée.
+
+             Le curseur attend la fin du déroulé. Il désigne l'épreuve en
+             cours ; le poser avant que la barre existe reviendrait à montrer
+             une position sur une échelle absente. */
+          .q-segments-grille > * {
+            animation: qSegment 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+          }
+          .q-segments-grille > *:nth-child(1)  { animation-delay: 173ms; }
+          .q-segments-grille > *:nth-child(2)  { animation-delay: 248ms; }
+          .q-segments-grille > *:nth-child(3)  { animation-delay: 299ms; }
+          .q-segments-grille > *:nth-child(4)  { animation-delay: 344ms; }
+          .q-segments-grille > *:nth-child(5)  { animation-delay: 387ms; }
+          .q-segments-grille > *:nth-child(6)  { animation-delay: 432ms; }
+          .q-segments-grille > *:nth-child(7)  { animation-delay: 482ms; }
+          .q-segments-grille > *:nth-child(8)  { animation-delay: 543ms; }
+          .q-segments-grille > *:nth-child(9)  { animation-delay: 623ms; }
+          .q-segments-grille > *:nth-child(10) { animation-delay: 752ms; }
+
+          @keyframes qSegment {
+            from { opacity: 0; }
+            to   { opacity: 1; }
+          }
+
           .q-segments { position: relative; }
           .q-segments-grille {
             display: grid;
@@ -690,6 +758,7 @@ export default function Quotidien() {
             margin-top: -3px;
           }
           .q-curseur {
+            animation: qSegment 320ms 1020ms cubic-bezier(0.22, 1, 0.36, 1) both;
             position: absolute;
             top: 0; left: 0;
             height: 3px;
@@ -853,7 +922,7 @@ export default function Quotidien() {
         `}</style>
 
         {/* ---------- Titre, et relevé encadré à droite ---------- */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--e5)', flexWrap: 'wrap' }}>
+        <div className="q-tete" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--e5)', flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 320px', minHeight: 118 }}>
             <div className="etiquette-mono">{dateDuJour}</div>
             <h1 className="titre-page" style={{ marginTop: 'var(--e2)' }}>
@@ -894,7 +963,7 @@ export default function Quotidien() {
         </div>
 
         {/* ---------- L'onde ---------- */}
-        <div style={{ marginTop: 'var(--e5)' }}>
+        <div className="q-onde" style={{ marginTop: 'var(--e5)' }}>
           {/* `complete` étale la lumière sur toute la longueur : pendant le
               défi elle désigne l'épreuve en cours, au relevé il n'y a plus
               d'épreuve courante — c'est l'ensemble qui est achevé. */}

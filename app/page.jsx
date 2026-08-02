@@ -96,11 +96,37 @@ export default function Accueil() {
         .accueil > *:nth-child(3) { animation-delay: 230ms; }
         .accueil > *:nth-child(4) { animation-delay: 360ms; }
         .accueil > *:nth-child(5) { animation-delay: 490ms; }
-        .accueil > *:nth-child(6) { animation: none; }
+        /* ---- L'onde se dévoile de gauche à droite ----
+           Un rognage animé, et non une mise à l'échelle : scaleX aurait
+           comprimé le tracé, donc changé la forme même de l'onde pendant
+           qu'elle apparaît. Le clip-path se contente de découvrir ce qui est
+           déjà dessiné — la silhouette reste juste à chaque image.
+
+           Aucune opacité ni translation ici, contrairement aux autres blocs :
+           l'onde ne se pose pas, elle se déroule. Elle est le seul mouvement
+           permanent du site, elle mérite sa propre manière d'entrer.
+
+           Sa boucle interne continue de tourner sous le rognage : ce qu'on
+           découvre est une onde vivante, pas une image figée qu'on révèle. */
+        .accueil > *:nth-child(6) {
+          /* Courbe presque linéaire, contrairement au reste de la page.
+
+             La courbe de sortie habituelle démarre vite et freine à la fin :
+             sur un déroulé horizontal, cela fait parcourir la moitié gauche
+             en un instant, et seule la fin se voit. Une progression régulière
+             donne au tracé une vitesse constante — c'est ce qui fait qu'on
+             suit l'onde au lieu de la voir arriver. */
+          animation: accueilOnde 1800ms 520ms cubic-bezier(0.35, 0, 0.35, 1) both;
+        }
+
+        @keyframes accueilOnde {
+          from { clip-path: inset(0 100% 0 0); }
+          to   { clip-path: inset(0 0 0 0); }
+        }
         .accueil > *:nth-child(7) { animation: none; }
-        .accueil > *:nth-child(8) { animation-delay: 1180ms; }
-        .accueil > *:nth-child(9) { animation-delay: 1300ms; }
-        .accueil > *:nth-child(10) { animation-delay: 1420ms; }
+        .accueil > *:nth-child(8) { animation-delay: 1800ms; }
+        .accueil > *:nth-child(9) { animation-delay: 1930ms; }
+        .accueil > *:nth-child(10) { animation-delay: 2060ms; }
 
         /* ---- Les cinq épreuves, une par une ----
            La grille elle-même n'est plus animée : ses COLONNES le sont, de
@@ -118,11 +144,25 @@ export default function Accueil() {
         .grille-epreuves > * {
           animation: accueilEntree 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
         }
-        .grille-epreuves > *:nth-child(1) { animation-delay: 690ms; }
-        .grille-epreuves > *:nth-child(2) { animation-delay: 790ms; }
-        .grille-epreuves > *:nth-child(3) { animation-delay: 890ms; }
-        .grille-epreuves > *:nth-child(4) { animation-delay: 990ms; }
-        .grille-epreuves > *:nth-child(5) { animation-delay: 1090ms; }
+        /* Délais CALÉS SUR L'ONDE, et non répartis régulièrement.
+
+           Chaque colonne entre à l'instant où le bord du rognage franchit son
+           centre — 10, 30, 50, 70 puis 90 % de la largeur. Les valeurs
+           viennent de l'inversion de la courbe du déroulé : à progression
+           régulière en apparence, la courbe n'est pas linéaire, et un pas
+           constant aurait fait entrer les colonnes en décalage croissant avec
+           l'onde qui les survole. D'où des écarts inégaux — 210, 175, 205
+           puis 330 ms — qui sont justement ce qu'il faut pour paraître
+           réguliers À L'ÉCRAN.
+
+           Chaque colonne part 60 ms avant le passage : son fondu dure 560 ms,
+           un léger devancement la fait éclore sous l'onde au lieu de la
+           suivre. */
+        .grille-epreuves > *:nth-child(1) { animation-delay: 770ms; }
+        .grille-epreuves > *:nth-child(2) { animation-delay: 985ms; }
+        .grille-epreuves > *:nth-child(3) { animation-delay: 1160ms; }
+        .grille-epreuves > *:nth-child(4) { animation-delay: 1360ms; }
+        .grille-epreuves > *:nth-child(5) { animation-delay: 1695ms; }
 
         @keyframes accueilEntree {
           from { opacity: 0; transform: translateY(8px); }

@@ -182,11 +182,58 @@ export default function EpreuvesLayout({ children }) {
             animation: epreuveEntree 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
           }
           .epreuve-page > *:nth-child(2) { animation-delay: 50ms; }
-          .epreuve-page > *:nth-child(3) { animation: none; }
-          .epreuve-page > *:nth-child(4) { animation-delay: 170ms; }
-          .epreuve-page > *:nth-child(5) { animation-delay: 230ms; }
-          .epreuve-page > *:nth-child(6) { animation-delay: 290ms; }
-          .epreuve-page > *:nth-child(7) { animation-delay: 350ms; }
+          .epreuve-page > *:nth-child(4) { animation: none; }
+          .epreuve-page > *:nth-child(5) { animation-delay: 900ms; }
+          .epreuve-page > *:nth-child(6) { animation-delay: 980ms; }
+          .epreuve-page > *:nth-child(7) { animation-delay: 1060ms; }
+
+          /* ---- L'onde se déroule de gauche à droite ----
+             Un rognage animé, et non une mise à l'échelle : scaleX aurait
+             comprimé le tracé, donc changé la forme de l'onde pendant qu'elle
+             apparaît. Le clip-path découvre ce qui est déjà dessiné, et la
+             silhouette reste juste à chaque image.
+
+             Ni opacité ni translation : l'onde ne se pose pas, elle se
+             déroule. Sa boucle interne continue de tourner sous le rognage —
+             ce qu'on découvre est vivant, pas une image figée.
+
+             900 ms, contre 1800 sur l'accueil. Là-bas on regarde une page ;
+             ici on vient jouer, et tout ce qui retarde le premier clic se
+             paie. */
+          .epreuve-page > *:nth-child(3) {
+            animation: epreuveOnde 900ms 120ms cubic-bezier(0.35, 0, 0.35, 1) both;
+          }
+
+          @keyframes epreuveOnde {
+            from { clip-path: inset(0 100% 0 0); }
+            to   { clip-path: inset(0 0 0 0); }
+          }
+
+          /* ---- Les dix onglets, calés sur le passage de l'onde ----
+             Chaque onglet entre à l'instant où le bord du rognage franchit son
+             centre — 5, 15, 25 % et ainsi de suite. Les valeurs viennent de
+             l'inversion de la courbe du déroulé : celle-ci n'étant pas
+             linéaire, un pas constant aurait fait dériver les onglets par
+             rapport à l'onde qui les survole, de plus en plus visiblement vers
+             la droite. D'où des écarts qui se resserrent puis s'écartent, et
+             qui sont justement ce qu'il faut pour paraître réguliers à l'écran.
+
+             Soixante millisecondes d'avance sur le passage : le fondu dure
+             320 ms, ce léger devancement fait éclore l'onglet SOUS l'onde au
+             lieu de le faire suivre. */
+          .epreuve-carrousel > * {
+            animation: epreuveEntree 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+          }
+          .epreuve-carrousel > *:nth-child(1)  { animation-delay: 173ms; }
+          .epreuve-carrousel > *:nth-child(2)  { animation-delay: 248ms; }
+          .epreuve-carrousel > *:nth-child(3)  { animation-delay: 299ms; }
+          .epreuve-carrousel > *:nth-child(4)  { animation-delay: 344ms; }
+          .epreuve-carrousel > *:nth-child(5)  { animation-delay: 387ms; }
+          .epreuve-carrousel > *:nth-child(6)  { animation-delay: 432ms; }
+          .epreuve-carrousel > *:nth-child(7)  { animation-delay: 482ms; }
+          .epreuve-carrousel > *:nth-child(8)  { animation-delay: 543ms; }
+          .epreuve-carrousel > *:nth-child(9)  { animation-delay: 623ms; }
+          .epreuve-carrousel > *:nth-child(10) { animation-delay: 752ms; }
 
           @keyframes epreuveEntree {
             from { opacity: 0; transform: translateY(8px); }
@@ -239,6 +286,7 @@ export default function EpreuvesLayout({ children }) {
             instantanée, sans écran blanc. */}
         <nav
           aria-label="Les dix épreuves"
+          className="epreuve-carrousel"
           style={{
             display: 'grid',
             gridTemplateColumns: `repeat(${EPREUVES.length}, 1fr)`,

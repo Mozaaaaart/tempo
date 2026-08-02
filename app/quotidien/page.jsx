@@ -635,7 +635,18 @@ export default function Quotidien() {
              d'avoir à hausser tout le jeton pour rendre l'échéance lisible —
              ce qui l'aurait mis au même niveau que la pastille de mode. */
           .q-jeton-fort { color: var(--ivoire); }
-          /* La seule surface or de la page, et elle tient en trois mots. */
+          /* Pastille du mode.
+
+             Elle était en or plein, texte noir. C'était l'objet le plus
+             lumineux de la page alors qu'il ne fait que nommer l'endroit où
+             l'on se trouve — un aplat saturé pour une étiquette. Elle passe
+             donc au vocabulaire habituel du site : filet or, texte or, fond
+             de surface surélevée. Elle se distingue toujours des jetons
+             voisins, qui n'ont ni cadre ni couleur, mais elle cesse de rivaliser
+             avec le bouton d'action et le halo du filet supérieur.
+
+             Filet à 0,5 px et non 1 px : le document de design réserve le
+             pixel plein à l'élément actif, ce qu'une étiquette n'est pas. */
           .q-puce {
             font-family: var(--mono);
             font-size: 10px;
@@ -643,8 +654,9 @@ export default function Quotidien() {
             text-transform: uppercase;
             font-weight: 500;
             white-space: nowrap;
-            background: var(--or);
-            color: var(--noir);
+            background: var(--onyx-haut);
+            color: var(--or);
+            border: 0.5px solid var(--or);
             padding: 4px 9px;
             border-radius: var(--rayon-controle);
             flex-shrink: 0;
@@ -965,8 +977,13 @@ export default function Quotidien() {
             }}>
               {EPREUVES.map((x) => (
                 <div key={x.slug} className="q-sommaire-item">
+                  {/* Numéros en or : ils balisent le parcours, et le cendre
+                      les rendait presque illisibles — 2,6 pour 1 sur noir,
+                      un contraste que la direction de design réserve aux
+                      mentions dont on peut se passer. L'or reste la seule
+                      couleur d'accent du site, on ne fait qu'y recourir. */}
                   <div className="mono" style={{
-                    fontSize: 10, letterSpacing: '0.09em', color: 'var(--cendre)',
+                    fontSize: 10, letterSpacing: '0.09em', color: 'var(--or)',
                   }}>
                     {x.num}
                   </div>

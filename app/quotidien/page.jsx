@@ -7,7 +7,7 @@ import EnTete from '@/components/EnTete';
 import { EPREUVES, lienEpreuve } from '@/data/epreuves';
 import { jeuDuSlug } from '@/components/registreJeux';
 import { ContexteEpreuveVisible } from '@/components/ContexteEpreuveVisible';
-import { TODAY, setSeedSalt } from '@/components/dailyGames';
+import { TODAY, jourLocal, setSeedSalt } from '@/components/dailyGames';
 
 /**
  * DÉFI DU JOUR
@@ -41,6 +41,33 @@ import { TODAY, setSeedSalt } from '@/components/dailyGames';
 
 const CLE_STOCKAGE = 'mb-quotidien';
 
+/* Archive du dernier défi terminé : scores ET réponses.
+
+   POURQUOI ARCHIVER
+
+   Les corrections sont masquées pendant la journée en cours — un joueur d'un
+   fuseau en avance ne doit pas pouvoir renseigner les autres. Elles sont
+   rendues le lendemain, quand plus personne ne joue ce tirage.
+
+   Mais le lendemain, la graine a changé : les épreuves ne peuvent plus
+   régénérer le contenu de la veille sans refaire toutes leurs requêtes. La
+   réponse doit donc être CONSERVÉE au moment où elle est connue, c'est-à-dire
+   à la fin de chaque épreuve.
+
+   CONTRAT AVEC LES ÉPREUVES
+
+   Chaque jeu appelle onDone(score, correction), où `correction` est une
+   chaîne courte et lisible — « The Weeknd — Starboy », « 128 BPM ». Le second
+   argument est FACULTATIF : une épreuve qui ne le fournit pas fonctionne comme
+   avant, elle n'apparaîtra simplement pas dans les réponses de la veille.
+   C'est ce qui permet de les migrer une par une sans jamais casser la page.
+
+   Les jeux reçoivent en retour `revelation={false}` en mode quotidien : à eux
+   de taire leur réponse. La page ne peut pas le faire à leur place, chacun la
+   dévoile à sa manière — un flou qui tombe, un nom qui s'inscrit, une portée
+   qui se complète. */
+const CLE_ARCHIVE = 'mb-quotidien-veille';
+
 /* Adresse publique du défi, telle qu'elle apparaît dans le partage.
 
    Écrite en dur plutôt que déduite de window.location.origin : un partage
@@ -62,28 +89,60 @@ const DELAI_RELEVE_FINAL = 3200;
    peut pas ressusciter et il n'y a rien à purger. Lecture tolérante —
    un format hérité doit être ignoré, jamais faire tomber la page.
 ------------------------------------------------------------------ */
-function lireRun() {
+function lireRun(jour) {
   try {
     const brut = localStorage.getItem(CLE_STOCKAGE);
-    if (!brut) return { scores: {}, commence: false };
+    if (!brut) return { scores: {}, corrections: {}, commence: false };
     const donnees = JSON.parse(brut);
-    if (!donnees || donnees.jour !== TODAY) return { scores: {}, commence: false };
+
+    /* Le run stocké date d'un autre jour : il devient l'archive, et c'est de
+       lui que viendront les réponses affichées aujourd'hui. Le déplacement se
+       fait ici plutôt qu'à minuit — rien ne garantit que l'onglet soit ouvert
+       à ce moment-là, alors que ce chemin est traversé à chaque arrivée. */
+    if (!donnees || donnees.jour !== jour) {
+      if (donnees?.jour && Object.keys(donnees.scores ?? {}).length) {
+        localStorage.setItem(CLE_ARCHIVE, JSON.stringify(donnees));
+      }
+      return { scores: {}, corrections: {}, commence: false };
+    }
+
     const scores = {};
     for (const e of EPREUVES) {
       const v = donnees.scores?.[e.slug];
       if (typeof v === 'number' && Number.isFinite(v)) scores[e.slug] = v;
     }
-    return { scores, commence: donnees.commence === true || Object.keys(scores).length > 0 };
+    return {
+      scores,
+      corrections: donnees.corrections ?? {},
+      commence: donnees.commence === true || Object.keys(scores).length > 0,
+    };
   } catch {
-    return { scores: {}, commence: false };
+    return { scores: {}, corrections: {}, commence: false };
   }
 }
 
-function ecrireRun(scores, commence) {
+/** Réponses du dernier défi terminé, ou null. Jamais celles du jour en cours :
+    lireRun n'archive que ce qui porte une AUTRE date. */
+function lireArchive() {
+  try {
+    const brut = localStorage.getItem(CLE_ARCHIVE);
+    if (!brut) return null;
+    const a = JSON.parse(brut);
+    if (!a?.jour || !a?.corrections || !Object.keys(a.corrections).length) return null;
+    return a;
+  } catch {
+    return null;
+  }
+}
+
+function ecrireRun(jour, scores, corrections, commence) {
   try {
     const utiles = {};
     for (const [k, v] of Object.entries(scores)) if (v !== null) utiles[k] = v;
-    localStorage.setItem(CLE_STOCKAGE, JSON.stringify({ jour: TODAY, commence, scores: utiles }));
+    localStorage.setItem(
+      CLE_STOCKAGE,
+      JSON.stringify({ jour, commence, scores: utiles, corrections })
+    );
   } catch {
     /* Mode privé, quota plein : le défi reste jouable, il ne survit pas au
        rechargement. Ce n'est pas une raison pour faire tomber la page. */
@@ -300,13 +359,48 @@ export default function Quotidien() {
   const total = Math.round(faits.reduce((a, e) => a + scores[e.slug], 0) * 10) / 10;
   const max = EPREUVES.length * 10;
   const termine = faits.length === EPREUVES.length;
-  const dateDuJour = dateLisible(TODAY);
+  /* Le jour n'est FIXÉ QU'APRÈS LE MONTAGE.
+
+     Il dépend du fuseau du navigateur, que le serveur ne connaît pas : le
+     rendu serveur, en UTC, donnerait une autre date que le client pour tout
+     joueur situé à l'est de Greenwich après 22 h. React signalerait une
+     discordance d'hydratation, et la date afficherait brièvement la veille.
+
+     Il reste vide au premier rendu, comme le décompte, pour la même raison. */
+  const [jour, setJour] = useState(null);
+  /* Passage de minuit détecté pendant la partie : la graine du module est
+     figée au chargement, elle ne peut pas suivre. On le dit au joueur plutôt
+     que de le laisser jouer le tirage de la veille. */
+  const [jourPerime, setJourPerime] = useState(false);
+  /* Réponses du jour, transmises par les épreuves à leur fin. Elles ne sont
+     JAMAIS affichées aujourd'hui : elles sont conservées pour demain. */
+  const [corrections, setCorrections] = useState({});
+  /* Miroir des corrections, DÉCLARÉ APRÈS l'état qu'il recopie.
+
+     Il vivait plus haut, à côté du miroir des scores : il lisait donc
+     `corrections` avant sa déclaration, ce que la zone morte temporelle du
+     `const` interdit — d'où un ReferenceError au rendu. Le voisinage logique
+     avec scoresRef ne valait pas cette dette ; un miroir doit suivre sa
+     source. */
+  const correctionsRef = useRef(corrections);
+  correctionsRef.current = corrections;
+  /* Réponses du dernier défi terminé. Relue au montage, jamais réécrite. */
+  const [archive, setArchive] = useState(null);
+  const dateDuJour = jour ? dateLisible(jour) : '';
   const restant = resteLisible(reste);
-  const expire = reste !== null && reste <= 0;
+  /* Périmé dès que la date locale a changé. Le décompte seul ne suffisait
+     pas : il touche zéro un instant avant la bascule, et surtout il repart
+     à vingt-quatre heures sans que la graine, elle, ait bougé. */
+  const expire = jourPerime || (reste !== null && reste <= 0);
 
   /* ---------- Reprise ---------- */
   useEffect(() => {
-    const { scores: repris, commence: dejaCommence } = lireRun();
+    const aujourdhui = jourLocal();
+    setJour(aujourdhui);
+    const { scores: repris, corrections: repriseCorr, commence: dejaCommence } = lireRun(aujourdhui);
+    setCorrections(repriseCorr ?? {});
+    /* Après lireRun : c'est lui qui bascule un run périmé vers l'archive. */
+    setArchive(lireArchive());
     restaureesRef.current = new Set(Object.keys(repris));
     if (Object.keys(repris).length) setScores((prev) => ({ ...prev, ...repris }));
 
@@ -328,11 +422,21 @@ export default function Quotidien() {
     return () => clearTimeout(t);
   }, [termine]);
 
-  /* ---------- Compte à rebours ----------
-     Quinze secondes suffisent : l'affichage est à la minute. */
+  /* ---------- Compte à rebours et bascule de minuit ----------
+     Quinze secondes suffisent : l'affichage est à la minute.
+
+     La même horloge surveille le changement de date. La graine vit dans une
+     constante de module, figée au chargement : elle ne peut pas suivre le
+     passage de minuit. Un onglet resté ouvert continuerait donc de servir le
+     tirage de la veille — c'est précisément ce qui s'est produit à 00 h 16.
+     Faute de pouvoir la rafraîchir sur place, on le signale. */
   useEffect(() => {
-    setReste(msAvantMinuit());
-    const t = setInterval(() => setReste(msAvantMinuit()), 15000);
+    const battement = () => {
+      setReste(msAvantMinuit());
+      if (jourLocal() !== TODAY) setJourPerime(true);
+    };
+    battement();
+    const t = setInterval(battement, 15000);
     return () => clearInterval(t);
   }, []);
 
@@ -356,17 +460,29 @@ export default function Quotidien() {
 
   function demarrer() {
     setCommence(true);
-    ecrireRun(scores, true);
+    ecrireRun(jour ?? jourLocal(), scores, correctionsRef.current, true);
   }
 
+  /* onDone(score, correction).
+
+     Le second argument est facultatif : une épreuve qui ne le fournit pas
+     n'apparaîtra simplement pas dans les réponses de la veille. C'est ce qui
+     permet de migrer les jeux un par un sans casser la page. */
   function report(slug) {
-    return (s) => {
+    return (s, correction) => {
       setScores((prev) => {
         // Une tentative : le premier score fait foi. Certains jeux appellent
         // onDone plusieurs fois en fin de séquence.
         if (prev[slug] !== null) return prev;
+
+        const suiteCorr = typeof correction === 'string' && correction.trim()
+          ? { ...correctionsRef.current, [slug]: correction.trim() }
+          : correctionsRef.current;
+        correctionsRef.current = suiteCorr;
+        setCorrections(suiteCorr);
+
         const suite = { ...prev, [slug]: s };
-        ecrireRun(suite, true);
+        ecrireRun(jour ?? jourLocal(), suite, suiteCorr, true);
         return suite;
       });
     };
@@ -456,8 +572,6 @@ export default function Quotidien() {
      caractères de dessin : les messageries rendent le texte en fonte
      proportionnelle, et tout alignement se désaligne d'une ligne à l'autre. */
   function texteDePartage() {
-    const moyenne = (total / EPREUVES.length).toFixed(1).replace('.', ',');
-
     const lignes = EPREUVES.map((e) => {
       const note = scores[e.slug] ?? 0;
       return `${carre(note)} ${e.num} ${e.court} — ${note.toFixed(1).replace('.', ',')}`;
@@ -467,7 +581,7 @@ export default function Quotidien() {
       '♪ MOZART BENCHMARK',
       `Défi du ${dateDuJour}`,
       '',
-      `${total.toFixed(1).replace('.', ',')} / ${max}  ·  moyenne ${moyenne} / 10`,
+      `${total.toFixed(1).replace('.', ',')} / ${max}`,
       '',
       ...lignes,
       '',
@@ -594,9 +708,25 @@ export default function Quotidien() {
              joueur. Un emplacement réservé dès le premier rendu évite ça. */
           <span className="q-jeton">
             {expire ? (
-              <span className="q-jeton-fort" style={{ color: 'var(--or)' }}>
-                nouveau défi — recharge la page
-              </span>
+              /* Un bouton, pas une consigne : le rechargement est la seule
+                 façon de reprendre une graine à jour, autant l'offrir d'un
+                 clic. Le style reprend celui des jetons voisins pour ne pas
+                 déséquilibrer la barre. */
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="q-jeton q-jeton-fort"
+                style={{
+                  background: 'transparent',
+                  border: '0.5px solid var(--or)',
+                  borderRadius: 'var(--rayon-controle)',
+                  padding: '3px 8px',
+                  color: 'var(--or)',
+                  cursor: 'pointer',
+                }}
+              >
+                nouveau défi — recharger
+              </button>
             ) : restant ? (
               <>il reste <span className="q-jeton-fort">{restant}</span></>
             ) : null}
@@ -734,6 +864,24 @@ export default function Quotidien() {
           @keyframes qSegment {
             from { opacity: 0; }
             to   { opacity: 1; }
+          }
+
+          /* ---- Réponses de la veille ----
+             Trois colonnes : le numéro, l'intitulé, la réponse. La réponse
+             est la seule en ivoire — c'est elle qu'on vient lire, le reste
+             situe. */
+          .q-veille { display: grid; gap: var(--e3); max-width: 560px; }
+          .q-veille-item {
+            display: grid;
+            grid-template-columns: auto 96px 1fr;
+            align-items: baseline;
+            gap: var(--e3);
+            padding-top: var(--e2);
+            border-top: 0.5px solid var(--filet);
+          }
+          @media (max-width: 560px) {
+            .q-veille-item { grid-template-columns: auto 1fr; }
+            .q-veille-item > *:nth-child(3) { grid-column: 1 / -1; }
           }
 
           .q-segments { position: relative; }
@@ -979,7 +1127,10 @@ export default function Quotidien() {
             Affiché tant qu'aucune épreuve n'a été entamée. Un clic pour
             entrer : c'est peu, et ça lève toute ambiguïté sur ce qui suit. */}
         {auSeuil && (
-          <div className="q-seuil" style={{
+          /* `q-lueur` : le même halo que la scène du jeu et la carte du score.
+             Le seuil est le seul bloc encadré d'or de la page à ne pas
+             l'avoir, alors qu'il en est le point d'entrée. */
+          <div className="q-seuil q-lueur" style={{
             marginTop: 'var(--e6)', padding: 'var(--e7) var(--e5)',
             border: '1px solid var(--or)', borderRadius: 'var(--rayon-carte)',
             textAlign: 'center',
@@ -1365,8 +1516,17 @@ export default function Quotidien() {
                           <span style={{ color: 'var(--cendre)' }}>/ 10</span>
                         </div>
                         <p className="description" style={{ marginTop: 'var(--e3)' }}>
-                          Le défi du jour n&apos;accorde qu&apos;une tentative. Reviens demain, ou
-                          rejoue {x.nom.toLowerCase()}{' '}
+                          Le défi du jour n&apos;accorde qu&apos;une tentative.
+                        </p>
+                        {/* La correction est différée, pas supprimée. Le dire ici
+                            autant qu'à la fin de l'épreuve : c'est ce panneau qu'on
+                            revoit en revenant dessus, et un joueur qui n'aurait lu
+                            le message qu'une fois croirait la réponse perdue. */}
+                        <p className="description" style={{ marginTop: 'var(--e2)' }}>
+                          La correction sera donnée demain, avec le prochain défi.
+                        </p>
+                        <p className="description" style={{ marginTop: 'var(--e2)' }}>
+                          Sans attendre, tu peux rejouer {x.nom.toLowerCase()}{' '}
                           <Link href={lienEpreuve(x.slug)}>en accès libre</Link>.
                         </p>
                       </div>
@@ -1401,7 +1561,18 @@ export default function Quotidien() {
                   return (
                     <div key={x.slug} style={{ display: visible ? 'block' : 'none' }}>
                       <ContexteEpreuveVisible.Provider value={visible}>
-                        <Jeu key={`${x.slug}|${nbVisites}`} daily onDone={report(x.slug)} />
+                        {/* revelation={false} : l'épreuve tait sa réponse. La
+                          page ne peut pas le faire à sa place — chacune la
+                          dévoile à sa manière, un flou qui tombe, un nom qui
+                          s'inscrit, une portée qui se complète. Les jeux non
+                          encore migrés ignorent la prop et se comportent comme
+                          avant. */}
+                      <Jeu
+                        key={`${x.slug}|${nbVisites}`}
+                        daily
+                        revelation={false}
+                        onDone={report(x.slug)}
+                      />
                       </ContexteEpreuveVisible.Provider>
                     </div>
                   );
@@ -1410,6 +1581,50 @@ export default function Quotidien() {
             </div>
 
             </>
+        )}
+
+        {/* ================= LES RÉPONSES DE LA VEILLE =================
+            Le contrepoids du masquage : la correction n'est pas supprimée,
+            elle est différée. Plus personne ne joue ce tirage, il n'y a donc
+            plus rien à protéger — et le joueur apprend enfin ce qu'il a raté.
+
+            Affichée après la scène et non à l'ouverture : elle appartient au
+            défi d'hier, elle ne doit pas disputer la vedette à celui du jour.
+
+            Rendue seulement si l'archive contient des réponses, ce qui n'est
+            le cas qu'après un défi joué un jour précédent. Une épreuve non
+            encore migrée n'y figure pas : elle ne transmet pas sa réponse. */}
+        {archive && (
+          <section style={{
+            marginTop: 'var(--e8)',
+            paddingTop: 'var(--e5)',
+            borderTop: '0.5px solid var(--filet)',
+          }}>
+            <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>
+              réponses du {dateLisible(archive.jour)}
+            </div>
+            <p className="description" style={{ marginTop: 'var(--e2)', maxWidth: 460 }}>
+              Les corrections sont tenues au secret le jour même : le défi ne
+              commence pas à la même heure partout, et une réponse qui circule
+              fausserait les scores. Les voici, maintenant que la journée est passée.
+            </p>
+
+            <div className="q-veille" style={{ marginTop: 'var(--e5)' }}>
+              {EPREUVES.filter((e) => archive.corrections?.[e.slug]).map((e) => (
+                <div key={e.slug} className="q-veille-item">
+                  <span className="mono" style={{
+                    fontSize: 10, letterSpacing: '0.09em', color: 'var(--or)',
+                  }}>
+                    {e.num}
+                  </span>
+                  <span style={{ fontSize: 12.5, color: 'var(--cendre)' }}>{e.court}</span>
+                  <span style={{ fontSize: 13.5, color: 'var(--ivoire)', lineHeight: 1.35 }}>
+                    {archive.corrections[e.slug]}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
         )}
 
         <footer style={{ marginTop: 'var(--e8)', textAlign: 'center', fontSize: 11, color: 'var(--cendre)' }}>

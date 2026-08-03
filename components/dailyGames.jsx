@@ -33,7 +33,35 @@ function mulberry32(a) {
   };
 }
 
-export const TODAY = new Date().toISOString().slice(0, 10);
+/**
+ * Date du jour au format AAAA-MM-JJ, dans le fuseau du JOUEUR.
+ *
+ * L'ancienne version passait par toISOString(), qui renvoie toujours de l'UTC.
+ * Le décompte de la page, lui, vise minuit LOCAL : les deux se contredisaient
+ * partout ailleurs qu'à Greenwich. À 00 h 16 à Paris le 3 août, il était
+ * encore 22 h 16 UTC le 2, et le tirage restait celui de la veille pendant que
+ * le compteur annonçait le nouveau défi.
+ *
+ * Découper la date locale à la main plutôt que d'utiliser toLocaleDateString :
+ * ce dernier dépend de la locale installée et peut renvoyer un ordre de champs
+ * différent d'une machine à l'autre. Ici la chaîne est la même partout, et
+ * c'est elle qui sert de graine — elle ne peut pas varier.
+ *
+ * Conséquence assumée : le défi bascule à minuit dans CHAQUE fuseau. Deux
+ * joueurs éloignés ne jouent donc pas la même épreuve au même instant, mais
+ * ils jouent la même à la même DATE, ce qui est la promesse faite à l'écran.
+ */
+export function jourLocal(quand = new Date()) {
+  const a = quand.getFullYear();
+  const m = String(quand.getMonth() + 1).padStart(2, '0');
+  const j = String(quand.getDate()).padStart(2, '0');
+  return `${a}-${m}-${j}`;
+}
+
+/* Figé au chargement du module : c'est ce qui garantit qu'une même session
+   tire toujours la même graine. La page surveille le passage de minuit et
+   invite à recharger — voir app/quotidien/page.jsx. */
+export const TODAY = jourLocal();
 let SEED_SALT = '';
 export function setSeedSalt(salt) { SEED_SALT = salt; }
 export const seeded = (name) => mulberry32(hashStr(TODAY + '|' + SEED_SALT + '|' + name));
@@ -126,6 +154,8 @@ export function useLecteurAudio() {
      jeu de faire de la place à un autre son — le métronome de l'épreuve BPM,
      qui doit rester audible par-dessus l'extrait. Vaut 1 partout ailleurs. */
   const attenuationRef = useRef(1);
+  /* Rappel d'échec fourni par l'appelant, valable pour la lecture en cours. */
+  const erreurRef = useRef(null);
 
   function appliquerVolume() {
     if (audioRef.current) audioRef.current.volume = volumeRef.current * attenuationRef.current;
@@ -145,6 +175,7 @@ export function useLecteurAudio() {
     clearTimeout(timerRef.current);
     timerRef.current = null;
     finRef.current = null;
+    erreurRef.current = null;
     restantRef.current = 0;
     pauseRef.current = false;
     if (audioRef.current) {
@@ -177,15 +208,40 @@ export function useLecteurAudio() {
     onFin?.();
   }
 
-  function jouer(url, secondes, { depart = 0, onFin } = {}) {
+  /* Échec de lecture.
+
+     Trois causes courantes, aucune n'est un bug du code : une URL d'extrait
+     Deezer périmée — leur jeton a une durée de vie limitée —, une lecture
+     refusée faute de geste utilisateur, ou un format non gelé par le
+     navigateur. Les remonter en console.error faisait clignoter l'indicateur
+     de développement de Next comme s'il s'agissait d'une panne.
+
+     Surtout, l'état « en lecture » restait vrai : le bouton affichait Pause
+     alors que rien ne jouait, et le joueur attendait un son qui ne viendrait
+     pas. On coupe donc proprement et on prévient l'appelant, à lui de
+     rafraîchir l'URL ou d'afficher un message. */
+  function echecLecture(e) {
+    if (e?.name === 'AbortError') return; // arrêt volontaire, pas un échec
+    console.warn('Extrait indisponible :', e?.name ?? e);
+    const signaler = erreurRef.current;
     arreter();
+    signaler?.(e);
+  }
+
+  function jouer(url, secondes, { depart = 0, onFin, onErreur } = {}) {
+    arreter();
+    erreurRef.current = onErreur ?? null;
     const a = new Audio(url);
     a.volume = volumeRef.current * attenuationRef.current;
     audioRef.current = a;
     finRef.current = onFin ?? null;
     if (depart) a.currentTime = depart;
     a.onended = () => terminer();
-    a.play().catch((e) => console.error('Lecture impossible:', e));
+    /* Deux chemins d'échec distincts : la promesse de play() couvre le refus
+       de lecture, l'événement error couvre la source illisible. L'un
+       n'implique pas l'autre. */
+    a.onerror = () => echecLecture(new Error('source illisible'));
+    a.play().catch(echecLecture);
 
     setEnLecture(true);
     setEnPause(false);
@@ -214,7 +270,7 @@ export function useLecteurAudio() {
   function reprendre() {
     if (!audioRef.current || !pauseRef.current) return;
     audioRef.current.volume = volumeRef.current * attenuationRef.current;
-    audioRef.current.play().catch((e) => console.error('Lecture impossible:', e));
+    audioRef.current.play().catch(echecLecture);
     if (restantRef.current > 0) {
       departRef.current = Date.now();
       timerRef.current = setTimeout(terminer, restantRef.current);
@@ -251,7 +307,18 @@ export const statusStyle = {
 };
 
 /* Score : jade réservé au parfait (≥ 9,5), carmin à l'échec (< 4) */
-export function ScoreBox({ score, detail }) {
+/**
+ * `source` : mention de provenance des données, sur sa PROPRE ligne.
+ *
+ * Elle était collée au détail du score, dans la même phrase — « 4 bonnes
+ * réponses sur 5. Données kworb.net. » Deux informations de nature
+ * différente, l'une sur la partie, l'autre sur l'origine des chiffres, se
+ * lisaient comme une seule. Séparée et en retrait, elle cesse de disputer
+ * l'attention au résultat.
+ *
+ * Prop facultative : les épreuves qui n'en ont pas restent inchangées.
+ */
+export function ScoreBox({ score, detail, source }) {
   if (score === null || score === undefined) return null;
   const n = Number(score);
   const couleur = n >= 9.5 ? 'var(--jade)' : n < 4 ? 'var(--carmin)' : 'var(--ivoire)';
@@ -261,6 +328,11 @@ export function ScoreBox({ score, detail }) {
         {n.toFixed(1).replace('.', ',')} <span style={{ color: 'var(--cendre)' }}>/ 10</span>
       </div>
       {detail && <p className="description" style={{ marginTop: 'var(--e2)' }}>{detail}</p>}
+      {source && (
+        <p style={{ fontSize: 11, color: 'var(--cendre)', marginTop: 'var(--e2)' }}>
+          {source}
+        </p>
+      )}
     </div>
   );
 }
@@ -356,7 +428,16 @@ const CELL_DELAY = 0.25;   // secondes entre chaque colonne révélée
 const FLOU_ARTISTE = 22;   // flou constant : il ne diminue jamais en cours de partie
 const EXTRAIT_SEC = 10;
 
-export function JeuArtiste({ onDone, daily = false }) {
+export function JeuArtiste({ onDone, daily = false, revelation = true }) {
+  /* Le joueur a-t-il trouvé ? Détermine, en mode quotidien, s'il a le droit
+     de voir la réponse.
+
+     `revelation` vaut faux pendant le défi du jour : la correction y est
+     différée au lendemain, pour qu'un joueur d'un fuseau en avance ne puisse
+     pas renseigner les autres. Mais celui qui a trouvé connaît déjà le nom —
+     le lui masquer ne protégerait rien et le priverait de son résultat. */
+  const [trouve, setTrouve] = useState(false);
+
   // Manche 0 : l'artiste du jour, tiré par la graine — identique pour tous.
   // Manches suivantes (bouton « Nouvel artiste ») : tirage libre.
   const [manche, setManche] = useState(0);
@@ -420,10 +501,19 @@ export function JeuArtiste({ onDone, daily = false }) {
   useEffect(() => () => clearTimeout(bilanTimer.current), []);
 
   // Pose le voile, puis le bilan une fois qu'il s'est levé.
+  /* Droit de dévoiler : hors défi toujours, dans le défi seulement si le
+     joueur a trouvé. Une seule expression, utilisée partout où le nom
+     apparaît — flou du portrait, étiquette, nom en clair, voile de résultat.
+     Les disperser aurait garanti d'en oublier un. */
+  const devoile = revelation || trouve;
+
+  /* La réponse part avec le score : la page l'archive et la rendra demain,
+     une fois le tirage clos. Sans cet envoi, elle serait perdue — le
+     lendemain la graine a changé et rien ne permet de la retrouver. */
   function terminerPartie(pts, phrase) {
     setStatus(phrase);
     setResultat(pts);
-    onDone(pts);
+    onDone(pts, target.nom);
     bilanTimer.current = setTimeout(() => {
       setScore(pts);
       setBilan(true);
@@ -476,6 +566,7 @@ export function JeuArtiste({ onDone, daily = false }) {
     const revealMs = (NB_COLS - 1) * CELL_DELAY * 1000 + 500;
     if (g.nom === target.nom) {
       setDone(true);
+      setTrouve(true);
       setStatus('…');
       setTimeout(() => {
         terminerPartie(POINTS_ARTISTE[next.length - 1], `🎉 Trouvé en ${next.length} essai(s) !`);
@@ -484,7 +575,12 @@ export function JeuArtiste({ onDone, daily = false }) {
       setDone(true);
       setStatus('…');
       setTimeout(() => {
-        terminerPartie(0, `Perdu… c'était ${target.nom}.`);
+        terminerPartie(
+          0,
+          revelation
+            ? `Perdu… c'était ${target.nom}.`
+            : 'Perdu.'
+        );
       }, revealMs);
     } else {
       setStatus('…');
@@ -542,7 +638,11 @@ export function JeuArtiste({ onDone, daily = false }) {
       `}</style>
 
       {intro && <IntroArtiste exclure={target.nom} onFin={() => setIntro(false)} />}
-      {resultat !== null && <ResultatArtiste score={resultat} artiste={target.nom} />}
+      {/* Le voile de résultat nomme l'artiste : il ne le fait que si la
+          révélation est permise. Le score, lui, s'affiche toujours. */}
+      {resultat !== null && (
+        <ResultatArtiste score={resultat} artiste={devoile ? target.nom : null} />
+      )}
 
       <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Trouve l'artiste</h3>
       <p className="description" style={{ maxWidth: 460, margin: '0 auto var(--e3)' }}>
@@ -576,8 +676,8 @@ export function JeuArtiste({ onDone, daily = false }) {
               alt="Portrait de l'artiste mystère"
               width={190} height={190}
               style={{
-                filter: bilan ? 'none' : `blur(${FLOU_ARTISTE}px)`,
-                transform: bilan ? 'scale(1)' : 'scale(1.18)',
+                filter: bilan && devoile ? 'none' : `blur(${FLOU_ARTISTE}px)`,
+                transform: bilan && devoile ? 'scale(1)' : 'scale(1.18)',
                 transition: 'filter 0.6s ease, transform 0.6s ease',
                 display: 'block', width: '100%', height: '100%', objectFit: 'cover',
               }}
@@ -587,20 +687,31 @@ export function JeuArtiste({ onDone, daily = false }) {
         <div style={{ marginTop: 'var(--e2)' }}>
           {/* Une fois le nom affiché en clair, l'étiquette ne dit plus rien
               qu'on ne lise déjà : elle disparaît. */}
-          {!bilan && (
+          {!(bilan && devoile) && (
             <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>
               Artiste mystère
             </div>
           )}
           {/* Le cendre ne porte jamais d'information nécessaire : une fois
               révélé, le nom passe en ivoire et en corps de lecture. */}
-          {bilan && (
+          {bilan && devoile && (
             <div style={{
               fontFamily: 'var(--sans)', fontSize: 17, fontWeight: 500,
               color: 'var(--ivoire)', marginTop: 4, lineHeight: 1.2,
               animation: 'artApparition 420ms 120ms ease-out both',
             }}>
               {target.nom}
+            </div>
+          )}
+          {/* Réponse tue : on dit POURQUOI, sinon le joueur croit à une
+              panne. La promesse d'une correction demain est aussi ce qui le
+              fait revenir. */}
+          {bilan && !devoile && (
+            <div className="description" style={{
+              marginTop: 4, maxWidth: 280, marginInline: 'auto',
+              animation: 'artApparition 420ms 120ms ease-out both',
+            }}>
+              Réponse donnée demain, avec le prochain défi.
             </div>
           )}
         </div>
@@ -695,10 +806,16 @@ export function JeuArtiste({ onDone, daily = false }) {
           }}>
             {score.toFixed(1).replace('.', ',')} <span style={{ color: 'var(--cendre)' }}>/ 10</span>
           </div>
+          {/* Le décompte des essais est toujours dit ; le NOM ne l'est que si
+              la révélation est permise. Ces deux informations vivaient dans la
+              même phrase, ce qui avait suffi à faire fuir la réponse malgré
+              tout le reste du masquage. */}
           <p className="description" style={{ marginTop: 'var(--e2)' }}>
             {score > 0
-              ? <>Trouvé en {guesses.length} essai{guesses.length > 1 ? 's' : ''} sur {MAX_TRIES} — <span style={{ color: 'var(--or)' }}>{target.nom}</span></>
-              : <>Non trouvé en {MAX_TRIES} essais — c'était <span style={{ color: 'var(--or)' }}>{target.nom}</span></>}
+              ? <>Trouvé en {guesses.length} essai{guesses.length > 1 ? 's' : ''} sur {MAX_TRIES}{devoile && <> — <span style={{ color: 'var(--or)' }}>{target.nom}</span></>}</>
+              : <>Non trouvé en {MAX_TRIES} essais{devoile
+                  ? <> — c&apos;était <span style={{ color: 'var(--or)' }}>{target.nom}</span></>
+                  : <> — réponse donnée demain, avec le prochain défi</>}</>}
           </p>
 
           {/* Une seule tentative en quotidien : pas de relance là-bas. */}
@@ -730,13 +847,41 @@ function RowFragment({ children }) {
 }
 
 /* ================= 2 · POCHETTE FLOUTÉE ================= */
+/* Tolérance du tempo : en deçà, la note est maximale.
+
+   La valeur vivait en double — dans le calcul du score et dans la couleur du
+   verdict. Le message de fin en dépend maintenant lui aussi ; à trois copies,
+   la désynchronisation n'était plus qu'une question de temps. */
+const BPM_TOLERANCE = 2;
+
 const POCH_TRIES = 7;
+
+/* Tirages tentés avant d'abandonner. Un artiste dont Deezer ne renvoie aucune
+   correspondance exacte est simplement écarté au profit du suivant. */
+const POCH_TIRAGES_MAX = 6;
 /* Flou après 0, 1, 2… erreurs. Les pas sont larges au début et se resserrent
    ensuite : le flou perçu n'est pas linéaire, passer de 34 à 28 se remarque
    bien plus que de 13 à 10. La dernière valeur reste volontairement haute —
    au septième essai on distingue des formes et des couleurs, pas un titre,
    sinon l'épreuve se gagne à l'usure sans jamais rien reconnaître. */
-const BLURS = [34, 28, 23, 19, 16, 13, 10];
+/* Échelle de flou GÉOMÉTRIQUE, et non arithmétique.
+
+   L'ancienne — 34, 28, 23, 19, 16, 13, 10 — retirait environ cinq pixels par
+   essai. Or le détail perçu varie comme l'INVERSE du rayon : à 34 pixels, en
+   retirer cinq ne se voit pas ; à 10, cela change tout. Les trois premiers
+   essais paraissaient donc identiques, et le joueur ne voyait pas que le flou
+   diminuait — alors que c'est la récompense de chaque tentative ratée.
+
+   Ici chaque palier vaut environ 67 % du précédent. Le rapport étant
+   constant, chaque essai découvre autant que le précédent, du premier au
+   dernier.
+
+   Le dernier palier descend à 3,2 pixels contre 10 : à dix pixels sur une
+   pochette de deux cent trente, on ne distinguait toujours rien, et le
+   septième essai n'apportait aucune aide. Une décimale est conservée — CSS
+   l'accepte, et arrondir à l'entier romprait la régularité en bas d'échelle,
+   là où elle se voit le plus. */
+const BLURS = [34, 24.6, 17.8, 12.9, 9.3, 6.7, 4.9];
 const POINTS = [10, 8.5, 7, 5.5, 4, 2.5, 1];
 const POCH_EXTRAIT_SEC = 10;
 
@@ -755,7 +900,7 @@ const POCH_ENTETE_H = 16;
 const POCH_JETON_GAP =
   (POCH_COUVERTURE - POCH_ENTETE_H - POCH_TRIES * POCH_JETON_H) / (POCH_TRIES - 1);
 
-export function JeuPochette({ onDone, daily = false }) {
+export function JeuPochette({ onDone, daily = false, revelation = true }) {
   // Manche 0 : la pochette du jour, tirée par la graine — identique pour tous.
   // Manches suivantes (bouton « Nouvelle pochette ») : tirage libre.
   const [manche, setManche] = useState(0);
@@ -770,6 +915,9 @@ export function JeuPochette({ onDone, daily = false }) {
   const [done, setDone] = useState(false);
   const [status, setStatus] = useState('Chargement de la pochette du jour…');
   const [score, setScore] = useState(null);
+  /* Trouvé ? Conditionne le droit de voir la réponse pendant le défi : celui
+     qui a trouvé la connaît déjà, la lui masquer ne protégerait rien. */
+  const [trouve, setTrouve] = useState(false);
 
   // Contour carmin du champ pendant quelques centaines de ms après une erreur.
   const [erreur, setErreur] = useState(false);
@@ -802,10 +950,35 @@ export function JeuPochette({ onDone, daily = false }) {
     setStatus('Chargement de la pochette du jour…');
     try {
       const rng = manche === 0 ? seeded('pochette') : Math.random;
-      const artist = ARTISTS[Math.floor(rng() * ARTISTS.length)];
-      const tracks = await searchTracks(artist.nom, { limit: 25 });
-      if (!tracks.length) throw new Error('Aucun résultat');
-      const t = tracks[Math.floor(rng() * tracks.length)];
+
+      /* La recherche Deezer est APPROXIMATIVE : interroger un artiste renvoie
+         aussi les morceaux où il est invité, les reprises et les
+         compilations. Le code prenait un résultat au hasard et l'étiquetait
+         d'autorité avec l'artiste CHERCHÉ, sans vérifier à qui il appartient.
+
+         D'où deux défauts qui n'en faisaient qu'un. La pochette affichée était
+         celle du véritable propriétaire du morceau — parfois un artiste absent
+         de la liste, donc impossible à proposer. Et quand ce propriétaire
+         figurait bien dans la liste, le joueur qui le reconnaissait et le
+         sélectionnait était compté faux, puisque la réponse attendue restait
+         l'artiste de la requête.
+
+         On ne retient donc que les morceaux dont l'artiste RÉEL correspond, et
+         `artisteNom` devient une vérité vérifiée plutôt qu'une étiquette.
+
+         La boucle est bornée : un artiste dont Deezer ne renvoie aucune
+         correspondance exacte ferait sinon tourner le chargement sans fin. */
+      let artist = null;
+      let t = null;
+      for (let essai = 0; essai < POCH_TIRAGES_MAX && !t; essai += 1) {
+        artist = ARTISTS[Math.floor(rng() * ARTISTS.length)];
+        const tracks = (await searchTracks(artist.nom, { limit: 25 }))
+          .filter((x) => norm(x.artistName) === norm(artist.nom))
+          .filter((x) => x.artworkUrl100);
+        if (tracks.length) t = tracks[Math.floor(rng() * tracks.length)];
+      }
+      if (!t) throw new Error('Aucune pochette exploitable');
+
       setTrack({ ...t, artisteNom: artist.nom });
       setStatus(`De quel artiste est cette pochette ? ${POCH_TRIES} essais.`);
     } catch (err) {
@@ -822,11 +995,17 @@ export function JeuPochette({ onDone, daily = false }) {
   }
 
   // Pose le voile, puis le bilan une fois qu'il s'est levé.
+  /* La réponse part avec le score : la page l'archive et la rendra demain,
+     une fois le tirage clos. Sans cet envoi elle serait perdue — le lendemain
+     la graine a changé et rien ne permet de la retrouver.
+
+     Elle est envoyée même quand le joueur a échoué : c'est justement à lui
+     qu'elle servira. */
   function terminerPartie(pts, phrase) {
     setStatus(phrase);
     setDone(true);
     setResultat(pts);
-    onDone(pts);
+    onDone(pts, track ? `${track.artistName} — ${track.albumName}` : undefined);
     bilanTimer.current = setTimeout(() => {
       setScore(pts);
       setBilan(true);
@@ -862,6 +1041,11 @@ export function JeuPochette({ onDone, daily = false }) {
     }
   }
 
+  /* Droit de dévoiler : hors défi toujours, dans le défi seulement si le
+     joueur a trouvé. Une seule expression pour le flou, le cadre et le nom —
+     les disperser aurait garanti d'en oublier un. */
+  const devoile = revelation || trouve;
+
   function guess() {
     if (done || !track) return;
     const g = ARTISTS.find((a) => norm(a.nom) === norm(input));
@@ -874,6 +1058,7 @@ export function JeuPochette({ onDone, daily = false }) {
     if (tried.some((t) => t.nom === g.nom)) { setStatus(`${g.nom} a déjà été proposé.`); signalerErreur(); return; }
     if (norm(g.nom) === norm(track.artisteNom)) {
       setTried([...tried, { nom: g.nom, bon: true }]);
+      setTrouve(true);
       terminerPartie(POINTS[tries], `🎉 Exact ! C'était ${track.artistName} — album « ${track.albumName} ».`);
     } else {
       setTried([...tried, { nom: g.nom, bon: false }]);
@@ -881,7 +1066,12 @@ export function JeuPochette({ onDone, daily = false }) {
       const next = tries + 1;
       setTries(next);
       if (next >= POCH_TRIES) {
-        terminerPartie(0, `Perdu… c'était ${track.artistName} — « ${track.albumName} ».`);
+        terminerPartie(
+          0,
+          revelation
+            ? `Perdu… c'était ${track.artistName} — « ${track.albumName} ».`
+            : 'Perdu.'
+        );
       } else if (next === POCH_TRIES - 1) {
         setStatus(`Dernier essai — un extrait de ${POCH_EXTRAIT_SEC} secondes est débloqué.`);
       } else {
@@ -890,7 +1080,9 @@ export function JeuPochette({ onDone, daily = false }) {
     }
   }
 
-  const blur = bilan ? 0 : BLURS[Math.min(tries, BLURS.length - 1)];
+  /* Le flou ne tombe qu'avec le droit de voir : sur une pochette, l'image
+     EST la réponse, la dé-flouter reviendrait à la donner en clair. */
+  const blur = bilan && devoile ? 0 : BLURS[Math.min(tries, BLURS.length - 1)];
   const extraitDispo = tries >= POCH_TRIES - 1 && !done && !!track;
   const joue = enLecture && !enPause;
   const libelleExtrait = chargementExtrait ? 'Chargement…'
@@ -912,7 +1104,11 @@ export function JeuPochette({ onDone, daily = false }) {
       `}</style>
 
       {intro && <IntroPochette exclure={track?.artisteNom} onFin={() => setIntro(false)} />}
-      {resultat !== null && <ResultatPochette score={resultat} artiste={track?.artistName} />}
+      {/* Le voile de résultat nomme l'artiste : il ne le fait que si la
+          révélation est permise. Le score, lui, s'affiche toujours. */}
+      {resultat !== null && (
+        <ResultatPochette score={resultat} artiste={devoile ? track?.artistName : null} />
+      )}
 
       <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Pochette floutée</h3>
       <p className="description" style={{ marginBottom: 'var(--e4)' }}>
@@ -952,7 +1148,7 @@ export function JeuPochette({ onDone, daily = false }) {
               alt="Pochette mystère"
               style={{
                 filter: `blur(${blur}px)`,
-                transform: bilan ? 'scale(1)' : 'scale(1.15)',
+                transform: bilan && devoile ? 'scale(1)' : 'scale(1.15)',
                 transition: 'filter 0.5s ease, transform 0.5s ease',
                 display: 'block', width: '100%', height: '100%', objectFit: 'cover',
               }}
@@ -1056,10 +1252,14 @@ export function JeuPochette({ onDone, daily = false }) {
           }}>
             {score.toFixed(1).replace('.', ',')} <span style={{ color: 'var(--cendre)' }}>/ 10</span>
           </div>
+          {/* Même précaution que pour Artiste : le décompte reste, le nom et
+              l'album ne sortent que si la révélation est permise. */}
           <p className="description" style={{ marginTop: 'var(--e2)' }}>
             {score > 0
-              ? <>Trouvé en {tried.length} essai{tried.length > 1 ? 's' : ''} sur {POCH_TRIES} — <span style={{ color: 'var(--or)' }}>{track?.artistName}</span>, « {track?.albumName} »</>
-              : <>Non trouvé en {POCH_TRIES} essais — c'était <span style={{ color: 'var(--or)' }}>{track?.artistName}</span>, « {track?.albumName} »</>}
+              ? <>Trouvé en {tried.length} essai{tried.length > 1 ? 's' : ''} sur {POCH_TRIES}{devoile && <> — <span style={{ color: 'var(--or)' }}>{track?.artistName}</span>, « {track?.albumName} »</>}</>
+              : <>Non trouvé en {POCH_TRIES} essais{devoile
+                  ? <> — c&apos;était <span style={{ color: 'var(--or)' }}>{track?.artistName}</span>, « {track?.albumName} »</>
+                  : <> — réponse donnée demain, avec le prochain défi</>}</>}
           </p>
 
           {/* Une seule tentative en quotidien : pas de relance là-bas. */}
@@ -1095,7 +1295,19 @@ const BPM_EXTRAIT_SEC = 15;
    battement relit le tempo courant : le réglage s'entend au coup d'après. */
 const BPM_AVANCE = 0.06;    // secondes de marge pour programmer le battement suivant
 
-export function JeuBPM({ onDone, daily = false }) {
+export function JeuBPM({ onDone, daily = false, revelation = true }) {
+  /* Score CONTINU : pas de notion de « trouvé ».
+
+     On obtient 6,6 sur 10 en tombant à huit battements près. Il n'existe donc
+     aucun seuil au-delà duquel le joueur « connaîtrait déjà la réponse » et
+     pourrait la voir sans risque : dévoiler le tempo réel, même à quelqu'un
+     qui a bien joué, le met en mesure de le donner à un joueur d'un fuseau en
+     retard. La règle est donc plus stricte que pour les épreuves à réponse
+     unique — pendant le défi, jamais de révélation.
+
+     Le morceau est logé à la même enseigne : le nommer permet d'aller
+     chercher son tempo ailleurs en dix secondes. */
+  const devoile = revelation;
   // Manche 0 : le morceau du jour, tiré par la graine — identique pour tous.
   const [manche, setManche] = useState(0);
   // L'intro ne se joue qu'à l'arrivée sur l'épreuve, pas sur une relance.
@@ -1343,8 +1555,10 @@ export function JeuBPM({ onDone, daily = false }) {
     arreter();
     stopMetro();
     const diff = Math.abs(guess - realBpm);
-    const s = Math.round(Math.max(0, diff <= 2 ? 10 : 10 - (diff - 2) * 0.4) * 10) / 10;
-    onDone(s);
+    const s = Math.round(Math.max(0, diff <= BPM_TOLERANCE ? 10 : 10 - (diff - BPM_TOLERANCE) * 0.4) * 10) / 10;
+    /* La réponse part avec le score : la page l'archive et la rendra demain.
+       Le lendemain la graine a changé, rien ne permettrait de la retrouver. */
+    onDone(s, track ? `${realBpm} BPM — ${track.trackName}, ${track.artistName}` : `${realBpm} BPM`);
     setResultat(s);
     bilanTimer.current = setTimeout(() => {
       setScore(s);
@@ -1373,7 +1587,7 @@ export function JeuBPM({ onDone, daily = false }) {
 
   // Position d'une valeur sur la barre, en pourcentage
   const pos = (v) => ((Math.min(Math.max(v, BPM_MIN), BPM_MAX) - BPM_MIN) / (BPM_MAX - BPM_MIN)) * 100;
-  const juste = done && Math.abs(guess - realBpm) <= 2;
+  const juste = done && Math.abs(guess - realBpm) <= BPM_TOLERANCE;
   const couleurResultat = !done ? 'var(--or)' : juste ? 'var(--jade)' : 'rgba(226, 75, 74, 0.75)';
   /* Le disque ne prend l'or que pendant qu'il bat : au repos il reste ivoire,
      comme le disque d'écoute de « Une seconde de plus ». La barre de réglage,
@@ -1405,9 +1619,12 @@ export function JeuBPM({ onDone, daily = false }) {
 
       {intro && <IntroBPM onFin={() => setIntro(false)} />}
       {resultat !== null && (
+        /* Le voile nomme le morceau ET son tempo : les deux sont la réponse,
+           il ne les donne donc que si la révélation est permise. Le score,
+           lui, s'affiche toujours. */
         <ResultatBPM
           score={resultat}
-          detail={track ? `${track.trackName} — ${track.artistName}, ${realBpm} BPM` : null}
+          detail={devoile && track ? `${track.trackName} — ${track.artistName}, ${realBpm} BPM` : null}
         />
       )}
 
@@ -1492,7 +1709,10 @@ export function JeuBPM({ onDone, daily = false }) {
               paddingTop: done ? 'var(--e6)' : 0,
               transition: 'padding-top var(--transition-courte)',
             }}>
-              {done && (
+              {/* Le repère planté sur la réglette porte le tempo réel en
+                  chiffres ET sa position : deux façons de donner la réponse.
+                  Il ne se pose donc que si la révélation est permise. */}
+              {done && devoile && (
                 <div style={{
                   position: 'absolute', top: 0, left: `${pos(realBpm)}%`, bottom: -4,
                   transform: 'translateX(-50%)',
@@ -1596,9 +1816,23 @@ export function JeuBPM({ onDone, daily = false }) {
               marginTop: 'var(--e3)', fontFamily: 'var(--sans)', fontSize: 13,
               color: juste ? 'var(--jade)' : 'rgba(226, 75, 74, 0.9)',
             }}>
+              {/* L'écart chiffré est la réponse déguisée : le joueur connaît
+                  sa propre proposition, une soustraction suffit. En défi, on
+                  ne garde que le SENS de l'erreur, qui situe sans livrer. */}
+              {/* Trois paliers, et non deux.
+
+                  « Trop lent » s'affichait dès que la proposition n'était pas
+                  exacte — y compris à un battement d'écart, c'est-à-dire avec
+                  la note maximale et le verdict en jade. Le texte contredisait
+                  alors à la fois le score et la couleur.
+
+                  `juste` porte déjà la même condition que le barème : les deux
+                  ne peuvent pas diverger. */}
               {guess === realBpm ? 'Tempo exact.'
-                : guess < realBpm ? `${realBpm - guess} BPM trop lent.`
-                  : `${guess - realBpm} BPM trop rapide.`}
+                : juste ? 'Tempo juste, à un battement ou deux près.'
+                  : devoile
+                    ? (guess < realBpm ? `${realBpm - guess} BPM trop lent.` : `${guess - realBpm} BPM trop rapide.`)
+                    : (guess < realBpm ? 'Trop lent.' : 'Trop rapide.')}
             </div>
           )}
         </>
@@ -1620,10 +1854,16 @@ export function JeuBPM({ onDone, daily = false }) {
           }}>
             {score.toFixed(1).replace('.', ',')} <span style={{ color: 'var(--cendre)' }}>/ 10</span>
           </div>
-          <p className="description" style={{ marginTop: 'var(--e2)' }}>
-            <span style={{ color: 'var(--ivoire)' }}>{track?.trackName}</span> — {track?.artistName},
-            {' '}<span style={{ color: 'var(--or)' }}>{realBpm} BPM</span>
-          </p>
+          {devoile ? (
+            <p className="description" style={{ marginTop: 'var(--e2)' }}>
+              <span style={{ color: 'var(--ivoire)' }}>{track?.trackName}</span> — {track?.artistName},
+              {' '}<span style={{ color: 'var(--or)' }}>{realBpm} BPM</span>
+            </p>
+          ) : (
+            <p className="description" style={{ marginTop: 'var(--e2)' }}>
+              Réponse donnée demain, avec le prochain défi.
+            </p>
+          )}
 
           {!daily && (
             <button onClick={relancer} style={{ ...btn(true, false), marginTop: 'var(--e4)' }}>
@@ -1655,6 +1895,9 @@ function proche(saisie, cible) {
   return lev(saisie, cible) <= tolerance;
 }
 
+/* Tirages tentés avant d'abandonner, comme à l'épreuve Pochette. */
+const SEC_TIRAGES_MAX = 6;
+
 const SEC_DURATIONS = [1, 2, 4, 7, 11, 16];
 /* Plafond de saisie. Assez large pour les titres à rallonge — « Everything I
    Wanted », « We Don't Talk About Bruno », les versions « (feat. …) » — mais
@@ -1663,7 +1906,7 @@ const SEC_DURATIONS = [1, 2, 4, 7, 11, 16];
 const SEC_MAX_SAISIE = 80;
 const SEC_POINTS = [10, 8, 6, 4, 2, 1];
 
-export function JeuSeconde({ onDone, daily = false }) {
+export function JeuSeconde({ onDone, daily = false, revelation = true }) {
   // Manche 0 : le morceau du jour, tiré par la graine — identique pour tous.
   // Manches suivantes (bouton « Nouveau morceau ») : tirage libre.
   const [manche, setManche] = useState(0);
@@ -1682,6 +1925,10 @@ export function JeuSeconde({ onDone, daily = false }) {
   const [tries, setTries] = useState(0);
   const [tried, setTried] = useState([]);          // { texte, verdict }
   const [artistFound, setArtistFound] = useState(false);
+  /* Titre trouvé ? Conditionne le droit de voir la réponse pendant le défi.
+     L'artiste seul ne suffit pas : c'est le TITRE qui est la réponse, et le
+     joueur qui n'a que l'artiste ne l'a pas encore. */
+  const [titreTrouve, setTitreTrouve] = useState(false);
   const [done, setDone] = useState(false);
   const [status, setStatus] = useState('Chargement du morceau du jour…');
   const [score, setScore] = useState(null);
@@ -1713,13 +1960,33 @@ export function JeuSeconde({ onDone, daily = false }) {
     setStatus('Chargement du morceau…');
     try {
       const rng = manche === 0 ? seeded('seconde') : Math.random;
-      const artist = ARTISTS[Math.floor(rng() * ARTISTS.length)];
-      let tracks = await searchTracks(artist.nom, { limit: 25 });
-      if (!tracks.length) throw new Error('Aucun résultat');
-      // Ne garder que les morceaux populaires ; repli sur le top 8 de l'artiste
-      const hits = tracks.filter((t) => t.rank >= 700000);
-      tracks = hits.length >= 3 ? hits : [...tracks].sort((a, b) => b.rank - a.rank).slice(0, 8);
-      const t = tracks[Math.floor(rng() * tracks.length)];
+
+      /* La recherche Deezer est APPROXIMATIVE : interroger un artiste renvoie
+         aussi les morceaux où il est invité, les reprises et les
+         compilations. Rien ne vérifiait à qui appartenait le résultat retenu.
+
+         L'effet est moins visible qu'à l'épreuve Pochette — ici la réponse
+         attendue est bien l'artiste RÉEL du morceau, donc rien n'est compté
+         faux à tort. Mais le tirage s'éloignait de son intention : on visait
+         un titre connu d'un artiste connu, et l'on pouvait tomber sur une
+         reprise obscure ou un featuring, sur lesquels le classement de
+         popularité ne veut plus rien dire.
+
+         La boucle est bornée : un artiste sans correspondance exacte est
+         écarté au profit du suivant plutôt que de bloquer le chargement. */
+      let t = null;
+      for (let essai = 0; essai < SEC_TIRAGES_MAX && !t; essai += 1) {
+        const artist = ARTISTS[Math.floor(rng() * ARTISTS.length)];
+        let tracks = (await searchTracks(artist.nom, { limit: 25 }))
+          .filter((x) => norm(x.artistName) === norm(artist.nom));
+        if (!tracks.length) continue;
+        // Ne garder que les morceaux populaires ; repli sur le top 8 de l'artiste
+        const hits = tracks.filter((x) => x.rank >= 700000);
+        tracks = hits.length >= 3 ? hits : [...tracks].sort((a, b) => b.rank - a.rank).slice(0, 8);
+        t = tracks[Math.floor(rng() * tracks.length)];
+      }
+      if (!t) throw new Error('Aucun morceau exploitable');
+
       setTrack(t);
       setStatus(`Écoute ${SEC_DURATIONS[0]} seconde, puis propose un titre ou un artiste.`);
       // Un court battement avant de rendre la main : un tirage instantané ne
@@ -1759,7 +2026,11 @@ export function JeuSeconde({ onDone, daily = false }) {
 
   function finish(pts, msg) {
     arreter();
-    setDone(true); onDone(pts);
+    setDone(true);
+    /* La réponse part avec le score : la page l'archive et la rendra demain,
+       une fois le tirage clos. Le lendemain la graine a changé, rien ne
+       permettrait de la retrouver. */
+    onDone(pts, track ? `${track.trackName} — ${track.artistName}` : undefined);
     setStatus(msg);
     setResultat(pts);
     bilanTimer.current = setTimeout(() => {
@@ -1767,6 +2038,11 @@ export function JeuSeconde({ onDone, daily = false }) {
       setBilan(true);
     }, RES_SECONDE_TOTAL);
   }
+
+  /* Droit de dévoiler : hors défi toujours, dans le défi seulement si le
+     titre a été trouvé. Une seule expression pour le voile de résultat et le
+     bilan — les disperser aurait garanti d'en oublier un. */
+  const devoile = revelation || titreTrouve;
 
   function relancer() {
     arreter();
@@ -1790,7 +2066,9 @@ export function JeuSeconde({ onDone, daily = false }) {
     arreter();
     if (next >= SEC_DURATIONS.length) {
       const half = artistFound ? Math.max(1, Math.round(SEC_POINTS[artistFoundAtRef.current] / 2)) : 0;
-      finish(half, `Perdu — c'était « ${track.trackName} » de ${track.artistName}.`);
+      finish(half, revelation
+        ? `Perdu — c'était « ${track.trackName} » de ${track.artistName}.`
+        : 'Perdu.');
     } else {
       setStatus(`${passed ? 'Extrait allongé' : 'Raté'} — tu entends maintenant ${SEC_DURATIONS[next]} secondes.`);
     }
@@ -1820,6 +2098,7 @@ export function JeuSeconde({ onDone, daily = false }) {
 
     if (titleOk) {
       setTried([...tried, { texte: g, verdict: 'titre' }]);
+      setTitreTrouve(true);
       finish(SEC_POINTS[tries], `🎉 Exact — « ${track.trackName} » de ${track.artistName}.`);
     } else if (artistOk && !artistFound) {
       setTried([...tried, { texte: g, verdict: 'artiste' }]);
@@ -1860,7 +2139,7 @@ export function JeuSeconde({ onDone, daily = false }) {
       {resultat !== null && (
         <ResultatSeconde
           score={resultat}
-          detail={track ? `${track.trackName} — ${track.artistName}` : null}
+          detail={devoile && track ? `${track.trackName} — ${track.artistName}` : null}
         />
       )}
 
@@ -2045,9 +2324,19 @@ export function JeuSeconde({ onDone, daily = false }) {
           }}>
             {score.toFixed(1).replace('.', ',')} <span style={{ color: 'var(--cendre)' }}>/ 10</span>
           </div>
-          <p className="description" style={{ marginTop: 'var(--e2)' }}>
-            <span style={{ color: 'var(--ivoire)' }}>{track?.trackName}</span> — {track?.artistName}
-          </p>
+          {/* Le morceau n'est nommé que si la révélation est permise. Sinon
+              on dit pourquoi : sans explication, le joueur croit à une panne,
+              et la promesse d'une correction demain est ce qui le fait
+              revenir. */}
+          {devoile ? (
+            <p className="description" style={{ marginTop: 'var(--e2)' }}>
+              <span style={{ color: 'var(--ivoire)' }}>{track?.trackName}</span> — {track?.artistName}
+            </p>
+          ) : (
+            <p className="description" style={{ marginTop: 'var(--e2)' }}>
+              Réponse donnée demain, avec le prochain défi.
+            </p>
+          )}
 
           {!daily && (
             <button
@@ -2109,7 +2398,7 @@ const MELODIES_CLASSIQUES = [
   { nom: 'Frère Jacques (traditionnel)', notes: ['C4', 'D4', 'E4', 'C4', 'C4', 'D4', 'E4', 'C4'], gap: 0.35 },
 ];
 
-export function JeuInstrument({ onDone, daily = false }) {
+export function JeuInstrument({ onDone, daily = false, revelation = true }) {
   // L'intro ne se joue qu'à l'arrivée sur l'épreuve, pas sur une relance.
   const [intro, setIntro] = useState(useIntro('instrument'));
   // Manche 0 : l'instrument du jour, tiré par la graine — identique pour tous.
@@ -2316,17 +2605,44 @@ export function JeuInstrument({ onDone, daily = false }) {
     marquerFin(melodie.notes.length * melodie.gap + 0.6);
   }
 
+  /* Fixé au moment du choix plutôt que recalculé au rendu : `picked` suffit à
+     le déduire, mais le stocker garde la décision au même endroit que le
+     verdict, où la règle se lit. */
+  const [devoile, setDevoile] = useState(true);
+
   function pick(n) {
     if (done) return;
     stopSon();
     setDone(true);
     setPicked(n);
-    let s = 0, msg = `C'était ${target}.`;
-    if (n === target) { s = 10; msg = `🎉 Exact — c'était bien ${target}.`; }
-    else if (FAMILLES[n] === FAMILLES[target]) {
-      s = 5; msg = `Bonne famille, mauvais instrument — c'était ${target}.`;
+    const exact = n === target;
+    const bonneFamille = FAMILLES[n] === FAMILLES[target];
+
+    /* Droit de dévoiler : hors défi toujours, dans le défi seulement si
+       l'instrument exact a été trouvé. La bonne famille ne suffit pas — elle
+       vaut la moitié des points, pas la réponse. */
+    const montrer = revelation || exact;
+
+    let s = 0;
+    if (exact) s = 10;
+    else if (bonneFamille) s = 5;
+
+    let msg;
+    if (exact) msg = `🎉 Exact — c'était bien ${target}.`;
+    else if (montrer) {
+      msg = bonneFamille
+        ? `Bonne famille, mauvais instrument — c'était ${target}.`
+        : `C'était ${target}.`;
+    } else {
+      msg = bonneFamille
+        ? 'Bonne famille, mauvais instrument.'
+        : 'Raté.';
     }
-    onDone(s);
+
+    setDevoile(montrer);
+    /* La réponse part avec le score : la page l'archive et la rendra demain,
+       une fois le tirage clos. */
+    onDone(s, `${target} — famille ${FAMILLES[target].toLowerCase()}`);
     setStatus(msg);
     setResultat(s);
     bilanTimer.current = setTimeout(() => {
@@ -2380,7 +2696,12 @@ export function JeuInstrument({ onDone, daily = false }) {
 
       {intro && <IntroInstrument onFin={() => setIntro(false)} />}
       {resultat !== null && (
-        <ResultatInstrument score={resultat} detail={`${target} — groupe ${FAMILLES[target].toLowerCase()}`} />
+        /* Le voile de résultat nomme l'instrument : il ne le fait que si la
+           révélation est permise. Le score, lui, s'affiche toujours. */
+        <ResultatInstrument
+          score={resultat}
+          detail={devoile ? `${target} — groupe ${FAMILLES[target].toLowerCase()}` : null}
+        />
       )}
 
       <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Trouve l&apos;instrument</h3>
@@ -2565,7 +2886,13 @@ export function JeuInstrument({ onDone, daily = false }) {
       )}
 
       {/* ---- Révélation : la bonne famille et le bon instrument ---- */}
-      {done && (
+      {done && !devoile && (
+        <p className="description" style={{ maxWidth: 380, margin: '0 auto' }}>
+          Réponse donnée demain, avec le prochain défi.
+        </p>
+      )}
+
+      {done && devoile && (
         <div>
           <div className="etiquette-mono" style={{ color: 'var(--lin)', marginBottom: 'var(--e2)' }}>
             {familleCible}
@@ -2640,9 +2967,15 @@ export function JeuInstrument({ onDone, daily = false }) {
           }}>
             {score.toFixed(1).replace('.', ',')} <span style={{ color: 'var(--cendre)' }}>/ 10</span>
           </div>
-          <p className="description" style={{ marginTop: 'var(--e2)' }}>
-            <span style={{ color: 'var(--or)' }}>{target}</span> — famille {familleCible.toLowerCase()}
-          </p>
+          {devoile ? (
+            <p className="description" style={{ marginTop: 'var(--e2)' }}>
+              <span style={{ color: 'var(--or)' }}>{target}</span> — famille {familleCible.toLowerCase()}
+            </p>
+          ) : (
+            <p className="description" style={{ marginTop: 'var(--e2)' }}>
+              Réponse donnée demain, avec le prochain défi.
+            </p>
+          )}
 
           {!daily && (
             <button
@@ -2888,7 +3221,7 @@ function LigneMasquee({ texte, motsReveles = 0, tout = false }) {
   );
 }
 
-export function JeuRefrain({ onDone, daily = false }) {
+export function JeuRefrain({ onDone, daily = false, revelation = true }) {
   // Manche 0 : le refrain du jour, tiré par la graine — identique pour tous.
   const [manche, setManche] = useState(0);
   // L'intro ne se joue qu'à l'arrivée sur l'épreuve, pas sur une relance.
@@ -2898,6 +3231,9 @@ export function JeuRefrain({ onDone, daily = false }) {
   // Le bilan du bas attend que le voile soit levé : deux fois le même chiffre
   // au même instant se contrediraient.
   const [bilan, setBilan] = useState(false);
+  /* Ligne trouvée ? Conditionne le droit de voir la réponse pendant le
+     défi : qui a trouvé la connaît déjà. */
+  const [trouve, setTrouve] = useState(false);
   const bilanTimer = useRef(null);
 
   const [track, setTrack] = useState(null);
@@ -2930,11 +3266,19 @@ export function JeuRefrain({ onDone, daily = false }) {
     return () => clearTimeout(t);
   }, [resultat]);
 
+  /* Droit de dévoiler : hors défi toujours, dans le défi seulement si le
+     joueur a trouvé la ligne. Une seule expression pour la ligne masquée et
+     pour le bilan. */
+  const devoile = revelation || trouve;
+
   // Pose le voile, puis le bilan une fois qu'il s'est levé.
   function terminerPartie(pts, phrase) {
     arreter();
     setDone(true);
-    onDone(pts);
+    /* La réponse archivée est le MORCEAU, pas la ligne de paroles : c'est
+       elle qui identifie le refrain, elle tient sur une ligne, et le relevé
+       de la veille n'a pas à conserver un fragment de texte protégé. */
+    onDone(pts, track ? `${track.trackName} — ${track.artistName}` : undefined);
     setStatus(phrase);
     setResultat(pts);
     bilanTimer.current = setTimeout(() => {
@@ -3113,6 +3457,7 @@ export function JeuRefrain({ onDone, daily = false }) {
     const tolerance = Math.max(2, Math.floor(b.length / 5)); // ~20% d'erreurs tolérées
     const ok = a === b || lev(a, b) <= tolerance;
     if (ok) {
+      setTrouve(true);
       terminerPartie(REFRAIN_POINTS[Math.min(tries, REFRAIN_POINTS.length - 1)], 'Exact.');
       return;
     }
@@ -3121,7 +3466,9 @@ export function JeuRefrain({ onDone, daily = false }) {
     signalerErreur();
     if (suivant >= REFRAIN_ESSAIS) {
       setTries(suivant);
-      terminerPartie(0, 'Perdu.');
+      terminerPartie(0, revelation
+        ? 'Perdu.'
+        : 'Perdu.');
       return;
     }
 
@@ -3141,7 +3488,12 @@ export function JeuRefrain({ onDone, daily = false }) {
      qu'une ligne courte révèle quand même quelque chose dès le premier raté ;
      le dernier mot n'est jamais donné avant la fin. */
   const nbMots = answer ? answer.split(/\s+/).filter(Boolean).length : 0;
-  const motsReveles = done ? nbMots
+  /* En fin de partie la ligne s'ouvre en entier — sauf si la révélation est
+     différée : elle reste alors à l'état où les essais l'avaient laissée.
+     Les mots déjà dévoilés au fil des ratés sont conservés, ils ont été
+     gagnés ; ce sont les derniers, ceux qui donnent la réponse, qui
+     attendent demain. */
+  const motsReveles = done && devoile ? nbMots
     : Math.min(nbMots - 1, Math.ceil((nbMots * tries) / REFRAIN_ESSAIS));
   const joue = enLecture && !enPause;
   const audioDispo = (tries >= REFRAIN_AUDIO_DES || done) && !!track;
@@ -3173,10 +3525,13 @@ export function JeuRefrain({ onDone, daily = false }) {
 
       {intro && <IntroRefrain onFin={() => setIntro(false)} />}
       {resultat !== null && (
+        /* Le voile portait la ligne complète ET le morceau : deux réponses
+           pour le prix d'une, alors que le reste de l'épreuve les retenait.
+           Le score, lui, s'affiche toujours. */
         <ResultatRefrain
           score={resultat}
-          ligne={answer}
-          detail={track ? `${track.trackName} — ${track.artistName}` : null}
+          ligne={devoile ? answer : null}
+          detail={devoile && track ? `${track.trackName} — ${track.artistName}` : null}
         />
       )}
 
@@ -3255,7 +3610,7 @@ export function JeuRefrain({ onDone, daily = false }) {
             marginTop: 'var(--e3)', paddingTop: 'var(--e3)',
             borderTop: '0.5px solid var(--filet)',
           }}>
-            <LigneMasquee texte={answer} motsReveles={motsReveles} tout={done} />
+            <LigneMasquee texte={answer} motsReveles={motsReveles} tout={done && devoile} />
           </div>
         </div>
       )}
@@ -3270,8 +3625,13 @@ export function JeuRefrain({ onDone, daily = false }) {
           minHeight: 30, marginBottom: 'var(--e4)',
         }}>
           {[
-            { visible: tries >= REFRAIN_ARTISTE_DES || done, etiquette: 'artiste', valeur: track.artistName },
-            { visible: tries >= REFRAIN_TITRE_DES || done, etiquette: 'titre', valeur: track.trackName },
+            /* Les indices se débloquent au fil des essais — ils sont gagnés,
+               ils restent. Mais `|| done` les faisait tous tomber à la fin de
+               la partie, y compris ceux que le joueur n'avait pas atteints :
+               le titre du morceau apparaissait ainsi même à qui avait échoué
+               dès le premier essai. En défi, la fin ne débloque plus rien. */
+            { visible: tries >= REFRAIN_ARTISTE_DES || (done && devoile), etiquette: 'artiste', valeur: track.artistName },
+            { visible: tries >= REFRAIN_TITRE_DES || (done && devoile), etiquette: 'titre', valeur: track.trackName },
           ].map(({ visible, etiquette, valeur }) => (
             <span
               key={etiquette}
@@ -3373,9 +3733,15 @@ export function JeuRefrain({ onDone, daily = false }) {
           }}>
             {score.toFixed(1).replace('.', ',')} <span style={{ color: 'var(--cendre)' }}>/ 10</span>
           </div>
-          <p className="description" style={{ marginTop: 'var(--e2)' }}>
-            <span style={{ color: 'var(--ivoire)' }}>{track?.trackName}</span> — {track?.artistName}
-          </p>
+          {devoile ? (
+            <p className="description" style={{ marginTop: 'var(--e2)' }}>
+              <span style={{ color: 'var(--ivoire)' }}>{track?.trackName}</span> — {track?.artistName}
+            </p>
+          ) : (
+            <p className="description" style={{ marginTop: 'var(--e2)' }}>
+              Réponse donnée demain, avec le prochain défi.
+            </p>
+          )}
 
           {!daily && (
             <button onClick={relancer} style={{ ...btn(true, false), marginTop: 'var(--e4)' }}>

@@ -14,6 +14,10 @@ const normName = (s) => String(s).toLowerCase().normalize('NFD').replace(/[\u030
    le nombre d'extraits enchaînés. Le mode quotidien garde son format fixe et
    sa note sur dix, comme les épreuves Rythme et Duel. */
 const DAILY_ROUNDS = 3;
+
+/* Tentatives de tirage avant d'accepter un extrait déjà entendu. Six suffit
+   largement pour trois manches, et borne le cas d'un vivier épuisé. */
+const TIRAGES_MAX = 6;
 const EXTRAIT_SEC = 12;
 
 const NICHE_TERMS = [
@@ -166,6 +170,19 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
   const dailyGoodRef = useRef(0);
   const dailyDoneRef = useRef(false);
 
+  /* Extraits déjà servis dans ce run.
+
+     Rien ne les mémorisait : chaque manche retirait au hasard dans le même
+     vivier, et sur trois tirages indépendants la répétition n'était pas un
+     accident mais une probabilité. Avec une poignée d'artistes IA
+     disponibles, deux manches identiques sur trois arrivaient couramment.
+
+     Une ref et non un état : la valeur est lue pendant un tirage asynchrone,
+     et un état arriverait un rendu trop tard — la deuxième manche piocherait
+     alors sans connaître la première. */
+  const vusRef = useRef(new Set());
+  const artistesVusRef = useRef(new Set());
+
   useEffect(() => {
     if (daily) dailyRngRef.current = seeded('ia');
   }, []);
@@ -201,6 +218,42 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
     return null;
   }
 
+  /* Un tirage, sans mémoire : c'est l'appelant qui décide de le rejouer.
+
+     `large` relâche le filtre sur l'artiste au dernier essai — mieux vaut
+     réentendre un artiste déjà croisé qu'échouer à servir une manche. */
+  async function tirerExtrait(rnd, large) {
+    const inedit = (t) => !vusRef.current.has(t.trackId);
+    const artisteInedit = (t) => large || !artistesVusRef.current.has(normName(t.artistName));
+
+    const isAI = rnd() < 0.5;
+
+    if (isAI) {
+      const shuffledAI = [...AI_ARTISTS].sort(() => rnd() - 0.5);
+      for (const name of shuffledAI) {
+        if (!large && artistesVusRef.current.has(normName(name))) continue;
+        const tracks = (await searchTracks(name, { limit: 25 }))
+          .filter((x) => normName(x.artistName) === normName(name))
+          .filter(inedit);
+        if (tracks.length) {
+          const t = tracks[Math.floor(rnd() * tracks.length)];
+          return { trackId: t.trackId, isAI: true, artiste: t.artistName, titre: t.trackName };
+        }
+      }
+      return null;
+    }
+
+    const niche = await pickNicheHuman(rnd);
+    if (niche && inedit(niche) && artisteInedit(niche)) return niche;
+
+    const artist = ARTISTS[Math.floor(rnd() * ARTISTS.length)];
+    if (!large && artistesVusRef.current.has(normName(artist.nom))) return null;
+    const tracks = (await searchTracks(artist.nom, { limit: 25 })).filter(inedit);
+    if (!tracks.length) return null;
+    const t = tracks[Math.floor(rnd() * tracks.length)];
+    return { trackId: t.trackId, isAI: false, artiste: t.artistName, titre: t.trackName };
+  }
+
   async function newRound() {
     if (daily && dailyCountRef.current >= DAILY_ROUNDS) return;
     arreter();
@@ -211,34 +264,32 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
 
     try {
       const rnd = daily ? dailyRngRef.current : Math.random;
-      const isAI = rnd() < 0.5;
-      let r;
-      if (isAI) {
-        const shuffledAI = [...AI_ARTISTS].sort(() => rnd() - 0.5);
-        let t = null;
-        for (const name of shuffledAI) {
-          const tracks = (await searchTracks(name, { limit: 25 }))
-            .filter((x) => normName(x.artistName) === normName(name));
-          if (tracks.length) { t = tracks[Math.floor(rnd() * tracks.length)]; break; }
-        }
-        if (!t) throw new Error('Aucun artiste IA disponible sur Deezer');
-        r = { trackId: t.trackId, isAI: true, artiste: t.artistName, titre: t.trackName };
-      } else {
-        r = await pickNicheHuman(rnd);
-        if (!r) {
-          const artist = ARTISTS[Math.floor(rnd() * ARTISTS.length)];
-          const tracks = await searchTracks(artist.nom, { limit: 25 });
-          if (!tracks.length) throw new Error('Aucun résultat');
-          const t = tracks[Math.floor(rnd() * tracks.length)];
-          r = { trackId: t.trackId, isAI: false, artiste: t.artistName, titre: t.trackName };
-        }
+
+      /* On retire tant que le candidat a déjà été servi. Les listes sont
+         filtrées AVANT le tirage plutôt qu'après : écarter a posteriori
+         gaspille un tirage et, sur un vivier étroit, peut ne jamais aboutir.
+
+         La boucle est bornée. Sans borne, un vivier épuisé — trois artistes
+         IA dont les extraits sont tous passés — ferait tourner la manche
+         indéfiniment. Au bout des tentatives on accepte un doublon : mieux
+         vaut une répétition qu'une épreuve bloquée. */
+      let r = null;
+      for (let essai = 0; essai < TIRAGES_MAX && !r; essai += 1) {
+        const dernier = essai === TIRAGES_MAX - 1;
+        const candidat = await tirerExtrait(rnd, dernier);
+        if (!candidat) continue;
+        if (dernier || !vusRef.current.has(candidat.trackId)) r = candidat;
       }
+      if (!r) throw new Error('Aucun extrait disponible');
 
       if (!r.url) {
         const url = await freshPreviewUrl(r.trackId);
         if (!url) throw new Error('Preview indisponible pour ce morceau');
         r.url = url;
       }
+
+      vusRef.current.add(r.trackId);
+      artistesVusRef.current.add(normName(r.artiste));
 
       setRound(r);
       setAnswered(false);
@@ -255,6 +306,11 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
   // Démarre un run de survie : le niveau repart de zéro, le record reste.
   function demarrerRun() {
     clearTimeout(bilanTimer.current);
+    /* Nouveau run, mémoire vierge : sans cette remise à zéro, un joueur qui
+       enchaîne les parties en accès libre finirait par épuiser le vivier et
+       ne recevrait plus que des doublons. */
+    vusRef.current = new Set();
+    artistesVusRef.current = new Set();
     // Le run démarre au niveau 1 : on est déjà en jeu, pas encore à zéro.
     niveauRef.current = 1;
     setNiveau(1);
@@ -514,7 +570,7 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
           textAlign: 'center',
         }}>
           <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>
-            {result.isAI ? 'généré par une machine' : 'composé par un humain'}
+            {result.isAI ? 'généré par une IA' : 'composé par un humain'}
           </div>
           <div style={{
             fontFamily: 'var(--sans)', fontSize: 16, fontWeight: 500,

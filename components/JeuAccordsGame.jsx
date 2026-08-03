@@ -358,7 +358,17 @@ function SurcoucheResultat({ score }) {
   );
 }
 
-export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
+export default function JeuAccordsGame({ daily = false, revelation = true, onDone = () => {} }) {
+  /* Score CONTINU : pas de notion de « trouvé ».
+
+     Un accord approché à un demi-ton rapporte encore des points. Il n'existe
+     donc aucun seuil au-delà duquel le joueur connaîtrait déjà la cible et
+     pourrait la voir sans risque : la dévoiler, même à quelqu'un qui a bien
+     joué, le met en mesure de la donner à un joueur d'un fuseau en retard.
+
+     Pendant le défi, la cible reste donc muette — ni sur la portée, ni au
+     bilan, ni dans le voile de résultat. */
+  const devoile = revelation;
   const [target, setTarget] = useState(null);
   const [mode, setMode] = useState('accord');
   const [userNotes, setUserNotes] = useState([]);
@@ -629,9 +639,17 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
     return PREROLL + 1.2;
   }
 
-  async function playTargetWithReveal(notes, m) {
+  /* `montrer` sépare le SON de la RÉVÉLATION graphique.
+
+     La cible est rejouée dans tous les cas : l'entendre une dernière fois
+     n'apprend pas où elle se pose sur la portée, et couper le son ferait
+     croire à une panne. Seul l'affichage des notes est retenu quand la
+     correction est différée — la durée renvoyée reste la même, sans quoi la
+     suite de la séquence se décalerait. */
+  async function playTargetWithReveal(notes, m, montrer = true) {
     setRevealed(0);
     const dur = await playNotes(notes, m);
+    if (!montrer) return dur;
     if (m === 'arpège') {
       notes.forEach((_, i) => {
         const timer = setTimeout(() => setRevealed(i + 1), (PREROLL + i * NOTE_GAP) * 1000);
@@ -673,10 +691,35 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
     setStatus('Lecture : ta version…');
     const d1 = await playNotes(userNotes, mode);
     setTimeout(async () => {
-      const uSorted = userNotes.map((n, idx) => ({ midi: n.midi, idx })).sort((a, b) => a.midi - b.midi);
-      const tSorted = [...target.map(n => n.midi)].sort((a, b) => a - b);
+      /* APPARIEMENT : d'abord les hauteurs identiques, ensuite le reste.
+
+         L'ancienne version comparait la cible et la proposition RANG PAR
+         RANG, une fois les deux triées. Une seule note fausse placée hors du
+         registre de la cible décalait alors tout l'alignement : sur une cible
+         Do5-Mi5-Sol5 jouée Fa4-Do5-Mi5, le Fa4 passait en tête du tri, Do5 se
+         retrouvait comparé à Fa4, Mi5 à Do5, Sol5 à Mi5. Aucun écart nul,
+         donc aucune note verte et une pénalité au plafond — zéro point pour
+         deux notes justes sur trois.
+
+         On sort donc d'abord toutes les correspondances exactes, quel que
+         soit leur rang. Ce qui reste de part et d'autre est ensuite trié et
+         apparié comme avant, pour mesurer l'écart des notes réellement
+         fausses. */
+      const uRestant = userNotes.map((n, idx) => ({ midi: n.midi, idx }));
+      const tRestant = target.map((n) => n.midi);
       let penalty = 0;
       const v = Array(userNotes.length).fill(false);
+
+      for (let i = uRestant.length - 1; i >= 0; i -= 1) {
+        const j = tRestant.indexOf(uRestant[i].midi);
+        if (j === -1) continue;
+        v[uRestant[i].idx] = true;
+        tRestant.splice(j, 1);
+        uRestant.splice(i, 1);
+      }
+
+      const uSorted = uRestant.sort((a, b) => a.midi - b.midi);
+      const tSorted = tRestant.sort((a, b) => a - b);
       tSorted.forEach((tm, i) => {
         const um = uSorted[i];
         if (um === undefined) { penalty += 4; return; }
@@ -690,7 +733,10 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
 
       if (daily && !dailyDoneRef.current) {
         dailyDoneRef.current = true;
-        onDone(Math.round(s * 10) / 10);
+        /* La cible part avec le score : la page l'archive et la rendra demain.
+           Le lendemain la graine a changé, rien ne permettrait de la
+           retrouver. */
+        onDone(Math.round(s * 10) / 10, target.map((n) => n.name).join(' · '));
       }
 
       // La correction : les notes du joueur prennent leur couleur, puis la
@@ -698,11 +744,14 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
       // apparaît sur son attaque — c'est playTargetWithReveal qui aligne les
       // deux, sur le même PREROLL et le même NOTE_GAP que la lecture.
       setVerdicts(v);
-      setStatus(daily
-        ? 'Épreuve terminée. Une seule tentative dans le défi du jour.'
-        : 'Tes notes justes en vert, tes erreurs en rouge — la cible se dévoile note à note.');
+      setStatus(devoile
+        ? 'Tes notes justes en vert, tes erreurs en rouge — la cible se dévoile note à note.'
+        : 'Épreuve terminée. La cible sera donnée demain, avec le prochain défi.');
 
-      await playTargetWithReveal(target, mode);
+      /* On rejoue la cible dans les deux cas — l'entendre une dernière fois
+         n'apprend pas où elle se pose sur la portée, et couper le son ferait
+         croire à une panne. Seule la RÉVÉLATION graphique est retenue. */
+      await playTargetWithReveal(target, mode, devoile);
 
       // Le temps de lire la portée corrigée une fois la dernière note posée,
       // puis le voile sur la note finale.
@@ -746,7 +795,13 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
     ...(target
       ? [{
           label: 'Réécouter la cible',
-          onClick: () => (score !== null ? playTargetWithReveal(target, mode) : playNotes(target, mode)),
+          /* `devoile` en troisième argument : réécouter ne doit pas
+             redonner la correction. Sans lui, le bouton rejouait la
+             révélation graphique après coup et rendait le masquage du défi
+             du jour parfaitement inutile. */
+          onClick: () => (score !== null
+            ? playTargetWithReveal(target, mode, devoile)
+            : playNotes(target, mode)),
           disabled: enSequence,
         }]
       : [{
@@ -943,10 +998,19 @@ export default function JeuAccordsGame({ daily = false, onDone = () => {} }) {
           }}>
             {(+score).toFixed(1).replace('.', ',')} <span style={{ color: 'var(--cendre)' }}>/ 10</span>
           </div>
-          <p className="description" style={{ marginTop: 'var(--e2)' }}>
-            Cible : <span style={{ color: 'var(--jade)' }}>{target?.map(n => n.name).join(' · ')}</span>
-            {' — '}Toi : <span style={{ color: 'var(--or)' }}>{userNotes.map(n => n.name).join(' · ')}</span>
-          </p>
+          {devoile ? (
+            <p className="description" style={{ marginTop: 'var(--e2)' }}>
+              Cible : <span style={{ color: 'var(--jade)' }}>{target?.map(n => n.name).join(' · ')}</span>
+              {' — '}Toi : <span style={{ color: 'var(--or)' }}>{userNotes.map(n => n.name).join(' · ')}</span>
+            </p>
+          ) : (
+            /* Les notes du joueur restent affichées : elles sont les siennes,
+               les taire ne protégerait rien et le priverait de son geste. */
+            <p className="description" style={{ marginTop: 'var(--e2)' }}>
+              Toi : <span style={{ color: 'var(--or)' }}>{userNotes.map(n => n.name).join(' · ')}</span>
+              {' — '}cible donnée demain, avec le prochain défi.
+            </p>
+          )}
 
           {/* Une seule tentative en quotidien : pas de relance là-bas. */}
           {!daily && (

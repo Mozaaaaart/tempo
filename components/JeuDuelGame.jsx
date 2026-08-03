@@ -1464,7 +1464,8 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
             <div style={{ textAlign: 'center' }}>
               <ScoreBox
                 score={noteQuotidienne(bonnes)}
-                detail={`${bonnes} bonne${bonnes > 1 ? 's' : ''} réponse${bonnes > 1 ? 's' : ''} sur ${NB_DUELS_QUOTIDIEN}. Données kworb.net.`}
+                detail={`${bonnes} bonne${bonnes > 1 ? 's' : ''} réponse${bonnes > 1 ? 's' : ''} sur ${NB_DUELS_QUOTIDIEN}.`}
+                source="Chiffres provenant de kworb.net"
               />
             </div>
           )

@@ -310,6 +310,39 @@ function Surcouche({ annonce, onPasser }) {
      la requête échoue, le cadre reste vide et le reste de la scène tient. */
   const [pochettes, setPochettes] = useState({ gauche: null, droite: null });
 
+  /* ---- Mise à l'échelle de la scène ----
+   *
+   * La scène de démonstration a une largeur fixe de 620 et n'était pas
+   * réduite du tout : sur un panneau de 296, elle débordait de trois cents
+   * pixels et le voile, qui rogne ce qui dépasse, tranchait les deux colonnes.
+   *
+   * On mesure l'hôte plutôt que la fenêtre : c'est la largeur du PANNEAU dont
+   * la scène dispose, et elle est bien plus petite — la page a ses marges, le
+   * panneau son rembourrage.
+   *
+   * La hauteur entre aussi dans le calcul. Le panneau du duel change de
+   * hauteur selon son contenu, et une scène rognée par le bas serait le même
+   * défaut dans l'autre sens. */
+  const hote = useRef(null);
+  const [echelle, setEchelle] = useState(1);
+
+  useEffect(() => {
+    const el = hote.current;
+    if (!el) return;
+    const calc = () => {
+      /* Repli sur la fenêtre et non sur la taille de la scène : un élément
+         pas encore disposé rend zéro, et retomber sur 620 reviendrait à
+         conclure « grand écran » au moment où l'on ne sait rien. */
+      const l = el.offsetWidth || window.innerWidth;
+      const h = el.offsetHeight || window.innerHeight;
+      setEchelle(Math.min(1, (l - 24) / DEMO_L, (h - 24) / DEMO_H));
+    };
+    calc();
+    const ro = new ResizeObserver(calc);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   useEffect(() => {
     if (!intro) return;
     let annule = false;
@@ -334,6 +367,7 @@ function Surcouche({ annonce, onPasser }) {
 
   return (
     <div
+      ref={hote}
       data-duel-surcouche
       onClick={passable ? onPasser : undefined}
       role={passable ? 'button' : undefined}
@@ -433,7 +467,10 @@ function Surcouche({ annonce, onPasser }) {
             pointerEvents: 'none',
             animation: `duelActeSortie 340ms ${D2_SORTIE}ms ease-in both`,
           }}>
-            <div style={{ position: 'relative', width: DEMO_L, height: DEMO_H }}>
+            <div style={{
+              position: 'relative', width: DEMO_L, height: DEMO_H, flexShrink: 0,
+              transform: `scale(${echelle})`, transformOrigin: 'center',
+            }}>
 
               {/* En-tête : le nom de l'épreuve, puis la règle en une ligne.
                  La règle attend que le titre soit posé — les deux ensemble se

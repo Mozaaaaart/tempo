@@ -264,6 +264,21 @@ export default function IntroPochette({ onFin, exclure = null }) {
 
       <div style={{
         width: SCENE_L, height: SCENE_H, position: 'relative',
+        /* flexShrink: 0 est ce qui fait tenir toute la scène.
+
+           Cette boîte est un enfant flex, et un enfant flex se laisse
+           RÉTRÉCIR par défaut. Sur un panneau étroit, les 520 px demandés
+           devenaient donc 370, et la scène se retrouvait mesurée en deux
+           unités différentes : les éléments posés en pourcentage — le disque
+           en left 50 % — suivaient la nouvelle largeur, ceux posés en pixels
+           — le pointeur et ses cercles de clic — restaient sur l'ancienne.
+           Le geste se jouait à côté de ce qu'il désignait, d'autant plus loin
+           que l'écran était étroit.
+
+           La mise à l'échelle doit venir de scale() et de lui seul : elle
+           conserve les proportions, là où le rétrécissement flex déplace les
+           repères les uns par rapport aux autres. */
+        flexShrink: 0,
         transform: `scale(${echelle})`, transformOrigin: 'center',
       }}>
 

@@ -29,6 +29,41 @@ const PERIMETRE = Math.PI * (3 * (RX + RY) - Math.sqrt((3 * RX + RY) * (RX + 3 *
 const DUREE_TRACE = 520; // ms — durée du tour complet
 
 /* ============================================================
+   NOTE CREUSE STABLE — pour la correction
+
+   Même dessin que le NoteCreuse défini plus bas dans le composant, mais
+   déclarée AU NIVEAU DU MODULE, et c'est toute la différence.
+
+   Un composant défini dans le corps d'un autre est recréé à chaque rendu du
+   parent : React voit un TYPE différent d'un rendu à l'autre, démonte donc
+   l'ancien sous-arbre et en monte un neuf. Les nœuds sont neufs, leurs
+   animations CSS repartent de zéro — et comme la révélation enchaîne les
+   rendus, le contour se retraçait en boucle.
+
+   Pour l'aperçu au survol, ce remontage est justement l'effet voulu : le
+   contour se retrace à chaque changement de hauteur, en phase avec le son.
+   Pour la correction, il n'y a rien à rejouer. Un type stable suffit : React
+   reconnaît le même nœud, ne le remonte pas, et l'animation se joue une fois.
+============================================================ */
+function NoteContour({ cx, cy, couleur }) {
+  const trace = {
+    animation: `traceContour ${DUREE_TRACE}ms cubic-bezier(0.4, 0, 0.2, 1) both`,
+  };
+  return (
+    <g style={{ pointerEvents: 'none' }}>
+      {/* Halo : passe large très faible, comme sur l'onde */}
+      <ellipse cx={cx} cy={cy} rx={RX} ry={RY} fill="none"
+        stroke={couleur} strokeWidth={5} opacity={0.1} strokeLinecap="round"
+        strokeDasharray={PERIMETRE} style={trace} />
+      {/* Contour net */}
+      <ellipse cx={cx} cy={cy} rx={RX} ry={RY} fill="none"
+        stroke={couleur} strokeWidth={1.6} strokeLinecap="round"
+        strokeDasharray={PERIMETRE} style={trace} />
+    </g>
+  );
+}
+
+/* ============================================================
    SURCOUCHE D'INTRODUCTION
    Le concept de cette épreuve ne se lit pas d'un coup d'œil : rien n'indique
    qu'on pose des notes en cliquant sur la portée. Plutôt qu'un paragraphe
@@ -403,6 +438,110 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
   const synthRef = useRef(null);
   const hoverSynthRef = useRef(null);
   const svgRef = useRef(null);
+
+  /* ---- Géométrie de la portée ----
+   *
+   * Le SVG occupe toute la largeur disponible, et son viewBox décide donc de
+   * l'échelle : un cadre de 700 unités rendu sur 328 pixels divise TOUT par
+   * 2,1 — l'interligne, les têtes de note, et surtout la zone qu'il faut
+   * viser pour poser une note. Sur ordinateur l'interligne fait 20 pixels,
+   * sur mobile il tombait à neuf. On ne place pas une note au doigt dans
+   * neuf pixels.
+   *
+   * SEULE LA LARGEUR DU CADRE COMPTE. Le SVG n'a pas de hauteur déclarée :
+   * elle se déduit du rapport du viewBox, si bien que l'échelle verticale est
+   * toujours égale à l'horizontale. Écarter les lignes ne se règle donc pas
+   * en changeant leurs ordonnées — elles sont d'ailleurs partagées avec la
+   * table des positions de notes — mais en RESSERRANT le cadre : moins
+   * d'unités sur la même largeur d'écran, donc plus de pixels par unité.
+   *
+   * À 260 unités, l'échelle vaut 1,26 sur un écran de 328 : l'interligne
+   * passe de vingt unités à vingt-cinq pixels réels, contre neuf avant, et
+   * les têtes de note à seize pixels de large. La portée occupe alors une
+   * bonne moitié de l'écran, ce qui est le juste prix — c'est l'objet qu'on
+   * manipule.
+   *
+   * Tout le reste en découle : la clé, les bornes des lignes, l'abscisse de
+   * la première note et le pas entre deux. Quatre notes au pas de 50 tiennent
+   * en 224 unités, lignes supplémentaires comprises, sur les 250 disponibles.
+   */
+  const [etroit, setEtroit] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const maj = () => {
+      setEtroit(mq.matches);
+      /* Le mode découverte fait sonner la note SOUS LE CURSEUR, avant même
+         de la poser : c'est ce qui permet de chercher une hauteur à
+         l'oreille. Sans pointeur, il n'y a rien à survoler — le mode existe
+         encore mais ne peut plus rien produire, et le proposer revient à
+         offrir un réglage sans effet.
+
+         On impose donc le mode silencieux sur écran tactile, et le
+         sélecteur disparaît. Sur mobile, la note sonne au moment où on la
+         pose et pendant qu'on la glisse, ce qui rend le même service au
+         geste près. */
+      if (mq.matches) setHoverSound(false);
+    };
+    maj();
+    mq.addEventListener('change', maj);
+    return () => mq.removeEventListener('change', maj);
+  }, []);
+
+  /* ---- Empêcher la page de défiler pendant qu'on déplace une note ----
+   *
+   * Le glisser est VERTICAL — c'est un changement de hauteur — donc il
+   * ressemble exactement au geste qui fait défiler la page. Le navigateur
+   * tranche au premier mouvement, et il tranche en faveur du défilement : la
+   * note restait sur place pendant que la page filait.
+   *
+   * touch-action ne suffit pas ici. La propriété est bien posée sur la note,
+   * mais WebKit ne l'applique pas de façon fiable aux éléments À L'INTÉRIEUR
+   * d'un SVG. Il faut donc refuser le geste à la source, sur touchmove.
+   *
+   * Deux points rendent la chose possible :
+   *
+   *   — le passif doit être désactivé EXPLICITEMENT. Un écouteur de
+   *     touchmove est passif par défaut sur les navigateurs mobiles, et un
+   *     écouteur passif n'a pas le droit d'appeler preventDefault : l'appel
+   *     est ignoré, avec un avertissement en console et rien d'autre. C'est
+   *     aussi pourquoi il faut passer par addEventListener plutôt que par la
+   *     propriété onTouchMove de React, qui ne laisse pas régler ce drapeau.
+   *
+   *   — le refus n'a lieu QUE pendant un glisser. Hors glisser, la portée se
+   *     comporte comme le reste de la page et se laisse traverser du doigt.
+   *     C'est ce qui évite de créer une bande de deux cents pixels où le
+   *     défilement ne répond plus.
+   *
+   * On lit la ref et non l'état : l'écouteur est posé une seule fois, il ne
+   * verrait jamais une valeur mise à jour par un rendu. */
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const refuser = (e) => {
+      if (dragIndexRef.current !== null) e.preventDefault();
+    };
+    svg.addEventListener('touchmove', refuser, { passive: false });
+    return () => svg.removeEventListener('touchmove', refuser);
+  }, []);
+
+  /* minY et H DÉCOUPENT le cadre, ils ne le mettent pas à l'échelle.
+   *
+   * Le cadre partait de l'ordonnée 0, alors que rien n'est dessiné au-dessus
+   * de 51 : la note la plus haute est G5 à 60, moins son demi-axe de 9. Ces
+   * cinquante et une unités de vide se retrouvaient telles quelles à l'écran
+   * — une soixantaine de pixels de noir entre la consigne et la première
+   * ligne, que rien dans le CSS ne pouvait expliquer puisque la marge était
+   * dans l'image.
+   *
+   * Le découpage ne touche pas à l'échelle : celle-ci vaut la largeur rendue
+   * divisée par la largeur du cadre, et la largeur ne change pas. Seule la
+   * hauteur rendue diminue, exactement de ce qu'on retire.
+   *
+   * Onze unités de marge au-dessus de la note la plus haute, dix sous les
+   * étiquettes de notes posées à 200 : de quoi ne rien tronquer. */
+  const P = etroit
+    ? { W: 260, minY: 40, H: 170, x1: 4, x2: 256, cleX: 2, cleY: 148, cleTaille: 78, noteX0: 68, notePas: 54, decalage: 0 }
+    : { W: 700, minY: 0, H: 215, x1: 20, x2: 680, cleX: 30, cleY: 148, cleTaille: 90, noteX0: 170, notePas: 110, decalage: 26 };
   const lastHoverRef = useRef(null);
   const revealTimersRef = useRef([]);
   const dragMovedRef = useRef(false);
@@ -769,7 +908,7 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
   }
 
   const canValidate = target && userNotes.length === target.length && !locked && !enSequence;
-  const ghostX = 170 + userNotes.length * 110;
+  const ghostX = P.noteX0 + userNotes.length * P.notePas;
 
   // Note creuse : le contour se trace en un tour puis reste complet
   const NoteCreuse = ({ cx, cy, couleur = 'var(--or-clair)' }) => (
@@ -811,12 +950,31 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
           disabled: !pianoPret || enSequence,
         }]),
     { label: 'Écouter ma proposition', onClick: () => userNotes.length && playNotes(userNotes, mode), disabled: !userNotes.length || enSequence },
-    { label: 'Effacer les notes', onClick: () => { setUserNotes([]); setStatus('Notes effacées.'); }, disabled: !userNotes.length || locked || enSequence },
-    { label: 'Valider', onClick: validate, primaire: true, disabled: !canValidate },
+
+    /* Effacer et valider n'existent que TANT QUE LA MANCHE EST OUVERTE.
+
+       Une fois la note donnée, elles n'ont plus d'objet : effacer reviendrait
+       à défaire une proposition déjà jugée, et valider à rejuger la même. Les
+       laisser en place, l'une grise et l'autre dorée sous un bilan qui vient
+       d'annoncer le résultat, donne deux actions qui contredisent ce que la
+       page vient de dire.
+
+       La suite du parcours est portée par le bilan lui-même, qui offre
+       « Nouvel accord ». Les deux boutons d'écoute, eux, restent : réentendre
+       la cible et sa propre version après coup, c'est là que se fait l'oreille.
+
+       Retirés et non désactivés, comme ailleurs : un bouton grisé promet un
+       retour, et ceux-là ne reviendront pas dans cette manche. */
+    ...(score === null
+      ? [
+          { label: 'Effacer les notes', onClick: () => { setUserNotes([]); setStatus('Notes effacées.'); }, disabled: !userNotes.length || locked || enSequence },
+          { label: 'Valider', onClick: validate, primaire: true, disabled: !canValidate },
+        ]
+      : []),
   ];
 
   return (
-    <div style={{ background: 'var(--onyx)', border: '0.5px solid var(--filet)', borderRadius: 'var(--rayon-carte)', padding: 'var(--e6)', marginBottom: 'var(--e4)', position: 'relative', textAlign: 'center' }}>
+    <div className="acc-panneau" style={{ background: 'var(--onyx)', border: '0.5px solid var(--filet)', borderRadius: 'var(--rayon-carte)', padding: 'var(--e6)', marginBottom: 'var(--e4)', position: 'relative', textAlign: 'center' }}>
       <style>{`
         @keyframes notePop {
           0% { transform: scale(0); opacity: 0; }
@@ -866,32 +1024,48 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
         }
       `}</style>
 
-      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Retrouve l'accord</h3>
-      <p className="description" style={{ maxWidth: 470, margin: '0 auto var(--e4)' }}>
+      <h3 className="titre-section acc-titre" style={{ marginBottom: 'var(--e1)' }}>Retrouve l&apos;accord</h3>
+      <p className="description acc-desc" style={{ maxWidth: 470, margin: '0 auto var(--e4)' }}>
         Écoute la cible, pose tes notes sur la portée, ajuste-les en les glissant, puis valide.
       </p>
 
-      <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 'var(--e3)' }}>
+      <div className="acc-boutons" style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 'var(--e3)' }}>
         {boutons.map((b) => (
           <button key={b.label} onClick={b.onClick} disabled={b.disabled}
             onMouseEnter={b.primaire ? undefined : survolOr}
             onMouseLeave={b.primaire ? undefined : sortieOr}
+            /* ---- L'état désactivé n'est pas l'état actif en plus pâle ----
+               Un fond or à 40 % d'opacité sur du noir donne un brun terreux
+               qui n'est dans aucun jeton de la palette, et qui pèse autant
+               qu'un bouton plein : « Valider » indisponible attirait l'œil
+               plus que l'action réellement possible.
+
+               Un bouton désactivé perd donc sa surface. Il garde sa place et
+               son intitulé — c'est ce qui dit qu'il reviendra — mais passe en
+               filet et en cendre, le jeton que le document de design réserve
+               justement au texte désactivé.
+
+               Corollaire : il ne peut plus y avoir deux surfaces or à
+               l'écran, puisque les actions primaires ne sont jamais toutes
+               disponibles en même temps. La règle de l'accent unique tient
+               d'elle-même. */
             style={{
               fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 500,
               padding: '9px 16px', borderRadius: 'var(--rayon-controle)',
               cursor: b.disabled ? 'not-allowed' : 'pointer',
-              background: b.primaire ? 'var(--or)' : 'transparent',
-              color: b.primaire ? 'var(--noir)' : 'var(--ivoire)',
-              border: b.primaire ? '1px solid var(--or)' : '0.5px solid var(--filet-fort)',
-              opacity: b.disabled ? 0.4 : 1,
-              transition: 'background var(--transition-courte), border-color var(--transition-courte)',
+              background: b.disabled ? 'transparent' : b.primaire ? 'var(--or)' : 'transparent',
+              color: b.disabled ? 'var(--cendre)' : b.primaire ? 'var(--noir)' : 'var(--ivoire)',
+              border: b.disabled
+                ? '0.5px solid var(--filet)'
+                : b.primaire ? '1px solid var(--or)' : '0.5px solid var(--filet-fort)',
+              transition: 'background var(--transition-courte), border-color var(--transition-courte), color var(--transition-courte)',
             }}>
             {b.label}
           </button>
         ))}
       </div>
 
-      <p style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--lin)', minHeight: '1.5em' }}>{status}</p>
+      <p className="acc-statut" style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--lin)', minHeight: '1.5em' }}>{status}</p>
 
       <svg
         ref={svgRef}
@@ -899,14 +1073,16 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
         onMouseMove={onStaffMove}
         onMouseLeave={onStaffLeave}
         onMouseUp={endDrag}
-        viewBox="0 0 700 215"
+        onPointerUp={endDrag}
+        viewBox={`0 ${P.minY} ${P.W} ${P.H}`}
         width="100%"
-        style={{ maxWidth: 700, display: 'block', margin: 'var(--e2) auto 0', cursor: dragIndex !== null ? 'grabbing' : 'crosshair', userSelect: 'none' }}
+        className="acc-portee"
+        style={{ maxWidth: P.W, display: 'block', margin: 'var(--e2) auto 0', cursor: dragIndex !== null ? 'grabbing' : 'crosshair', userSelect: 'none' }}
       >
         {LINES_Y.map(y => (
-          <line key={y} x1={20} y1={y} x2={680} y2={y} stroke="var(--filet-fort)" strokeWidth={1} />
+          <line key={y} x1={P.x1} y1={y} x2={P.x2} y2={y} stroke="var(--filet-fort)" strokeWidth={1} />
         ))}
-        <text x={30} y={148} fontSize={90} fill="var(--lin)">𝄞</text>
+        <text x={P.cleX} y={P.cleY} fontSize={P.cleTaille} fill="var(--lin)">𝄞</text>
 
         {/* Note survolée : creuse, contour tracé en phase avec le son */}
         {hoverPos && canPlace() && dragIndex === null && (
@@ -923,20 +1099,49 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
 
         {/* Notes posées : pleines. En cours de glissement : creuses, retracées à chaque ligne */}
         {userNotes.map((n, i) => (
-          <g key={i} onMouseDown={(e) => startDrag(e, i)}>
+          /* ÉVÉNEMENTS DE POINTEUR, et non de souris.
+
+             mousedown / mousemove n'existent pas sous un doigt : la note
+             était donc impossible à déplacer sur mobile, alors que la
+             consigne du jeu dit « ajuste-les en les glissant ». Les
+             événements de pointeur couvrent les deux, souris comprise.
+
+             setPointerCapture redirige la suite du geste vers CETTE note,
+             même si le doigt sort de sa boîte de 44 par 32 — ce qui arrive
+             au premier interligne franchi. Sans capture, le glisser
+             s'interrompt dès le premier pixel utile.
+
+             touchAction none sur la note seule : le navigateur cesse d'y
+             interpréter le mouvement vertical comme un défilement de page.
+             Limité à la note, le reste de la portée continue de défiler
+             normalement. */
+          <g
+            key={i}
+            style={{ touchAction: 'none' }}
+            onPointerDown={(e) => {
+              startDrag(e, i);
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+            }}
+            onPointerMove={onStaffMove}
+            onPointerUp={endDrag}
+            /* iOS interrompt un geste pour ses propres raisons — un appel,
+               un balayage depuis le bord. Sans cette ligne, la note restait
+               accrochée au doigt jusqu'au prochain toucher. */
+            onPointerCancel={endDrag}
+          >
             {n.ledger && (
-              <line x1={170 + i * 110 - 16} y1={n.y} x2={170 + i * 110 + 16} y2={n.y} stroke="var(--filet-fort)" strokeWidth={1} />
+              <line x1={P.noteX0 + i * P.notePas - 16} y1={n.y} x2={P.noteX0 + i * P.notePas + 16} y2={n.y} stroke="var(--filet-fort)" strokeWidth={1} />
             )}
             {dragIndex === i ? (
-              <NoteCreuse cx={170 + i * 110} cy={n.y} couleur="var(--ivoire)" />
+              <NoteCreuse cx={P.noteX0 + i * P.notePas} cy={n.y} couleur="var(--ivoire)" />
             ) : (
-              <ellipse cx={170 + i * 110} cy={n.y} rx={11} ry={8}
+              <ellipse cx={P.noteX0 + i * P.notePas} cy={n.y} rx={11} ry={8}
                 fill={verdicts === null ? 'var(--or)' : verdicts[i] ? 'var(--jade)' : 'rgba(226, 75, 74, 0.65)'}
                 style={{ cursor: locked ? 'default' : 'grab' }} />
             )}
-            <rect x={170 + i * 110 - 22} y={n.y - 16} width={44} height={32} fill="transparent"
+            <rect x={P.noteX0 + i * P.notePas - 22} y={n.y - 16} width={44} height={32} fill="transparent"
               style={{ cursor: locked ? 'default' : 'grab' }} />
-            <text x={170 + i * 110} y={200} textAnchor="middle" fontSize={12}
+            <text x={P.noteX0 + i * P.notePas} y={200} textAnchor="middle" fontSize={12}
               fill={verdicts === null ? 'var(--lin)' : verdicts[i] ? 'var(--jade)' : 'rgba(226, 75, 74, 0.65)'}
               fontFamily="var(--mono)">
               {n.name}
@@ -945,14 +1150,35 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
         ))}
 
         {target && target.slice(0, revealed).map((n, i) => {
-          const x = 170 + i * 110 + 26;
+          /* ---- Deux façons de montrer la correction ----
+             Sur ordinateur, la note juste se pose À CÔTÉ de celle du joueur,
+             décalée de 26 unités sur un pas de 110 : on lit la paire d'un
+             regard, et l'écart vertical entre les deux dit l'erreur.
+
+             Sur mobile, ce décalage n'a pas de place. Deux têtes de 24
+             unités de large ne se séparent pas dans 14, elles se fondent en
+             une tache ; et à 26 la correction empiétait sur la colonne
+             suivante ou sortait du cadre. Réduire encore les notes ne ferait
+             que rendre les deux illisibles au lieu d'une seule.
+
+             La correction passe donc DANS LA MÊME COLONNE, en note creuse.
+             Le plein est ce qu'on a joué, le contour est où il fallait
+             jouer. Juste, l'anneau coiffe la note ; faux, on voit l'écart
+             vertical dans une seule colonne — c'est-à-dire l'intervalle
+             manqué, exactement ce que la disposition côte à côte donnait à
+             lire, sans avoir besoin du double de largeur. */
+          const x = P.noteX0 + i * P.notePas + P.decalage;
           return (
             <g key={'t' + i} style={{ pointerEvents: 'none' }}>
               {n.ledger && (
                 <line x1={x - 16} y1={n.y} x2={x + 16} y2={n.y} stroke="var(--filet-fort)" strokeWidth={1} />
               )}
-              <ellipse cx={x} cy={n.y} rx={11} ry={8} fill="var(--jade)"
-                style={{ animation: 'notePop 0.35s ease-out', transformOrigin: `${x}px ${n.y}px` }} />
+              {etroit ? (
+                <NoteContour cx={x} cy={n.y} couleur="var(--jade)" />
+              ) : (
+                <ellipse cx={x} cy={n.y} rx={11} ry={8} fill="var(--jade)"
+                  style={{ animation: 'notePop 0.35s ease-out', transformOrigin: `${x}px ${n.y}px` }} />
+              )}
               <text x={x} y={52} textAnchor="middle" fontSize={12} fill="var(--jade)" fontFamily="var(--mono)">
                 {n.name}
               </text>
@@ -964,7 +1190,7 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
       {/* Sélecteur de mode d'écoute */}
       {/* Bornée puis centrée : à pleine largeur, deux cartes de 350 px se
          lisent comme deux panneaux et non comme un choix. */}
-      <div style={{
+      <div className="acc-modes" style={{
         display: 'flex', gap: 'var(--e2)', marginTop: 'var(--e4)', flexWrap: 'wrap',
         justifyContent: 'center', maxWidth: 560, marginLeft: 'auto', marginRight: 'auto',
       }}>
@@ -988,7 +1214,7 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
       </div>
 
       {score !== null && bilan && (
-        <div style={{
+        <div className="acc-bilan" style={{
           marginTop: 'var(--e4)', paddingTop: 'var(--e4)',
           borderTop: '1px solid var(--or)', textAlign: 'center',
           animation: 'accEntree 340ms ease-out both',

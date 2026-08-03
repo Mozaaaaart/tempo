@@ -30,6 +30,12 @@
   /* ---- Mise en page ---- */
   --largeur-contenu: 1600px;
 
+  /* ---- Marges de sécurité (encoche, barre gestuelle) ----
+     Repli à 0 sur les navigateurs qui ne connaissent pas env(). */
+  --marge-gauche: env(safe-area-inset-left, 0px);
+  --marge-droite: env(safe-area-inset-right, 0px);
+  --marge-bas: env(safe-area-inset-bottom, 0px);
+
   /* ---- Typographie ---- */
   --sans: var(--font-sans), system-ui, sans-serif;
   --mono: var(--font-mono), ui-monospace, monospace;
@@ -38,7 +44,12 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
-html { -webkit-font-smoothing: antialiased; }
+html {
+  -webkit-font-smoothing: antialiased;
+  /* Safari iOS grossit de lui-même le texte des blocs qu'il juge trop étroits
+     en paysage. On lui retire ce droit : la maquette gère déjà ses tailles. */
+  -webkit-text-size-adjust: 100%;
+}
 
 body {
   background: var(--noir);
@@ -47,14 +58,41 @@ body {
   font-size: 14px;
   font-weight: 400;
   line-height: 1.55;
-  min-height: 100vh;
+
+  /* 100dvh et non 100vh : sur mobile, vh se calcule barre d'URL RÉTRACTÉE.
+     Une page en 100vh dépasse donc l'écran au chargement et ouvre un
+     défilement d'une soixantaine de pixels qui ne mène nulle part. dvh suit
+     la hauteur réellement visible. */
+  min-height: 100dvh;
+
+  /* `clip` et non `hidden` : hidden ferait du body un conteneur de
+     défilement, ce qui casserait le position: sticky de l'en-tête. clip
+     rogne sans créer de conteneur.
+
+     Filet de sécurité contre le débordement horizontal — un seul élément
+     trop large suffit à rendre toute la page scrollable de côté, et c'est la
+     sensation « site pas fini » par excellence. */
+  overflow-x: clip;
 }
 
-/* Conteneur standard : 728 px centré */
+/* Le halo gris que WebKit peint sur tout élément touché : hors sujet ici, le
+   site a ses propres états actifs. */
+a, button, [role='button'], input, label, select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* touch-action: manipulation supprime le délai de 300 ms hérité du double-tap
+   pour zoomer. Sur une épreuve de rythme jouée au doigt, ces 300 ms font la
+   différence entre un instrument et une télécommande. */
+a, button, [role='button'], summary {
+  touch-action: manipulation;
+}
+
+/* Conteneur standard */
 .contenu {
   max-width: var(--largeur-contenu);
   margin: 0 auto;
-  padding: var(--e7) var(--e5) var(--e8);
+  padding: var(--e7) calc(var(--e5) + var(--marge-droite)) var(--e8) calc(var(--e5) + var(--marge-gauche));
 }
 
 /* ---- Échelle typographique ---- */
@@ -63,6 +101,8 @@ body {
   font-weight: 500;
   letter-spacing: -0.02em;
   line-height: 1.15;
+  /* Un mot long sans césure impose sa largeur à la page entière sur 360 px. */
+  overflow-wrap: break-word;
 }
 .titre-section { font-size: 15px; font-weight: 500; }
 .description { font-size: 12.5px; color: var(--lin); }
@@ -83,12 +123,28 @@ body {
 .lin { color: var(--lin); }
 .cendre { color: var(--cendre); }
 
-/* ---- Liens ---- */
+/* ---- Liens ----
+   Le survol est enfermé dans @media (hover: hover).
+
+   POURQUOI : sur écran tactile, le navigateur applique quand même :hover au
+   dernier élément touché, et l'y LAISSE jusqu'au tap suivant. Un lien reste
+   donc allumé après qu'on l'a quitté, ce qui contredit l'état actif réel.
+   La requête média retire la règle aux appareils sans pointeur fin. */
 a { color: var(--or); text-decoration: none; }
-a:hover { color: var(--or-clair); }
+
+@media (hover: hover) and (pointer: fine) {
+  a:hover { color: var(--or-clair); }
+}
+
+/* Sur tactile, c'est l'ENFONCEMENT qui donne le retour : immédiat, et il
+   disparaît quand le doigt se lève. */
+@media (hover: none) {
+  a:active, button:active { opacity: 0.62; }
+}
 
 /* ---- Accessibilité ---- */
 :focus-visible { outline: 1px solid var(--or); outline-offset: 2px; }
+button:focus-visible { outline: 1px solid var(--or); outline-offset: 3px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -97,18 +153,62 @@ a:hover { color: var(--or-clair); }
   }
 }
 
+/* ============================================================
+   GRILLE DES ÉPREUVES (accueil)
+   Hors mobile, la description par épreuve et la flèche n'existent pas :
+   c'est la ligne commune sous la grille qui porte l'information.
+============================================================ */
+
+.epreuve-desc-mobile { display: none; }
+.epreuve-fleche { display: none; }
+
+/* ============================================================
+   MOBILE — point de rupture unique à 640 px
+============================================================ */
+
 @media (max-width: 640px) {
   .titre-page { font-size: 28px; }
-  .contenu { padding: var(--e5) var(--e4) var(--e7); }
+  .contenu {
+    padding: var(--e5) calc(var(--e4) + var(--marge-droite)) calc(var(--e7) + var(--marge-bas)) calc(var(--e4) + var(--marge-gauche));
+  }
 
-  /* Grille des cinq épreuves : pile verticale, chacune avec sa description */
-  .grille-epreuves { grid-template-columns: 1fr !important; gap: var(--e4) !important; }
+  /* ---- Le zoom automatique de Safari iOS ----
+     Tout champ dont le texte fait moins de 16 px déclenche un zoom à la mise
+     au point, et ce zoom ne se défait pas tout seul : la page reste agrandie,
+     décalée, et le reste de l'épreuve devient inatteignable. Seize pixels est
+     la valeur exacte du seuil, pas une préférence.
+
+     !important est nécessaire : les champs du site portent leur taille en
+     style en ligne, qui l'emporterait sur une règle de feuille. */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+
+  /* ---- Pile verticale ----
+     Chaque épreuve retrouve sa description propre : la ligne commune ne dit
+     plus rien sans survol. Gouttière nulle, les filets suffisent à séparer. */
+  .grille-epreuves {
+    grid-template-columns: 1fr !important;
+    gap: 0 !important;
+  }
+  .epreuve-desc-mobile { display: block; }
+  .epreuve-ligne {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--e3);
+  }
+  .epreuve-fleche { display: block; }
+  .desc-survol { display: none; }
 }
 
-/* Focus clavier discret sur les onglets d'épreuve */
-button:focus-visible { outline: 1px solid var(--or); outline-offset: 3px; }
+/* ============================================================
+   CURSEURS
+   La poignée passe de 14 à 20 px sous 640 px. Une cible de 14 px se rate au
+   doigt une fois sur trois ; la piste, elle, reste fine — c'est la zone
+   ATTRAPABLE qui grandit, pas le trait.
+============================================================ */
 
-/* Curseur BPM : apparence native masquée, la piste est dessinée par le composant */
 .curseur-nu {
   -webkit-appearance: none;
   appearance: none;
@@ -116,6 +216,10 @@ button:focus-visible { outline: 1px solid var(--or); outline-offset: 3px; }
   height: 20px;
   margin: 0;
   cursor: pointer;
+  /* Le geste horizontal appartient au curseur, le vertical au défilement :
+     sans cette ligne, un glissement légèrement oblique fait défiler la page
+     au lieu de régler la valeur. */
+  touch-action: pan-y;
 }
 .curseur-nu:disabled { cursor: default; }
 .curseur-nu::-webkit-slider-runnable-track { background: transparent; height: 20px; }
@@ -134,10 +238,18 @@ button:focus-visible { outline: 1px solid var(--or); outline-offset: 3px; }
   border: none;
 }
 
+@media (max-width: 640px) {
+  .curseur-nu { height: 28px; }
+  .curseur-nu::-webkit-slider-runnable-track { height: 28px; }
+  .curseur-nu::-moz-range-track { height: 28px; }
+  .curseur-nu::-webkit-slider-thumb { width: 20px; height: 20px; margin-top: 4px; }
+  .curseur-nu::-moz-range-thumb { width: 20px; height: 20px; }
+}
+
 
 /* ============================================================
-   ÉPREUVE DUEL — à coller dans app/globals.css
-   Les media queries imposent des classes : les styles inline du reste du
+   ÉPREUVE DUEL
+   Les media queries imposent des classes : les styles en ligne du reste du
    composant ne peuvent pas porter de point de rupture.
 ============================================================ */
 
@@ -211,12 +323,8 @@ button:focus-visible { outline: 1px solid var(--or); outline-offset: 3px; }
     height: 0.5px;
   }
   .duel-vs > span {
-  font-size: 56px;   /* était 40px */
-  padding: var(--e3) 0;
-  }
-
-  @media (max-width: 640px) {
-    .duel-vs > span { font-size: 42px; }  /* était 30px */
+    font-size: 42px;
+    padding: var(--e3) 0;
   }
 }
 
@@ -234,4 +342,450 @@ button:focus-visible { outline: 1px solid var(--or); outline-offset: 3px; }
 @keyframes duelPromotion {
   from { opacity: 0; transform: translateX(24px); }
   to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ============================================================
+   ÉPREUVE INSTRUMENT — le choix en deux temps
+
+   Ces deux dispositions étaient posées en style en ligne, et leurs
+   commentaires annonçaient un comportement que le style en ligne ne sait pas
+   décrire : « sous 560 px, on retombe à deux colonnes » n'a jamais eu lieu,
+   faute d'endroit où écrire une requête média. Les voici.
+============================================================ */
+
+/* Six familles. Trois colonnes fixes garantissent deux lignes de trois, là où
+   un retour à la ligne automatique dépendrait de la longueur des noms. */
+.choix-familles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--e2);
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+/* Les instruments d'une famille, sur une seule ligne : nowrap empêche qu'une
+   « Basse » esseulée passe en dessous. */
+.choix-instruments {
+  display: flex;
+  gap: 6px;
+  flex-wrap: nowrap;
+  justify-content: center;
+  align-items: stretch;
+}
+
+@media (max-width: 640px) {
+  .choix-familles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* ---- La ligne d'instruments devient une colonne ----
+     nowrap sur une ligne de cinq boutons, c'est un pari : les boutons se
+     resserrent jusqu'à ce que tout tienne. Sur 328 px, le pari est perdu
+     d'avance — cinq « Guitare acoustique » demandent six cents pixels. Les
+     boîtes rétrécissaient bien, mais leur texte, lui, était en nowrap : il
+     débordait de sa boîte et se superposait à celui du voisin.
+
+     Une colonne règle le problème au lieu de le comprimer. Les noms sont
+     longs, ce sont des phrases courtes plus que des étiquettes, et une liste
+     verticale est leur forme naturelle — avec au passage cinq cibles pleine
+     largeur au lieu de cinq bandes de soixante pixels. */
+  .choix-instruments {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--e2);
+  }
+  .choix-instruments > * { width: 100%; }
+}
+
+/* ============================================================
+   ÉPREUVE ACCORDS — mise en page sous 640 px
+
+   Deux corrections d'organisation, pas de style.
+
+   1. LA PORTÉE PASSE AVANT LES BOUTONS.
+
+      Sur ordinateur, la rangée de commandes tient sur une ligne au-dessus de
+      la portée : on la lit d'un regard et l'espace de travail reste juste
+      dessous. Sur mobile la même rangée se replie sur trois hauteurs, et
+      elle repousse la portée sous la ligne de flottaison — on arrive donc
+      sur quatre boutons sans voir l'objet sur lequel ils agissent.
+
+      L'ordre devient : titre, consigne, PORTÉE, état, commandes, modes. On
+      voit d'abord où l'on travaille, et les commandes se retrouvent en bas,
+      c'est-à-dire du côté du pouce.
+
+      Réordonnancement en CSS et non en JSX : l'arbre reste unique et la
+      version ordinateur ne bouge pas d'un pixel.
+
+   2. LES COMMANDES DEVIENNENT UNE GRILLE.
+
+      Un flex avec retour à la ligne range les boutons selon la longueur de
+      leurs intitulés : « Générer une cible » et « Valider » se retrouvaient
+      côte à côte, de largeurs très différentes, et la rangée changeait de
+      forme à chaque changement d'état du jeu. Une grille de deux colonnes
+      donne des boutons de largeur égale et une disposition stable.
+
+      Les deux actions structurantes — écouter la cible, valider — prennent
+      la largeur entière : ce sont l'entrée et la sortie de la manche, elles
+      encadrent les deux actions d'ajustement.
+============================================================ */
+
+@media (max-width: 640px) {
+  .acc-panneau { display: flex; flex-direction: column; }
+
+  .acc-titre   { order: 1; }
+  .acc-desc    { order: 2; }
+  .acc-portee  { order: 3; }
+  .acc-statut  { order: 4; }
+  .acc-boutons { order: 5; }
+  .acc-modes   { order: 6; }
+  .acc-bilan   { order: 7; }
+
+  /* ---- Les commandes, en colonne ----
+     La grille de deux colonnes rendait « Écouter ma proposition » sur deux
+     lignes à côté d'« Effacer les notes » sur une seule, et les deux boutons
+     pleine largeur qui les encadraient donnaient une pile de trois formes
+     différentes. Le reste du site, sur mobile, aligne des lignes de même
+     hauteur — la liste des épreuves, la bande des dix, la navigation.
+
+     Une colonne donne quatre boutons identiques, chaque intitulé sur une
+     ligne, et une cible de 42 pixels chacun. Plus haut de quarante pixels
+     que la grille, ce qui est peu payé pour une pile qu'on lit d'un regard. */
+  .acc-boutons {
+    display: flex !important;
+    flex-direction: column;
+    gap: var(--e2) !important;
+    margin-top: var(--e4);
+    margin-bottom: 0 !important;
+  }
+  .acc-boutons > button {
+    width: 100%;
+    padding: 11px 16px !important;
+  }
+
+  /* ---- La portée va d'un bord à l'autre du panneau ----
+     Le rembourrage du panneau lui coûtait cinquante-deux pixels de large.
+     Ce n'est pas qu'une question de marges : la portée est un SVG dont
+     l'échelle vaut la largeur rendue divisée par la largeur du cadre. Ces
+     cinquante-deux pixels étaient donc AUSSI de l'interligne et de la taille
+     de tête de note en moins — dix-neuf pour cent de tout.
+
+     Le panneau resserre donc son rembourrage de 26 à 16 pixels. Il s'arrête
+     là : poussé jusqu'aux bords par des marges négatives, le premier trait
+     de la portée venait toucher le filet du panneau, et deux lignes qui se
+     rejoignent se lisent comme un défaut d'alignement plutôt que comme une
+     intention. Seize pixels de retrait suffisent à séparer les deux. */
+  .acc-panneau { padding: var(--e4) !important; }
+  .acc-portee { margin-top: var(--e3) !important; }
+
+  /* ---- Le sélecteur de mode disparaît ----
+     Il oppose « les notes sonnent au survol » à « les notes sonnent au
+     clic ». Sans pointeur, la première branche ne peut rien produire : le
+     choix se réduit à une option et à une option morte. Le composant impose
+     le mode silencieux sur écran tactile ; le sélecteur n'a donc plus rien
+     à régler.
+
+     Retiré et non désactivé : un réglage grisé pose une question à laquelle
+     il ne répond pas. */
+  .acc-modes { display: none !important; }
+}
+
+/* ============================================================
+   ÉPREUVE ARTISTE — la grille des indices
+
+   Sept colonnes en fractions se partagent la largeur disponible, quelle
+   qu'elle soit. Sur 296 px, chacune reçoit donc une quarantaine de pixels :
+   « Rap/Hip-hop » se casse en trois lignes, « États-Unis » en deux, et la
+   dernière colonne sort du panneau.
+
+   Les fractions ne sont pas en cause — c'est de leur poser une question sans
+   réponse. Six attributs comparés côte à côte NE TIENNENT PAS sur un
+   téléphone, et aucune répartition ne changera ça. Empiler les colonnes
+   n'est pas une option non plus : la lecture de ce jeu est horizontale, on
+   compare une tentative à la suivante attribut par attribut.
+
+   La grille garde donc ses sept colonnes, avec une largeur PLANCHER, et
+   défile latéralement. Toutes les rangées appartenant à la même grille,
+   elles défilent ensemble — l'alignement des colonnes est préservé, ce qui
+   est exactement ce qu'on regarde.
+
+   Le fondu du bord droit dit qu'il y a une suite, maintenant que la barre de
+   défilement est masquée. Le bord gauche reste net : la colonne des noms
+   d'artistes est l'ancre de lecture, elle ne doit pas s'effacer.
+============================================================ */
+
+/* ---- Une cellule d'indice ----
+   Pas de fond, pas de contour, pas de rayon : un tableau, pas une rangée de
+   jetons. L'état se dit par la COULEUR DU TEXTE et par le FILET SUPÉRIEUR,
+   exactement comme sur la grille des cinq épreuves et sur la bande des dix —
+   1 px accentué quand c'est actif, 0,5 px sinon.
+
+   Les deux verdicts gardent donc leur couleur, carmin et jade. Ce qui
+   disparaît, c'est la SURFACE : une pastille bordée et remplie donne au
+   rouge la même présence qu'à un bouton, et six d'entre elles par rangée
+   faisaient un mur où l'œil ne trouvait plus les trouvailles. Le même rouge
+   posé sur du texte et sur un filet dit la même chose en pesant six fois
+   moins.
+
+   Le filet du manqué reste à 0,5 px et à faible opacité : il sépare les
+   rangées sans dessiner une grille rouge. */
+.art-cellule {
+  position: relative;
+  padding: 11px 8px;
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: center;
+  color: var(--carmin);
+}
+
+/* ---- Le filet est un pseudo-élément, pas une bordure ----
+   Une bordure ne se trace pas : on ne peut que la faire apparaître d'un
+   coup. Un élément posé par-dessus, lui, se met à l'échelle depuis son bord
+   gauche — c'est exactement le procédé du filet or de l'en-tête du site.
+
+   scaleX plutôt qu'une largeur animée : la mise à l'échelle est composée par
+   le processeur graphique et ne provoque aucun recalcul de mise en page, là
+   où animer width relancerait la disposition du tableau à chaque image. */
+.art-cellule::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* UN PIXEL DE CHEVAUCHEMENT sur la colonne suivante.
+
+     Les sept colonnes sont en fractions : leurs largeurs tombent sur des
+     valeurs décimales, et chaque trait est arrondi séparément au pixel
+     physique. Bord à bord, les arrondis laissent des ruptures d'un demi-pixel
+     entre les segments — et un demi-pixel de vide sur un trait d'un demi-
+     pixel d'épaisseur se voit comme une ligne inégale, alors que rien ne
+     l'est.
+
+     Le débordement d'un pixel fait recouvrir la jointure par le segment
+     suivant. Le dernier déborde du tableau d'autant, ce qui ne se voit pas :
+     il est de la même couleur que son voisin de gauche, et il n'y a rien
+     à sa droite.
+
+     Le chevauchement suit la mise à l'échelle du tracé, donc il n'apparaît
+     qu'une fois le segment complet — la jointure se referme au moment où les
+     deux traits se rejoignent. */
+  right: -1px;
+  height: 0.5px;
+  background: rgba(168, 83, 81, 0.35);
+  transform-origin: left center;
+}
+
+/* Trouvé : le filet se renforce et passe au jade, comme le texte. */
+.art-juste { color: var(--jade); }
+.art-juste::before { height: 1px; background: var(--jade); }
+
+/* ---- Variante à trait unique ----
+   Utilisée par la démonstration, dont la scène est mise à l'échelle : à
+   l'échelle 0,55, un trait d'un demi-pixel devient un quart de pixel, chaque
+   segment est arrondi séparément, et la ligne paraît se rompre et changer
+   d'épaisseur d'une colonne à l'autre. Un élément unique occupant les sept
+   colonnes ne peut pas être inégal à lui-même.
+
+   Il occupe sa propre rangée de grille, entre les en-têtes et les valeurs.
+   Les cellules renoncent alors à leur trait par .art-nu. */
+.art-trait-rangee {
+  grid-column: 1 / -1;
+  height: 1px;
+  background: var(--jade);
+  transform-origin: left center;
+  animation: artTrait var(--duree, 1100ms) linear both;
+  animation-delay: var(--retard, 0s);
+}
+.art-nu::before { display: none; }
+
+/* ============================================================
+   RÉVÉLATION D'UNE TENTATIVE
+
+   Les sept colonnes se découvrent l'une après l'autre, de gauche à droite.
+   Chacune fait deux choses en même temps : son filet se TRACE depuis la
+   gauche, et sa valeur monte en fondu avec un léger retrait dans le même
+   sens. Le trait précède donc l'œil et la valeur le suit, ce qui donne le
+   sens de lecture sans avoir à l'indiquer.
+
+   L'ancienne révélation faisait basculer chaque cellule sur un axe
+   horizontal, en trois dimensions. Le geste était emprunté aux jeux de
+   lettres, où la case CACHE une information qu'on retourne ; ici il n'y a
+   rien à retourner, la valeur est celle qu'on vient de proposer. Un tracé
+   dit la même chose dans la grammaire du site — l'en-tête, l'onde et la
+   bande des dix épreuves se découvrent déjà toutes de gauche à droite.
+
+   Le retard vient de --retard, posé en ligne par le composant : c'est ce qui
+   permet au pseudo-élément, qui n'accepte pas de style en ligne, de partir
+   exactement en même temps que sa valeur.
+============================================================ */
+
+.art-anime::before {
+  animation: artTrait 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--retard, 0s);
+}
+.art-anime .art-valeur {
+  display: inline-block;
+  animation: artValeur 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--retard, 0s);
+}
+
+@keyframes artTrait {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+@keyframes artValeur {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* La colonne des noms garde le poids du texte primaire : c'est elle qui dit
+   de quelle tentative on parle. Mais elle reste CENTRÉE comme les six
+   autres — les en-têtes le sont tous, et une valeur alignée à gauche sous un
+   intitulé centré se lit comme un défaut avant de se lire comme une
+   hiérarchie.
+
+   Sa couleur suit le verdict comme les autres : le nom est une réponse, pas
+   une étiquette de rangée. */
+.art-ancre {
+  font-weight: 500;
+}
+
+@media (max-width: 640px) {
+  .artiste-grille {
+    grid-template-columns:
+      minmax(84px, 1.3fr)
+      repeat(6, minmax(62px, 1fr)) !important;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+    -webkit-mask-image: linear-gradient(to right,
+      #000 calc(100% - 24px), transparent 100%);
+    mask-image: linear-gradient(to right,
+      #000 calc(100% - 24px), transparent 100%);
+  }
+  .artiste-grille::-webkit-scrollbar { display: none; }
+}
+
+/* ============================================================
+   ÉPREUVE POCHETTE — mise en page sous 640 px
+
+   Sur ordinateur, la scène est une grille de trois colonnes : une colonne
+   vide, la pochette de 260 px, puis les essais. Les deux colonnes latérales
+   ont la même largeur, ce qui centre la pochette quel que soit le nombre de
+   jetons. L'ensemble demande environ six cents pixels.
+
+   Sur 296, la grille ne renonce à rien : elle comprime les trois colonnes
+   dans la place disponible. La pochette — l'objet même de l'épreuve, celui
+   qu'on scrute — se retrouvait à une centaine de pixels, et les noms
+   d'artistes tronqués dans une colonne de soixante.
+
+   Elle devient donc une pile. La pochette prend toute la largeur, jusqu'à
+   ses 260 px de référence ; les essais passent DESSOUS et changent d'axe :
+   une rangée qui se replie plutôt qu'une colonne. Sept noms courts tiennent
+   à trois par ligne là où la colonne verticale en imposait sept, et l'espace
+   gagné va à la pochette.
+============================================================ */
+
+@media (max-width: 640px) {
+  .poch-scene {
+    display: flex !important;
+    flex-direction: column;
+    /* !important obligatoire : le conteneur porte alignItems start en style
+       en ligne, hérité de la version en grille où il servait à coller les
+       trois colonnes en haut. En colonne, cet axe devient l'HORIZONTALE — et
+       start y veut dire « à gauche ». C'est ce qui décalait la pochette du
+       centre du panneau. */
+    align-items: center !important;
+    gap: var(--e4) !important;
+  }
+
+  /* La colonne d'équilibrage n'a plus rien à équilibrer. */
+  .poch-vide { display: none; }
+
+  .poch-cadre { width: 100%; max-width: 260px; }
+
+  /* ---- Les essais changent d'axe ----
+     La gouttière calculée pour la version bureau répartit sept jetons sur la
+     hauteur exacte de la pochette : elle vaut cinq pixels et n'a plus aucun
+     sens une fois les jetons en rangée. */
+  .poch-essais {
+    flex-direction: row !important;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center !important;
+    gap: var(--e2) !important;
+    width: 100%;
+  }
+
+  /* Le compteur prend sa propre ligne : c'est un en-tête de liste, pas un
+     jeton de plus. */
+  .poch-compteur { flex-basis: 100%; text-align: center; }
+
+  /* ---- Les commandes en pile ----
+     Le champ et le bouton se partageaient une rangée qui se repliait de
+     toute façon : autant l'assumer et leur donner la même largeur, plutôt
+     qu'un champ pleine largeur suivi d'un bouton de cent pixels centré
+     dessous. */
+  .poch-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .poch-actions > * { width: 100% !important; min-width: 0 !important; }
+
+  /* Le champ de saisie est enveloppé dans un conteneur positionné, qui porte
+     la liste de suggestions. Étirer ce conteneur ne suffit donc pas : sans
+     largeur propre, un input adopte sa taille intrinsèque — une vingtaine de
+     caractères — et reste calé à gauche dans un parent deux fois plus large.
+     C'est le second décentrage, et il n'a rien à voir avec le premier. */
+  .poch-actions input {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
+
+/* ============================================================
+   ÉPREUVE HUMAIN OU IA — mise en page sous 640 px
+
+   Le défaut n'est pas un débordement : rien ne dépasse. C'est que les trois
+   contrôles de la page ont trois largeurs différentes, chacune tenant à la
+   longueur de son texte ou à une valeur de base, et que centrés les uns sous
+   les autres ils dessinent un escalier.
+
+   Deux rangées, deux traitements opposés — et c'est le sens de chaque rangée
+   qui décide, pas la place disponible.
+============================================================ */
+
+@media (max-width: 640px) {
+
+  /* ---- Le transport : une pile pleine largeur ----
+     « Commencer le run » et « Réécouter » sont des actions successives, pas
+     un choix. Les mettre à la même largeur les range en liste, ce qui est
+     déjà la forme que prend le reste du site sur mobile. */
+  .ia-transport {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .ia-transport > * { width: 100%; }
+
+  /* ---- Les deux réponses : côte à côte, quoi qu'il arrive ----
+     Elles se repliaient l'une sous l'autre. La cause est une propriété de
+     flex qu'on oublie facilement : avec flex-wrap wrap, le navigateur compare
+     la somme des largeurs DE BASE, ici 172 chacune, à la place disponible.
+     344 ne tiennent pas dans 296, donc il replie — alors même que les cartes
+     étaient autorisées à rétrécir et qu'elles auraient tenu à 144.
+
+     Une base nulle supprime la question : les deux cartes se partagent la
+     ligne à parts égales, quelle que soit la largeur de l'écran.
+
+     Et il le faut : le choix est BINAIRE. Deux réponses empilées se lisent
+     comme deux boutons dont l'un vient après l'autre ; côte à côte, elles se
+     lisent comme une alternative — ce qu'elles sont. */
+  .ia-reponses {
+    flex-wrap: nowrap;
+    max-width: none;
+  }
+  .ia-carte {
+    flex: 1 1 0 !important;
+    min-width: 0;
+    padding: 0 var(--e2) !important;
+  }
 }

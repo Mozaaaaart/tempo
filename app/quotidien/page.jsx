@@ -658,16 +658,12 @@ export default function Quotidien() {
 
      La flèche désactivée n'en a pas : elle est en cendre sur filet, la
      faire briller contredirait ce que son état annonce. */
-  const fleche = (dispo) => ({
-    width: 34, height: 34, borderRadius: '50%',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    padding: 0, background: 'transparent',
-    color: dispo ? 'var(--or)' : 'var(--cendre)',
-    border: `1px solid ${dispo ? 'var(--or)' : 'var(--filet)'}`,
-    boxShadow: dispo ? '0 0 16px rgba(239, 159, 39, 0.6)' : 'none',
-    cursor: dispo ? 'pointer' : 'not-allowed', flexShrink: 0,
-    transition: 'color var(--transition-courte), border-color var(--transition-courte), background var(--transition-courte), box-shadow var(--transition-courte)',
-  });
+  /* La taille et les états vivent dans la feuille, sous .q-fleche : une
+     requête média doit pouvoir agrandir le rond sur mobile, et un style en
+     ligne l'en empêcherait. Le survol y est aussi, sous @media (hover: hover) —
+     posé en JavaScript, il restait allumé après un tap, faute de mouseleave
+     sur un écran tactile. */
+  const fleche = (dispo) => (dispo ? 'q-fleche' : 'q-fleche q-fleche-eteinte');
 
   // Keyframes alternées : l'animation se rejoue même deux fois dans le même sens
   const nomAnim = dir > 0
@@ -1095,6 +1091,25 @@ export default function Quotidien() {
              règlent donc ensemble, et rien ne peut se désaccorder. */
           .q-lueur { box-shadow: 0 0 26px rgba(239, 159, 39, 0.6); }
 
+          /* ---- Le relevé du score se pose, il n'apparaît pas ----
+             Il n'existe qu'une fois le défi entamé : au seuil, il n'y a rien
+             à relever. Il ne peut donc pas profiter de la cascade d'entrée de
+             la page, qui s'est jouée bien avant qu'il existe — il surgissait
+             d'un coup au franchissement du seuil, seul élément de la page à
+             le faire.
+
+             L'animation est portée par la CARTE et non par le bandeau qui la
+             contient : celui-ci a la sienne, au chargement, et superposer les
+             deux multiplierait les opacités l'une par l'autre. Le retard de
+             120 ms le fait suivre le titre quand les deux arrivent ensemble,
+             au rechargement d'un défi déjà commencé.
+
+             Même durée et même courbe que le reste de la page : ce qui se
+             pose ici doit se poser comme ailleurs. */
+          .q-releve {
+            animation: qEntree 360ms 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
+          }
+
           .q-scene {
             border-radius: var(--rayon-carte);
             box-shadow:
@@ -1201,14 +1216,115 @@ export default function Quotidien() {
             to   { opacity: 1; transform: translateY(0); }
           }
 
+          /* ---- Les flèches de navigation ----
+             Taille et états en CSS, pour deux raisons.
+
+             Le survol était posé en JavaScript. Sur un écran tactile, le
+             navigateur émet mouseenter au tap puis plus jamais mouseleave :
+             la flèche restait allumée en or après le clic, et rien ne pouvait
+             l'éteindre. La requête média ne s'applique qu'aux appareils qui
+             ont un vrai pointeur.
+
+             Et une taille en style en ligne aurait empêché de l'agrandir sous
+             640 px. */
+          .q-fleche {
+            width: 34px; height: 34px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            padding: 0; flex-shrink: 0;
+            background: transparent;
+            color: var(--or);
+            border: 1px solid var(--or);
+            box-shadow: 0 0 16px rgba(239, 159, 39, 0.6);
+            cursor: pointer;
+            transition:
+              color var(--transition-courte),
+              border-color var(--transition-courte),
+              background var(--transition-courte),
+              box-shadow var(--transition-courte);
+          }
+          .q-fleche-eteinte {
+            color: var(--cendre);
+            border-color: var(--filet);
+            box-shadow: none;
+            cursor: not-allowed;
+          }
+          @media (hover: hover) and (pointer: fine) {
+            .q-fleche:not(.q-fleche-eteinte):hover {
+              background: var(--or);
+              color: var(--noir);
+            }
+          }
+
           @media (max-width: 640px) {
             .q-sommaire { grid-template-columns: repeat(2, 1fr); }
+
+            /* ---- Le bandeau de titre passe en pile ----
+               La colonne de droite était alignée à droite et poussée en bas
+               par marginTop auto : deux réglages qui n'ont de sens que dans
+               une rangée. Une fois repliée sous le titre, elle donnait un
+               relevé collé au bord droit, seul élément de la page à l'être.
+
+               Elle reprend donc toute la largeur, et le relevé du score avec
+               elle : c'est le chiffre que le joueur vient voir. */
+            .q-tete { flex-direction: column; }
+
+            /* ---- Deux réglages à neutraliser, pour la même raison ----
+               Le bloc de titre portait flex: 1 1 320px et une hauteur
+               minimale de 118. Les deux visaient la RANGÉE : 320 était une
+               largeur de base, et 118 réservait de quoi ne pas voir la page
+               sauter quand la description change d'une épreuve à l'autre.
+
+               En colonne, l'axe principal devient la verticale. Ce 320 cesse
+               d'être une largeur pour devenir une HAUTEUR DE BASE : le bloc
+               s'étirait à 320 px quel que soit son texte, d'où les deux cents
+               pixels de vide entre la présentation et le relevé. La hauteur
+               minimale, elle, n'a plus d'objet — en une seule colonne, rien
+               ne saute puisque rien n'est côte à côte.
+
+               !important sur les deux : elles viennent de styles en ligne, qui
+               l'emporteraient sur la requête média. */
+            .q-tete-texte {
+              flex: 0 0 auto !important;
+              min-height: 0 !important;
+            }
+            .q-tete-cote {
+              width: 100%;
+              align-items: stretch !important;
+            }
+            .q-releve { min-width: 0 !important; }
+
+            /* ---- La barre de navigation passe sur deux rangs ----
+               Elle en demandait 330 : deux flancs de 34, le réglage de volume
+               à 100, et un intitulé de trois lignes au centre. Sur 296, le
+               centre était écrasé et le nom de l'épreuve passait à la ligne.
+
+               L'intitulé prend donc le premier rang, sur toute la largeur —
+               c'est lui qui dit où l'on est. Les commandes suivent en dessous,
+               écartées aux deux bords : les deux flèches tombent alors sous
+               les pouces, et le volume reste entre elles.
+
+               Le réordonnancement se fait en CSS : la version bureau garde son
+               ordre de lecture, flèche gauche puis titre puis flèche droite,
+               qui est aussi celui du DOM et donc celui d'un lecteur d'écran. */
+            .q-nav {
+              flex-wrap: wrap;
+              gap: var(--e3);
+              justify-content: space-between;
+            }
+            .q-nav-titre {
+              order: -1;
+              flex: 1 1 100%;
+            }
+            .q-nav-flanc { flex: 0 0 auto; }
+
+            /* Quarante-deux pixels : une cible qu'on atteint sans viser. */
+            .q-fleche { width: 42px; height: 42px; }
           }
         `}</style>
 
         {/* ---------- Titre, et relevé encadré à droite ---------- */}
         <div className="q-tete" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--e5)', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 320px', minHeight: 118 }}>
+          <div className="q-tete-texte" style={{ flex: '1 1 320px', minHeight: 118 }}>
             <div className="etiquette-mono">{dateDuJour}</div>
             <h1 className="titre-page" style={{ marginTop: 'var(--e2)' }}>
               Le défi du jour
@@ -1224,7 +1340,7 @@ export default function Quotidien() {
               corrections de la veille. Les deux appartiennent au même registre
               — ce qu'on a fait, ce qu'on aurait dû faire — et se rangent donc
               ensemble plutôt qu'aux deux extrémités de la page. */}
-          <div style={{
+          <div className="q-tete-cote" style={{
             display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
             gap: 'var(--e3)', flexShrink: 0,
             /* La colonne prend toute la hauteur du bandeau de titre : c'est
@@ -1234,7 +1350,7 @@ export default function Quotidien() {
           {/* Le relevé n'apparaît qu'une fois le défi entamé : au seuil, il
               n'y a rien à relever et un 0,0 encadré serait un faux départ. */}
           {commence && (
-            <div className="q-lueur" style={{
+            <div className="q-lueur q-releve" style={{
               padding: 'var(--e3) var(--e4)',
               border: '1px solid var(--or)', borderRadius: 'var(--rayon-carte)',
               minWidth: 190, flexShrink: 0,
@@ -1560,17 +1676,15 @@ export default function Quotidien() {
                 <button
                   onClick={() => aller(index - 1)}
                   disabled={!peutPrecedent}
-                  style={fleche(peutPrecedent)}
+                  className={fleche(peutPrecedent)}
                   aria-label="Épreuve précédente"
-                  onMouseEnter={(ev) => { if (peutPrecedent) { ev.currentTarget.style.background = 'var(--or)'; ev.currentTarget.style.color = 'var(--noir)'; } }}
-                  onMouseLeave={(ev) => { ev.currentTarget.style.background = 'transparent'; ev.currentTarget.style.color = peutPrecedent ? 'var(--or)' : 'var(--cendre)'; }}
                 >
                   {SVG_GAUCHE}
                 </button>
                 <VolumeControl compact />
               </div>
 
-              <div style={{ textAlign: 'center', flexShrink: 0 }}>
+              <div className="q-nav-titre" style={{ textAlign: 'center', flexShrink: 0 }}>
                 <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>
                   épreuve {epreuve.num} / {EPREUVES.length}
                 </div>
@@ -1584,10 +1698,8 @@ export default function Quotidien() {
                 <button
                   onClick={() => aller(index + 1)}
                   disabled={!peutSuivant}
-                  style={fleche(peutSuivant)}
+                  className={fleche(peutSuivant)}
                   aria-label="Épreuve suivante"
-                  onMouseEnter={(ev) => { if (peutSuivant) { ev.currentTarget.style.background = 'var(--or)'; ev.currentTarget.style.color = 'var(--noir)'; } }}
-                  onMouseLeave={(ev) => { ev.currentTarget.style.background = 'transparent'; ev.currentTarget.style.color = peutSuivant ? 'var(--or)' : 'var(--cendre)'; }}
                 >
                   {SVG_DROITE}
                 </button>

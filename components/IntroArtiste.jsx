@@ -198,11 +198,6 @@ export default function IntroArtiste({ onFin, exclure = null }) {
           0%   { opacity: 0; }
           100% { opacity: 1; }
         }
-        @keyframes artCellule {
-          0%   { opacity: 0; transform: rotateX(90deg); }
-          55%  { opacity: 1; transform: rotateX(90deg); }
-          100% { opacity: 1; transform: rotateX(0deg); }
-        }
         @keyframes artFlou {
           from { filter: blur(20px); transform: scale(1.2); }
           to   { filter: blur(0px);  transform: scale(1); }
@@ -223,6 +218,21 @@ export default function IntroArtiste({ onFin, exclure = null }) {
 
       <div style={{
         width: SCENE_L, height: SCENE_H, position: 'relative',
+        /* flexShrink: 0 est ce qui fait tenir toute la scène.
+
+           Cette boîte est un enfant flex, et un enfant flex se laisse
+           RÉTRÉCIR par défaut. Sur un panneau étroit, les 520 px demandés
+           devenaient donc 370, et la scène se retrouvait mesurée en deux
+           unités différentes : les éléments posés en pourcentage — le disque
+           en left 50 % — suivaient la nouvelle largeur, ceux posés en pixels
+           — le pointeur et ses cercles de clic — restaient sur l'ancienne.
+           Le geste se jouait à côté de ce qu'il désignait, d'autant plus loin
+           que l'écran était étroit.
+
+           La mise à l'échelle doit venir de scale() et de lui seul : elle
+           conserve les proportions, là où le rétrécissement flex déplace les
+           repères les uns par rapport aux autres. */
+        flexShrink: 0,
         transform: `scale(${echelle})`, transformOrigin: 'center',
       }}>
 
@@ -321,7 +331,11 @@ export default function IntroArtiste({ onFin, exclure = null }) {
             position: 'absolute', top: 284, left: '50%', marginLeft: -300,
             width: 600,
             display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 0.8fr 0.9fr 0.8fr 0.9fr',
-            gap: 6, perspective: '600px',
+            /* Gouttière nulle et plus de perspective : la démonstration
+               montre le MÊME tableau que le jeu, filets joints en une ligne
+               par rangée, et il n'y a plus rien à faire basculer en trois
+               dimensions. */
+            gap: 0,
           }}>
             {COLONNES.map((h) => (
               <div key={h} style={{
@@ -331,14 +345,28 @@ export default function IntroArtiste({ onFin, exclure = null }) {
                 animation: `artParution 200ms ${T_INDICES - 120}ms ease-out both`,
               }}>{h}</div>
             ))}
+            {/* Les cellules empruntent les classes du jeu — .art-cellule,
+                .art-juste, .art-anime — et non plus un style qui leur
+                ressemble. Une démonstration qui diverge de ce qu'elle
+                démontre est pire qu'une absence de démonstration, et deux
+                apparences écrites à deux endroits divergent tôt ou tard.
+
+                Toutes en jade : la démonstration montre une tentative
+                trouvée, ce sont les sept attributs de l'artiste lui-même.
+
+                Le retard reprend les instants du scénario, T_INDICES puis un
+                pas par colonne. Il passe par --retard, que la feuille lit
+                pour la valeur comme pour le trait qui la surmonte. */}
             {indices.map((v, i) => (
-              <div key={i} style={{
-                background: 'var(--onyx-haut)', color: 'var(--jade)',
-                border: '0.5px solid var(--jade)', borderRadius: 'var(--rayon-controle)',
-                padding: '9px 6px', fontSize: 12, textAlign: 'center', whiteSpace: 'nowrap',
-                animation: `artCellule 420ms ${T_INDICES + i * PAS_CELLULE}ms ease-out both`,
-              }}>
-                {v}
+              <div
+                key={i}
+                className={'art-cellule art-juste art-anime' + (i === 0 ? ' art-ancre' : '')}
+                style={{
+                  whiteSpace: 'nowrap',
+                  '--retard': `${T_INDICES + i * PAS_CELLULE}ms`,
+                }}
+              >
+                <span className="art-valeur">{v}</span>
               </div>
             ))}
           </div>

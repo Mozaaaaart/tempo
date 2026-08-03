@@ -25,8 +25,23 @@ export async function GET(request) {
     }
 
     const data = await res.json();
+
+    /* CONTRADICTION à ne pas réintroduire : la réponse annonçait un jour de
+       cache, y compris quand l'appelant avait demandé fresh=1. Contourner le
+       cache côté serveur pour aussitôt en installer un en aval revient à
+       n'avoir rien contourné : l'appel suivant recevait la même URL
+       d'extrait, avec son jeton d'autant plus vieux, et l'élément audio
+       échouait en NotSupportedError sur ce qui n'était plus un MP3.
+
+       Une réponse demandée fraîche ne se met donc pas en cache. Les autres
+       gardent le leur : le BPM et la date de sortie d'un morceau ne changent
+       pas. */
     return NextResponse.json(data, {
-      headers: { 'Cache-Control': 's-maxage=86400, stale-while-revalidate=604800' }
+      headers: {
+        'Cache-Control': fresh
+          ? 'no-store'
+          : 's-maxage=86400, stale-while-revalidate=604800',
+      },
     });
   } catch (err) {
     return NextResponse.json(

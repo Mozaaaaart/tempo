@@ -320,12 +320,16 @@ function Surcouche({ annonce, onPasser }) {
             position: 'absolute', inset: 0,
             display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', gap: 'var(--e5)',
+            /* Sans ce rembourrage, les blocs de la démonstration touchent les
+               bords du panneau dès que celui-ci descend sous leur largeur de
+               référence. */
+            padding: '0 var(--e4)',
             pointerEvents: 'none',
             animation: `duelActeSortie 340ms ${D2_SORTIE}ms ease-in both`,
           }}>
             {/* Étiquette de phase : « écoute » puis « à toi », au même endroit,
                 l'une remplaçant l'autre — c'est le basculement du jeu. */}
-            <div style={{ position: 'relative', height: 20, width: 320 }}>
+            <div style={{ position: 'relative', height: 20, width: '100%', maxWidth: 320 }}>
               <div className="etiquette-mono" style={{
                 position: 'absolute', inset: 0, textAlign: 'center', color: 'var(--lin)',
                 animation: `duelTexteEntree 300ms ${D2_ECOUTE}ms ease-out both, demoEtiquetteSort 240ms ${D2_PREP - 120}ms ease-in forwards`,
@@ -364,7 +368,17 @@ function Surcouche({ annonce, onPasser }) {
             {/* La mesure. Les notes s'allument au passage de la tête de
                 lecture, puis se rallument sous les frappes. */}
             <div style={{
-              position: 'relative', width: 400,
+              /* LARGEUR MAXIMALE, et non largeur fixe.
+
+                 Quatre cents pixels était la largeur de référence de la
+                 démonstration ; sur un panneau qui en fait 328, la grille
+                 débordait des deux côtés et les cases des extrémités étaient
+                 tranchées par le rognage. La démonstration montrait alors une
+                 mesure incomplète, ce qui est le contraire de son propos.
+
+                 Rien à changer à l'intérieur : la grille est en fractions,
+                 elle se resserre d'elle-même. */
+              position: 'relative', width: '100%', maxWidth: 400,
               animation: `duelTexteEntree 320ms ${D2_GRILLE}ms ease-out both`,
             }}>
               <div style={{ display: 'grid', gridTemplateColumns: `repeat(${DEMO_PAS}, 1fr)`, gap: 8 }}>
@@ -421,7 +435,7 @@ function Surcouche({ annonce, onPasser }) {
             {/* Zone de frappe : elle s'illumine à chaque temps du motif, au
                 moment exact où la tête de lecture passe dessus. */}
             <div style={{
-              position: 'relative', width: 400, height: 84,
+              position: 'relative', width: '100%', maxWidth: 400, height: 84,
               borderRadius: 'var(--rayon-carte)',
               border: '0.5px solid var(--filet)',
               /* Elle clignote pendant la préparation : l'endroit où frapper

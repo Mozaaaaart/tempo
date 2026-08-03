@@ -379,7 +379,18 @@ export function ArtistInput({ value, onChange, onSubmit, disabled, erreur = fals
   }
 
   return (
-    <div style={{ position: 'relative' }}>
+    /* Le conteneur se HISSE quand la liste est ouverte.
+
+       La liste porte déjà un z-index de 100, mais un z-index ne classe que
+       des frères à l'intérieur d'un même contexte d'empilement. Depuis
+       l'intérieur de ce conteneur, elle ne peut pas passer devant un élément
+       qui est frère du conteneur lui-même — le bouton « Essayer », par
+       exemple, ou tout ce qui vient après dans le panneau.
+
+       Élever le conteneur règle ce niveau-là. Il reste à zéro au repos : un
+       élément durablement au-dessus des autres finit toujours par gêner
+       quelque chose. */
+    <div style={{ position: 'relative', zIndex: open ? 50 : undefined }}>
       <input
         value={value}
         onChange={(e) => { onChange(e.target.value); setOpen(true); setHighlight(0); }}
@@ -594,18 +605,44 @@ export function JeuArtiste({ onDone, daily = false, revelation = true }) {
     }
   }
 
+  /* ---- Une cellule d'indice ----
+     Le style vit dans globals.css, sous .art-cellule. Seule l'animation
+     reste ici : elle dépend du numéro de colonne, qu'une feuille ne connaît
+     pas.
+
+     Ce qui change par rapport à la version en pastilles : la cellule n'a
+     plus de fond, plus de contour, plus de rayon. Un attribut trouvé se dit
+     par un FILET SUPÉRIEUR accentué, comme partout ailleurs sur le site —
+     c'est la grammaire de la grille des cinq épreuves et de la bande des
+     dix. En jade plutôt qu'en or, parce qu'ici le filet annonce un résultat
+     et non une position.
+
+     Et l'attribut manqué ne dit plus rien. Six pastilles carmin par rangée
+     faisaient un mur rouge où l'œil ne trouvait plus les rares trouvailles,
+     alors que ce sont elles qu'on cherche. L'absence suffit à dire l'échec ;
+     la couleur est réservée à ce qui a marché. */
   const cell = (val, ok, col, animate, arrow = '') => (
-    <div style={{
-      background: 'var(--onyx-haut)',
-      color: ok ? 'var(--jade)' : 'rgba(226, 75, 74, 0.65)',
-      border: `0.5px solid ${ok ? 'var(--jade)' : 'rgba(226, 75, 74, 0.3)'}`,
-      borderRadius: 'var(--rayon-controle)', padding: '8px 6px', fontSize: 12, textAlign: 'center',
-      ...(animate ? {
-        animation: `cellFlip 0.5s ease-out both`,
-        animationDelay: `${col * CELL_DELAY}s`,
-      } : {}),
-    }}>
-      {val}{arrow}
+    <div
+      className={
+        'art-cellule'
+        + (ok ? ' art-juste' : '')
+        + (col === 0 ? ' art-ancre' : '')
+        + (animate ? ' art-anime' : '')
+      }
+      /* Le retard passe par une PROPRIÉTÉ PERSONNALISÉE et non par
+         animationDelay.
+
+         Deux choses doivent partir ensemble : la valeur et le filet posé
+         au-dessus d'elle. Le filet est un pseudo-élément — c'est ce qui
+         permet de le TRACER de gauche à droite, ce qu'une bordure ne sait
+         pas faire — et un pseudo-élément n'accepte pas de style en ligne.
+
+         Il hérite en revanche des propriétés personnalisées de son hôte. La
+         feuille peut donc lire var(--retard) pour la cellule comme pour son
+         trait, et les deux se déclenchent à la même milliseconde. */
+      style={animate ? { '--retard': `${col * CELL_DELAY}s` } : undefined}
+    >
+      <span className="art-valeur">{val}{arrow}</span>
     </div>
   );
 
@@ -626,11 +663,6 @@ export function JeuArtiste({ onDone, daily = false, revelation = true }) {
   return (
     <div style={{ ...panel, overflow: 'visible', textAlign: 'center', position: 'relative' }}>
       <style>{`
-        @keyframes cellFlip {
-          0% { transform: rotateX(90deg); opacity: 0; background: var(--onyx-haut); color: transparent; }
-          50% { transform: rotateX(90deg); opacity: 1; }
-          100% { transform: rotateX(0deg); opacity: 1; }
-        }
         @keyframes artApparition {
           from { opacity: 0; transform: translateY(8px); }
           to   { opacity: 1; transform: translateY(0); }
@@ -755,8 +787,13 @@ export function JeuArtiste({ onDone, daily = false, revelation = true }) {
             disabled={chargementExtrait}
             style={{
               ...btn(false, chargementExtrait),
+              /* justifyContent center dès qu'un bouton peut être étiré :
+                 sans elle, un inline-flex laisse son icône et son texte au
+                 début de la ligne. Sans effet tant qu'il prend la largeur de
+                 son contenu, indispensable dès qu'il ne la prend plus. */
               display: 'inline-flex',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: 'var(--e2)',
               borderColor: joue ? 'var(--or)' : 'var(--filet-fort)',
               color: joue ? 'var(--or)' : 'var(--ivoire)',
@@ -785,9 +822,18 @@ export function JeuArtiste({ onDone, daily = false, revelation = true }) {
 
       {/* ---- Grille des tentatives ---- */}
       {guesses.length > 0 && (
-        <div style={{
+        <div className="artiste-grille" style={{
           display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 0.8fr 0.9fr 0.8fr 0.9fr',
-          gap: 6, marginTop: 'var(--e5)', perspective: '600px', textAlign: 'left',
+          /* Gouttière NULLE : les filets supérieurs des cellules se touchent
+             et forment une ligne continue par rangée. Avec six pixels
+             d'écart, ils redevenaient sept tirets séparés — le contraire d'un
+             tableau. La respiration vient du rembourrage des cellules.
+
+             Plus de perspective : elle ne servait qu'au basculement en trois
+             dimensions de l'ancienne révélation. */
+          /* Plus de textAlign left ici : chaque cellule décide de son
+             alignement, et elles sont toutes centrées sous leur en-tête. */
+          gap: 0, marginTop: 'var(--e5)',
         }}>
           {['Artiste', 'Genre', 'Pays', 'Débuts', 'Format', 'Sexe', 'Streams'].map((h) => (
             <div key={h} className="etiquette-mono" style={{ color: 'var(--cendre)', textAlign: 'center', fontSize: 9.5 }}>{h}</div>
@@ -1142,7 +1188,7 @@ export function JeuPochette({ onDone, daily = false, revelation = true }) {
            Le cadre est rendu même sans pochette chargée : sinon le panneau
            n'a pas sa hauteur définitive et la surcouche d'intro s'y trouve
            rognée. */}
-      <div style={{
+      <div className="poch-scene" style={{
         display: 'grid',
         // Colonnes latérales de LARGEUR ÉGALE et fixe, pas des 1fr : une
         // fraction se répartit selon la place restante, donc la colonne de
@@ -1152,9 +1198,9 @@ export function JeuPochette({ onDone, daily = false, revelation = true }) {
         gap: 'var(--e3)', alignItems: 'start',
         marginBottom: 'var(--e4)',
       }}>
-        <div aria-hidden="true" />
+        <div className="poch-vide" aria-hidden="true" />
 
-        <div style={{
+        <div className="poch-cadre" style={{
           width: '100%', aspectRatio: '1 / 1', overflow: 'hidden',
           borderRadius: 'var(--rayon-carte)',
           border: `${bilan ? '1px' : '0.5px'} solid ${bilan ? 'var(--or)' : 'var(--filet)'}`,
@@ -1188,27 +1234,26 @@ export function JeuPochette({ onDone, daily = false, revelation = true }) {
         {/* Colonne des tentatives : chaque jeton entre par la gauche */}
         {/* alignItems: flex-start → chaque jeton fait la largeur de son nom,
             au lieu de s'étirer sur toute la colonne. */}
-        <div style={{
+        <div className="poch-essais" style={{
           textAlign: 'left', display: 'flex', flexDirection: 'column',
           alignItems: 'flex-start', gap: POCH_JETON_GAP, minWidth: 0,
         }}>
           {tried.length > 0 && (
-            <div className="etiquette-mono" style={{
+            <div className="etiquette-mono poch-compteur" style={{
               color: 'var(--cendre)', height: POCH_ENTETE_H, lineHeight: `${POCH_ENTETE_H}px`,
             }}>
               {tried.length}/{POCH_TRIES}
             </div>
           )}
           {tried.map((t, i) => (
-            <div key={`${t.nom}-${i}`} style={{
+            <div key={`${t.nom}-${i}`} className="poch-jeton" style={{
               fontFamily: 'var(--sans)', fontSize: POCH_JETON_TXT,
               height: POCH_JETON_H, boxSizing: 'border-box',
               display: 'flex', alignItems: 'center',
               padding: '0 11px', maxWidth: '100%',
               borderRadius: 'var(--rayon-controle)',
-              background: 'var(--onyx-haut)',
-              color: t.bon ? 'var(--jade)' : 'rgba(226, 75, 74, 0.65)',
-              border: `0.5px solid ${t.bon ? 'var(--jade)' : 'rgba(226, 75, 74, 0.3)'}`,
+              color: t.bon ? 'var(--jade)' : 'var(--carmin)',
+              border: `0.5px solid ${t.bon ? 'var(--jade)' : 'rgba(168, 83, 81, 0.45)'}`,
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               animation: 'pochJeton 320ms cubic-bezier(0.22, 1, 0.36, 1) both',
             }}>
@@ -1221,7 +1266,7 @@ export function JeuPochette({ onDone, daily = false, revelation = true }) {
       {loadError ? (
         <button onClick={load} style={btn(true, false)}>Réessayer le chargement</button>
       ) : (
-        <div style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap', justifyContent: 'center' }}>
+        <div className="poch-actions" style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap', justifyContent: 'center' }}>
           <ArtistInput
             value={input} onChange={setInput} onSubmit={guess}
             disabled={done || !track} erreur={erreur}
@@ -1241,8 +1286,13 @@ export function JeuPochette({ onDone, daily = false, revelation = true }) {
             disabled={chargementExtrait}
             style={{
               ...btn(false, chargementExtrait),
+              /* justifyContent center dès qu'un bouton peut être étiré :
+                 sans elle, un inline-flex laisse son icône et son texte au
+                 début de la ligne. Sans effet tant qu'il prend la largeur de
+                 son contenu, indispensable dès qu'il ne la prend plus. */
               display: 'inline-flex',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: 'var(--e2)',
               borderColor: joue ? 'var(--or)' : 'var(--filet-fort)',
               color: joue ? 'var(--or)' : 'var(--ivoire)',
@@ -2395,6 +2445,14 @@ const FAMILLES = {
 const INSTRUMENTS = Object.keys(FAMILLES);
 
 const SAMPLE_BASE = 'https://nbrosowsky.github.io/tonejs-instruments/samples/';
+
+/* Échantillons dont on a VÉRIFIÉ l'existence, par répertoire d'instrument.
+
+   Au niveau du module, donc conservé d'une manche à l'autre et d'une épreuve
+   à l'autre — mais pas d'une visite à l'autre, ce qui est exactement la durée
+   de vie souhaitée : assez longue pour ne sonder qu'une fois, assez courte
+   pour qu'un ajout dans la banque soit pris en compte au rechargement. */
+const ECHANTILLONS_CONNUS = new Map();
 const SAMPLES = {
   'Piano':              { dir: 'piano',           candidates: ['C4', 'A4', 'C5', 'E4'], shift: 0 },
   'Orgue':              { dir: 'organ',           candidates: ['C4', 'A4', 'C5', 'F4'], shift: 0 },
@@ -2509,17 +2567,54 @@ export function JeuInstrument({ onDone, daily = false, revelation = true }) {
     appliquerGain();
   }, [tone, volume, loadingSound]);
 
-  // Ne garde que les échantillons réellement présents sur le serveur
+  /* Ne garde que les échantillons réellement présents sur le serveur.
+
+     La banque d'échantillons ne publie pas la liste de ses fichiers : la
+     seule façon de savoir si une note existe est de la demander. Les 404 qui
+     s'affichent en console sont donc attendus, pas des pannes — mais ils
+     avaient deux vrais défauts.
+
+     LE SONDAGE ÉTAIT REFAIT À CHAQUE MANCHE. Le même instrument redemandait
+     les mêmes fichiers absents à chaque nouvelle mélodie, indéfiniment. Le
+     résultat est pourtant invariable : ce qui n'existe pas ce tour-ci
+     n'existera pas au suivant. Il est désormais retenu pour la session, dans
+     une table au niveau du module — donc partagée par toutes les instances
+     de l'épreuve, accès libre et défi du jour compris.
+
+     ET IL ÉTAIT SÉQUENTIEL. Cinq allers-retours l'un après l'autre avant la
+     première note, là où ils ne dépendent pas les uns des autres. Ils
+     partent maintenant ensemble ; la sélection des trois premiers se fait
+     après, dans l'ordre des candidats — cet ordre porte une intention, les
+     notes les plus centrales d'abord, et il ne doit pas dépendre de qui
+     répond le plus vite. */
   async function existingUrls(dir, candidates) {
+    const connu = ECHANTILLONS_CONNUS.get(dir);
+    if (connu) return connu;
+
+    const reponses = await Promise.all(
+      candidates.map(async (note) => {
+        try {
+          const res = await fetch(`${SAMPLE_BASE}${dir}/${note}.mp3`, { method: 'HEAD' });
+          return res.ok ? note : null;
+        } catch { return null; }
+      })
+    );
+
     const urls = {};
-    for (const note of candidates) {
-      try {
-        const res = await fetch(`${SAMPLE_BASE}${dir}/${note}.mp3`, { method: 'HEAD' });
-        if (res.ok) urls[note] = `${note}.mp3`;
-        if (Object.keys(urls).length >= 3) break;
-      } catch { /* réseau : on tente le suivant */ }
+    for (const note of reponses) {
+      if (!note) continue;
+      urls[note] = `${note}.mp3`;
+      if (Object.keys(urls).length >= 3) break;
     }
-    if (!Object.keys(urls).length) urls[candidates[0]] = `${candidates[0]}.mp3`;
+    /* Aucune réponse exploitable — serveur muet, hors ligne : on tente quand
+       même le premier candidat plutôt que de renoncer au son. Ce cas-là n'est
+       PAS mémorisé, il tient à l'état du réseau et non à celui du dépôt. */
+    if (!Object.keys(urls).length) {
+      urls[candidates[0]] = `${candidates[0]}.mp3`;
+      return urls;
+    }
+
+    ECHANTILLONS_CONNUS.set(dir, urls);
     return urls;
   }
 
@@ -2818,12 +2913,13 @@ export function JeuInstrument({ onDone, daily = false, revelation = true }) {
           </div>
           {/* Grille plutôt que flex : trois colonnes fixes garantissent deux
              lignes de trois, là où le retour à la ligne automatique dépendait
-             de la largeur des noms. Sous 560 px, on retombe à deux colonnes. */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-            gap: 'var(--e2)', maxWidth: 560, margin: '0 auto',
-          }}>
+             de la largeur des noms. Deux colonnes sous 640 px.
+
+             La disposition vit dans globals.css, sous .choix-familles : un
+             style en ligne ne peut pas porter de point de rupture, et c'est
+             la raison pour laquelle les deux colonnes annoncées ici n'ont
+             jamais existé. */}
+          <div className="choix-familles">
           {Object.entries(parFamille).map(([fam, list]) => (
             <button
               key={fam}
@@ -2888,15 +2984,13 @@ export function JeuInstrument({ onDone, daily = false, revelation = true }) {
             Lequel de ces instruments est-ce ?
           </div>
 
-          {/* Une seule ligne : `nowrap` empêche le retour à la ligne et les
-             boutons se resserrent d'eux-mêmes — cinq guitares tiennent sans
-             qu'une « Basse » esseulée passe en dessous. `minWidth: 0` est ce
-             qui autorise un élément flex à rétrécir sous la taille de son
-             texte, sans quoi la ligne déborderait au lieu de s'ajuster. */}
-          <div style={{
-            display: 'flex', gap: 6, flexWrap: 'nowrap',
-            justifyContent: 'center', alignItems: 'stretch',
-          }}>
+          {/* Une seule ligne sur écran large : les boutons se resserrent
+             d'eux-mêmes et une « Basse » esseulée ne passe pas en dessous.
+             Sous 640 px la ligne devient une colonne — cinq noms de guitares
+             ne tiennent pas sur 328 px, quoi qu'on resserre.
+
+             Voir .choix-instruments dans globals.css. */}
+          <div className="choix-instruments">
             {parFamille[famille].map((n) => (
               <button
                 key={n} onClick={() => pick(n)}
@@ -2926,12 +3020,10 @@ export function JeuInstrument({ onDone, daily = false, revelation = true }) {
           <div className="etiquette-mono" style={{ color: 'var(--lin)', marginBottom: 'var(--e2)' }}>
             {familleCible}
           </div>
-          {/* `nowrap` et `minWidth: 0`, comme à la sélection : les cinq cordes
-             pincées passaient à la ligne, et la révélation ne ressemblait plus
-             à l'écran qu'on venait de quitter. */}
-          <div style={{
-            display: 'flex', gap: 6, flexWrap: 'nowrap', justifyContent: 'center',
-          }}>
+          {/* Même disposition qu'à la sélection, et c'est tout l'intérêt de
+             partager la classe : la révélation ressemble à l'écran qu'on
+             vient de quitter, en colonne comme en ligne. */}
+          <div className="choix-instruments">
             {parFamille[familleCible].map((n) => {
               const juste = n === target;
               const rate = n === picked && n !== target;

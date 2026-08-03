@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /* ============================================================
    SURCOUCHE D'INTRODUCTION — DUEL, MODE DÉFI DU JOUR
@@ -72,13 +72,59 @@ export function dureeIntroDuel(manches = 5) {
 
 export const INTRO_DUEL_QUOTIDIEN_TOTAL = dureeIntroDuel(5);
 
-/* ---------- Repère de la scène ----------
-   Valeurs reprises de la démonstration du mode libre : la scène doit occuper
-   la même surface, sans quoi la reconnaissance ne joue plus. */
-const DEMO_L = 620;
-const DEMO_H = 504;
-const DEMO_POCHETTE = 132;
-const DEMO_COL = 250;
+/* ---------- Repères de la scène ----------
+ *
+ * DEUX géométries, et non une réduite.
+ *
+ * La scène large reprend la démonstration du mode libre au pixel près : deux
+ * colonnes séparées par un filet vertical, le « vs » posé dessus. C'est ce
+ * que montre le jeu sur un écran large, et toute la valeur d'une intro tient
+ * à ce qu'elle ressemble à ce qui suit.
+ *
+ * Mais sur mobile, le jeu NE MONTRE PLUS ÇA. La règle .duel-grille de
+ * globals.css y empile les deux morceaux et couche le « vs » en séparateur
+ * horizontal. Continuer à réduire la scène large donnait donc une intro qui
+ * annonçait un plateau que le joueur n'allait pas voir — et, à l'échelle
+ * nécessaire pour la faire tenir, un texte de six pixels.
+ *
+ * La géométrie étroite reprend donc l'ordre du plateau mobile : pochette,
+ * titre, artiste, bouton d'écoute, puis le chiffre pour le premier morceau et
+ * la question pour le second.
+ *
+ * Toutes les ordonnées sont explicites plutôt que déduites d'un flux : le
+ * curseur se déplace en coordonnées absolues, et il doit viser une touche
+ * dont la position est connue à l'avance. */
+const GEO_LARGE = {
+  L: 620, H: 504,
+  pochette: 132, col: 250,
+  fsTitre: 26, fsRegle: 13, fsNom: 14, fsArtiste: 12.5, fsChiffre: 22,
+  titre: 0, regle: 40, carteA: 74, vs: 126, carteB: 74,
+  basA: 326, basB: 326, manche: 458,
+  repos: { x: 520, y: 424 }, cible: { x: 372, y: 380 },
+};
+
+/* Les ordonnées ci-dessous sont VÉRIFIÉES, pas estimées : une carte occupe
+   116 de pochette, 12 de marge, 16 de titre, 15 d'artiste, 12 de marge et 33
+   de bouton, soit 204. Chaque bloc démarre après la fin du précédent, et le
+   dernier s'arrête à 676 dans un cadre de 684. Un chevauchement ne se verrait
+   qu'à l'écran, et seulement sur le morceau dont le titre est le plus long. */
+const GEO_ETROITE = {
+  L: 300, H: 684,
+  pochette: 116, col: 300,
+  fsTitre: 19, fsRegle: 11, fsNom: 13, fsArtiste: 11.5, fsChiffre: 21,
+  titre: 0, regle: 26,
+  carteA: 52,          // pochette du premier morceau        →  52-256
+  basA: 264,           // son nombre de streams              → 264-308
+  vs: 316,             // séparateur horizontal              → 316-336
+  carteB: 344,         // pochette du second morceau         → 344-548
+  basB: 556,           // question, réponse, deux touches    → 556-646
+  manche: 654,         //                                    → 654-676
+  /* La cible est le centre de la touche « plus » : les deux touches font
+     104 de large avec 8 de gouttière, donc 216 centrés dans 300 — « plus »
+     occupe 42 à 146, centre 94. Verticalement, les touches vont de 594 à
+     646 ; la pointe du curseur vise un peu au-dessus du centre. */
+  repos: { x: 244, y: 660 }, cible: { x: 94, y: 612 },
+};
 
 /* Les deux morceaux de démonstration, identiques à ceux du mode libre. Les
    pochettes viennent de Deezer comme en jeu : un aplat de couleur ne
@@ -89,28 +135,81 @@ const DEMO_COL = 250;
 const DEMO_GAUCHE = { terme: 'The Weeknd Starboy', titre: 'Starboy', artiste: 'The Weeknd', streams: '2,27 Mds' };
 const DEMO_DROITE = { terme: 'Ed Sheeran Shape of You', titre: 'Shape of You', artiste: 'Ed Sheeran', streams: '4,05 Mds' };
 
-const DEMO_REPOS = { x: 520, y: 424 };
-const DEMO_CIBLE = { x: 372, y: 380 };   // le bouton « plus »
-
 /* Trajet du curseur, généré à partir des mêmes instants que le clic : le
    geste ne peut donc pas se décaler de son effet. Concaténation de chaînes
    et non gabarit : un accent grave égaré fermerait le bloc CSS en plein
    milieu, ce qui ne se voit qu'au build. */
-function keyframesCurseur() {
+function keyframesCurseur(G) {
   const p = (t) => (((t - T_CURSEUR) / D_CURSEUR) * 100).toFixed(1);
   const pos = (c, dy) => 'translate(' + c.x + 'px, ' + (c.y + (dy || 0)) + 'px)';
   return [
-    '0%   { transform: ' + pos(DEMO_REPOS) + '; opacity: 0; }',
-    '10%  { transform: ' + pos(DEMO_REPOS) + '; opacity: 1; }',
-    p(T_CLIC - 60) + '% { transform: ' + pos(DEMO_CIBLE) + '; }',
-    p(T_CLIC) + '% { transform: ' + pos(DEMO_CIBLE, 4) + '; }',
-    p(T_CLIC + 90) + '% { transform: ' + pos(DEMO_CIBLE) + '; }',
-    '92%  { transform: ' + pos(DEMO_CIBLE) + '; opacity: 1; }',
-    '100% { transform: ' + pos(DEMO_CIBLE) + '; opacity: 0; }',
+    '0%   { transform: ' + pos(G.repos) + '; opacity: 0; }',
+    '10%  { transform: ' + pos(G.repos) + '; opacity: 1; }',
+    p(T_CLIC - 60) + '% { transform: ' + pos(G.cible) + '; }',
+    p(T_CLIC) + '% { transform: ' + pos(G.cible, 4) + '; }',
+    p(T_CLIC + 90) + '% { transform: ' + pos(G.cible) + '; }',
+    '92%  { transform: ' + pos(G.cible) + '; opacity: 1; }',
+    '100% { transform: ' + pos(G.cible) + '; opacity: 0; }',
   ].join('\n');
 }
 
 const virgule = (x) => String(x).replace('.', ',');
+
+/* Une carte de morceau : pochette, titre, artiste, bouton d'écoute.
+ *
+ * Au niveau du module, et non dans le corps du composant. Un composant défini
+ * à l'intérieur d'un autre est recréé à chaque rendu du parent : React le
+ * traite comme un type neuf, démonte l'ancien sous-arbre et remonte le nouvel
+ * — ce qui relancerait ici les animations d'entrée à chaque battement de la
+ * chronologie.
+ *
+ * Une seule définition pour les deux dispositions : c'est ce qui garantit que
+ * la version empilée et la version côte à côte ne divergeront pas. */
+function CarteMorceau({ m, src, G }) {
+  return (
+    <div style={{ width: '100%', textAlign: 'center' }}>
+      <div style={{
+        width: G.pochette, height: G.pochette, margin: '0 auto',
+        borderRadius: 'var(--rayon-carte)', overflow: 'hidden',
+        background: 'var(--onyx-haut)',
+        border: '0.5px solid var(--filet)',
+      }}>
+        {src && (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={src} alt="" referrerPolicy="no-referrer"
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          />
+        )}
+      </div>
+
+      <div style={{
+        fontFamily: 'var(--sans)', fontSize: G.fsNom, fontWeight: 500,
+        color: 'var(--ivoire)', marginTop: 'var(--e3)', lineHeight: 1.2,
+      }}>
+        {m.titre}
+      </div>
+      <div style={{ fontFamily: 'var(--sans)', fontSize: G.fsArtiste, color: 'var(--lin)', marginTop: 2 }}>
+        {m.artiste}
+      </div>
+
+      {/* Bouton d'écoute, comme en jeu : inerte ici, mais il doit être là —
+          c'est par lui qu'on juge. */}
+      <div style={{
+        display: 'inline-flex', alignItems: 'center', gap: 8,
+        marginTop: 'var(--e3)', padding: '8px 14px',
+        borderRadius: 'var(--rayon-controle)',
+        border: '0.5px solid var(--filet-fort)',
+        fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--ivoire)',
+      }}>
+        <svg width="9" height="11" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
+          <path d="M0 0v12l10-6z" />
+        </svg>
+        Écouter 15 s
+      </div>
+    </div>
+  );
+}
 
 export default function IntroDuelQuotidien({ manches = 5, onFin }) {
   const { tCalcul, tNote, tSortie, total } = instantsDuel(manches);
@@ -129,6 +228,69 @@ export default function IntroDuelQuotidien({ manches = 5, onFin }) {
      le temps à la requête d'aboutir ; si elle échoue, les cadres restent
      vides et le reste de la scène tient debout. Même route que le jeu. */
   const [pochettes, setPochettes] = useState({ gauche: null, droite: null });
+
+  /* ---- Mise à l'échelle MESURÉE ----
+   *
+   * La scène a une largeur fixe de 620 : sur un panneau étroit, elle est
+   * réduite plutôt que recomposée, sinon elle cesserait de ressembler au
+   * plateau qu'elle annonce.
+   *
+   * Elle l'était par deux paliers en dur, 0,78 puis 0,56, décidés sur la
+   * largeur de la FENÊTRE. Or ce qui compte est la largeur du PANNEAU, qui
+   * est bien plus petite — la page a ses marges, le panneau son rembourrage.
+   * Sur un téléphone de 390 px, le palier de 0,56 donnait une scène de
+   * 347 px dans un panneau qui en offre 296 : elle débordait des deux côtés
+   * et le voile, qui rogne ce qui dépasse, tranchait les deux pochettes.
+   *
+   * On mesure donc l'hôte, comme le font les sept autres intros. La hauteur
+   * entre aussi dans le calcul : le panneau du duel change de hauteur selon
+   * ce qu'il contient, et une scène rognée par le bas serait le même défaut
+   * dans l'autre sens.
+   *
+   * Vingt-quatre pixels de retrait de chaque côté : sans eux, la scène
+   * touche exactement le bord et n'a plus l'air posée dans le panneau. */
+  const hote = useRef(null);
+  const [echelle, setEchelle] = useState(1);
+  /* La géométrie se choisit sur la largeur du PANNEAU, pas sur celle de la
+     fenêtre : c'est la surface dont la scène dispose réellement. Le seuil est
+     celui à partir duquel la scène large ne tient plus sans devenir illisible
+     — deux colonnes de 250 plus leurs gouttières. */
+  /* Valeur de départ décidée SANS ATTENDRE la mesure.
+   *
+   * L'état initial était `false`, donc la géométrie large, corrigée ensuite
+   * par l'effet de mesure. Deux choses en dépendaient alors : que l'élément
+   * ait déjà une largeur au moment où l'effet s'exécute, et que le repli
+   * choisi quand il n'en a pas encore soit du bon côté. Ce repli valait la
+   * largeur de la scène large, soit 620 — c'est-à-dire précisément la valeur
+   * qui conclut « écran large ».
+   *
+   * matchMedia répond immédiatement et sans dépendre de la mise en page. La
+   * mesure garde ensuite le dernier mot : elle seule connaît la largeur du
+   * panneau, qui n'est pas celle de la fenêtre. */
+  const [etroit, setEtroit] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches
+  );
+  const G = etroit ? GEO_ETROITE : GEO_LARGE;
+
+  useEffect(() => {
+    const el = hote.current;
+    if (!el) return;
+    const calc = () => {
+      /* Repli sur la fenêtre, et non sur la largeur de la scène large : un
+         élément pas encore disposé rend zéro, et retomber sur 620 revenait à
+         affirmer qu'on est sur grand écran au moment même où on ne sait rien. */
+      const l = el.offsetWidth || window.innerWidth;
+      const h = el.offsetHeight || window.innerHeight;
+      const serre = l < 560;
+      setEtroit(serre);
+      const g = serre ? GEO_ETROITE : GEO_LARGE;
+      setEchelle(Math.min(1, (l - 24) / g.L, (h - 24) / g.H));
+    };
+    calc();
+    const ro = new ResizeObserver(calc);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     let annule = false;
@@ -165,6 +327,7 @@ export default function IntroDuelQuotidien({ manches = 5, onFin }) {
 
   return (
     <div
+      ref={hote}
       data-dq-surcouche
       onClick={passer}
       role={passer ? 'button' : undefined}
@@ -221,23 +384,21 @@ export default function IntroDuelQuotidien({ manches = 5, onFin }) {
           from { opacity: 0; transform: scale(0.5); }
           to   { opacity: 1; transform: scale(1); }
         }
-        @keyframes dqCurseur { ${keyframesCurseur()} }
+        @keyframes dqCurseur { ${keyframesCurseur(G)} }
         @media (prefers-reduced-motion: reduce) {
           [data-dq-surcouche], [data-dq-surcouche] * {
             animation-duration: 1ms !important;
             animation-delay: 0ms !important;
           }
         }
-        /* La scène a une largeur fixe : sur un panneau étroit elle est mise à
-           l'échelle plutôt que recomposée, sinon elle cesserait de ressembler
-           au plateau qu'elle annonce. */
-        @media (max-width: 760px) { [data-dq-scene] { transform: scale(0.78); } }
-        @media (max-width: 560px) { [data-dq-scene] { transform: scale(0.56); } }
       `}</style>
 
       <div
         data-dq-scene
-        style={{ position: 'relative', width: DEMO_L, height: DEMO_H, flexShrink: 0 }}
+        style={{
+          position: 'relative', width: G.L, height: G.H, flexShrink: 0,
+          transform: `scale(${echelle})`, transformOrigin: 'center',
+        }}
       >
         {/* ============ ACTE I — le plateau et le geste ============ */}
         <div style={{
@@ -248,8 +409,8 @@ export default function IntroDuelQuotidien({ manches = 5, onFin }) {
               règle attend que le titre soit posé — les deux ensemble se lisent
               comme un pavé, l'un après l'autre comme une phrase. */}
           <div style={{
-            position: 'absolute', top: 0, left: 0, right: 0, textAlign: 'center',
-            fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 500, lineHeight: 1,
+            position: 'absolute', top: G.titre, left: 0, right: 0, textAlign: 'center',
+            fontFamily: 'var(--mono)', fontSize: G.fsTitre, fontWeight: 500, lineHeight: 1,
             letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--or)',
             animation: 'dqEntree 340ms ' + T_TITRE + 'ms ease-out both',
           }}>
@@ -257,101 +418,96 @@ export default function IntroDuelQuotidien({ manches = 5, onFin }) {
           </div>
 
           <div style={{
-            position: 'absolute', top: 40, left: 0, right: 0, textAlign: 'center',
-            fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 500,
+            position: 'absolute', top: G.regle, left: 0, right: 0, textAlign: 'center',
+            fontFamily: 'var(--mono)', fontSize: G.fsRegle, fontWeight: 500,
             letterSpacing: '0.02em', color: 'var(--lin)',
             animation: 'dqEntree 320ms ' + T_REGLE + 'ms ease-out both',
           }}>
             Lequel des deux a été le plus écouté ?
           </div>
 
-          {/* ---------- Les deux colonnes ---------- */}
-          <div style={{
-            position: 'absolute', top: 74, left: 0, right: 0,
-            display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-            animation: 'dqEntree 340ms ' + T_CARTES + 'ms ease-out both',
-          }}>
-            {[
-              { m: DEMO_GAUCHE, src: pochettes.gauche, cote: 'gauche' },
-              { m: DEMO_DROITE, src: pochettes.droite, cote: 'droite' },
-            ].map(({ m, src, cote }, i) => (
-              <div key={cote} style={{
-                width: DEMO_COL, textAlign: 'center',
-                borderLeft: i === 1 ? '0.5px solid var(--filet)' : undefined,
-                paddingLeft: i === 1 ? 'var(--e5)' : undefined,
-                paddingRight: i === 0 ? 'var(--e5)' : undefined,
+          {/* ---------- Les deux morceaux ----------
+              Côte à côte quand la place le permet, empilés sinon — comme le
+              plateau du jeu, dont la règle .duel-grille fait exactement ce
+              basculement au même seuil. Les deux dispositions partagent la
+              même carte, il n'y a donc qu'un seul rendu à maintenir. */}
+          {etroit ? (
+            <>
+              <div style={{
+                position: 'absolute', top: G.carteA, left: 0, right: 0,
+                animation: 'dqEntree 340ms ' + T_CARTES + 'ms ease-out both',
               }}>
-                <div style={{
-                  width: DEMO_POCHETTE, height: DEMO_POCHETTE, margin: '0 auto',
-                  borderRadius: 'var(--rayon-carte)', overflow: 'hidden',
-                  background: 'var(--onyx-haut)',
-                  border: '0.5px solid var(--filet)',
-                }}>
-                  {src && (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img
-                      src={src} alt="" referrerPolicy="no-referrer"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                    />
-                  )}
-                </div>
+                <CarteMorceau m={DEMO_GAUCHE} src={pochettes.gauche} G={G} />
+              </div>
 
-                <div style={{
-                  fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 500,
-                  color: 'var(--ivoire)', marginTop: 'var(--e3)', lineHeight: 1.2,
+              {/* Le « vs » couché : deux filets et le glyphe entre eux. Un
+                  trait continu passant derrière le glyphe demanderait de lui
+                  peindre un fond, et aucun aplat ne se confond avec le voile
+                  translucide posé sur le panneau. */}
+              <div style={{
+                position: 'absolute', top: G.vs, left: 0, right: 0,
+                display: 'flex', alignItems: 'center', gap: 'var(--e3)', padding: '0 24px',
+                animation: 'dqEntree 340ms ' + (T_CARTES + 120) + 'ms ease-out both',
+              }}>
+                <span style={{ flex: 1, height: '0.5px', background: 'var(--filet)' }} />
+                <span style={{
+                  fontFamily: 'var(--serif, var(--mono))', fontSize: 20,
+                  color: 'var(--cendre)', lineHeight: 1,
                 }}>
-                  {m.titre}
-                </div>
-                <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--lin)', marginTop: 2 }}>
-                  {m.artiste}
-                </div>
+                  vs
+                </span>
+                <span style={{ flex: 1, height: '0.5px', background: 'var(--filet)' }} />
+              </div>
 
-                {/* Bouton d'écoute, comme en jeu : inerte ici, mais il doit
-                    être là — c'est par lui qu'on juge. */}
+              <div style={{
+                position: 'absolute', top: G.carteB, left: 0, right: 0,
+                animation: 'dqEntree 340ms ' + T_CARTES + 'ms ease-out both',
+              }}>
+                <CarteMorceau m={DEMO_DROITE} src={pochettes.droite} G={G} />
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{
+                position: 'absolute', top: G.carteA, left: 0, right: 0,
+                display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+                animation: 'dqEntree 340ms ' + T_CARTES + 'ms ease-out both',
+              }}>
+                <div style={{ width: G.col, paddingRight: 'var(--e5)' }}>
+                  <CarteMorceau m={DEMO_GAUCHE} src={pochettes.gauche} G={G} />
+                </div>
                 <div style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 8,
-                  marginTop: 'var(--e3)', padding: '8px 14px',
-                  borderRadius: 'var(--rayon-controle)',
-                  border: '0.5px solid var(--filet-fort)',
-                  fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--ivoire)',
+                  width: G.col, borderLeft: '0.5px solid var(--filet)', paddingLeft: 'var(--e5)',
                 }}>
-                  <svg width="9" height="11" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
-                    <path d="M0 0v12l10-6z" />
-                  </svg>
-                  Écouter 15 s
+                  <CarteMorceau m={DEMO_DROITE} src={pochettes.droite} G={G} />
                 </div>
               </div>
-            ))}
-          </div>
 
-          {/* « vs » posé sur le filet central */}
-          <div style={{
-            position: 'absolute', top: 126, left: 0, right: 0, textAlign: 'center',
-            fontFamily: 'var(--serif, var(--mono))', fontSize: 22, color: 'var(--cendre)',
-            animation: 'dqEntree 340ms ' + (T_CARTES + 120) + 'ms ease-out both',
-          }}>
-            vs
-          </div>
+              {/* « vs » posé sur le filet central */}
+              <div style={{
+                position: 'absolute', top: G.vs, left: 0, right: 0, textAlign: 'center',
+                fontFamily: 'var(--serif, var(--mono))', fontSize: 22, color: 'var(--cendre)',
+                animation: 'dqEntree 340ms ' + (T_CARTES + 120) + 'ms ease-out both',
+              }}>
+                vs
+              </div>
+            </>
+          )}
 
-          {/* ---------- Bas des deux colonnes ----------
-              Une seule rangée plutôt que deux blocs posés chacun sur une
-              moitié : une largeur de 50 % centrerait sur la demi-scène et non
-              sur la colonne, qui est décalée par sa gouttière. Les deux
-              nombres partagent en prime un emplacement de même hauteur, donc
-              ils tombent sur la même ligne. */}
+          {/* ---------- Le chiffre connu, sous le premier morceau ---------- */}
           <div style={{
-            position: 'absolute', top: 326, left: 0, right: 0,
-            display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+            position: 'absolute', top: G.basA, left: 0, right: 0,
+            display: 'flex', justifyContent: 'center',
           }}>
-            {/* Gauche : le chiffre connu */}
             <div style={{
-              width: DEMO_COL, textAlign: 'center', paddingRight: 'var(--e5)',
+              width: G.col, textAlign: 'center',
+              paddingRight: etroit ? 0 : 'var(--e5)',
               boxSizing: 'border-box', opacity: 0,
               animation: 'dqEntree 340ms ' + T_CHIFFRE + 'ms ease-out both',
             }}>
               <div style={{
                 height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 500, lineHeight: 1,
+                fontFamily: 'var(--mono)', fontSize: G.fsChiffre, fontWeight: 500, lineHeight: 1,
                 color: 'var(--or)',
               }}>
                 {DEMO_GAUCHE.streams}
@@ -360,10 +516,20 @@ export default function IntroDuelQuotidien({ manches = 5, onFin }) {
                 streams Spotify
               </div>
             </div>
+          </div>
 
-            {/* Droite : la question, puis la réponse au même endroit */}
+          {/* ---------- La question, puis la réponse au même endroit ----------
+              En colonne large, ce bloc partage sa rangée avec le chiffre : les
+              deux nombres tombent alors sur la même ligne. En colonne étroite
+              il vient plus bas, sous le second morceau, là où il porte. */}
+          <div style={{
+            position: 'absolute', top: G.basB, left: 0, right: 0,
+            display: 'flex', justifyContent: etroit ? 'center' : 'flex-end',
+          }}>
             <div style={{
-              width: DEMO_COL, textAlign: 'center', paddingLeft: 'var(--e5)',
+              width: G.col, textAlign: 'center',
+              paddingLeft: etroit ? 0 : 'var(--e5)',
+              marginRight: etroit ? 0 : 'calc(50% - ' + G.col + 'px)',
               boxSizing: 'border-box',
             }}>
               <div style={{ position: 'relative', height: 26 }}>
@@ -380,7 +546,7 @@ export default function IntroDuelQuotidien({ manches = 5, onFin }) {
                 <div style={{
                   position: 'absolute', inset: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 500, lineHeight: 1,
+                  fontFamily: 'var(--mono)', fontSize: G.fsChiffre, fontWeight: 500, lineHeight: 1,
                   color: 'var(--jade)', opacity: 0,
                   animation: 'dqEntree 340ms ' + T_REVEAL + 'ms ease-out both',
                 }}>
@@ -422,7 +588,7 @@ export default function IntroDuelQuotidien({ manches = 5, onFin }) {
               faisait rouler sur 2. Dans le défi il n'y a pas de niveau : il y
               a une manche sur N, et le compte ne récompense rien, il situe. */}
           <div style={{
-            position: 'absolute', top: 458, left: 0, right: 0,
+            position: 'absolute', top: G.manche, left: 0, right: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--e2)',
             opacity: 0,
             animation: 'dqEntree 340ms ' + T_MANCHE + 'ms ease-out both',

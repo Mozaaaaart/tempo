@@ -113,13 +113,65 @@ const OPACITE_HALO = 0.02;
 const LARGEUR_HALO = 6;
 const LARGEUR_COEUR = 0.8;
 
+/* ------------------------------------------------------------- défilement
+ *
+ * Mode de secours pour les écrans tactiles, où il n'y a pas de survol et donc
+ * rien à désigner. La lumière ne se pose plus sur une section : elle traverse
+ * le tracé de bout en bout, sans jamais s'arrêter.
+ *
+ * La différence avec un balayage par sections n'est pas une question de
+ * réglage. Une lumière qui va d'une section à la suivante DÉCÉLÈRE en
+ * arrivant, marque un temps, puis repart : c'est le comportement d'un
+ * pointeur, et sans pointeur il n'a plus de cause visible. Ici la vitesse est
+ * constante et le trajet n'a pas d'étapes — on lit un signal qui passe, ce
+ * qui est exactement ce que l'onde représente.
+ */
+
+// Durée d'une traversée complète, ms.
+const PERIODE_DEFILEMENT = 5200;
+
+// Longueur du segment allumé, en fraction du tracé.
+const AMPLEUR_DEFILEMENT = 0.26;
+
+/* Débordement de part et d'autre du tracé.
+ *
+ * Le centre du segment va de −MARGE à 1 + MARGE : la lumière sort donc
+ * complètement par la droite avant de réapparaître par la gauche. Sans cette
+ * marge, elle serait encore à moitié visible au moment du bouclage et le
+ * retour se lirait comme un saut.
+ *
+ * Doit rester supérieure à la demi-ampleur (0,13), sans quoi le segment ne
+ * quitte jamais tout à fait le cadre. */
+const MARGE_DEFILEMENT = 0.18;
+
+/* Retard du brin le plus extérieur, en fraction de cycle.
+ *
+ * Le centre du faisceau s'allume le premier, les bords suivent. C'est ce qui
+ * donne une ondulation plutôt qu'une barre de lumière qui glisse d'un bloc.
+ * Au-delà de 0,08 les brins se désolidarisent et le faisceau paraît se
+ * déchirer. */
+const RETARD_DEFILEMENT = 0.045;
+
 const IMAGES_PAR_SECONDE = 60;
 
+/**
+ * MOBILE : cadre plus court, amplitude plus haute.
+ *
+ * L'ancien réglage donnait un tracé de vingt pixels d'amplitude au milieu
+ * d'un cadre de cent vingt-quatre — une ligne presque plate flanquée de deux
+ * bandes de vide, alors que c'est l'élément signature du site. Le cadre perd
+ * vingt-quatre pixels, l'amplitude en gagne six : le faisceau REMPLIT sa
+ * boîte au lieu d'y flotter.
+ *
+ * Moins de brins aussi. À trente brins sur trois cent trente pixels de large,
+ * le faisceau redevient une masse : on ne distingue plus les fils, donc plus
+ * la torsion, et il ne reste qu'un trait épais.
+ */
 const PRESETS = {
   principale: { desktop: { brins: 30, amplitude: 54, hauteur: 168, pas: 5 },
-                mobile:  { brins: 17, amplitude: 34, hauteur: 124, pas: 7 } },
+                mobile:  { brins: 15, amplitude: 40, hauteur: 100, pas: 6 } },
   bandeau:    { desktop: { brins: 17, amplitude: 20, hauteur: 70,  pas: 5 },
-                mobile:  { brins: 11, amplitude: 16, hauteur: 58,  pas: 7 } },
+                mobile:  { brins: 11, amplitude: 19, hauteur: 56,  pas: 7 } },
 };
 
 const TAU = Math.PI * 2;
@@ -233,7 +285,21 @@ function construireBrins({ brins, amplitude, hauteur, pas, sections, W, temps = 
   return resultat;
 }
 
-export default function Onde({ variante = 'principale', sections = 5, active = null, complete = false }) {
+/**
+ * @param defilement  n'a d'effet QUE sous 640 px : la lumière traverse le
+ *                    tracé en boucle au lieu de désigner une section. Le
+ *                    survol restant le seul moteur de `active`, l'onde était
+ *                    éteinte en permanence sur mobile — c'est-à-dire que
+ *                    l'élément signature du site n'y existait pas.
+ * @param ampleur     longueur du segment allumé, en fraction du tracé. Par
+ *                    défaut 1 / sections, ce qui suppose des sections de
+ *                    largeur égale sous l'onde. Une bande qui défile n'a plus
+ *                    cette propriété : ses onglets ont leur propre largeur,
+ *                    et c'est à l'appelant de la donner ici — sans quoi la
+ *                    lumière est visiblement plus étroite que ce qu'elle
+ *                    désigne.
+ */
+export default function Onde({ variante = 'principale', sections = 5, active = null, complete = false, defilement = false, ampleur = null }) {
   const [mobile, setMobile] = useState(false);
   const [largeur, setLargeur] = useState(0);
   const [temps, setTemps] = useState(0);
@@ -264,7 +330,29 @@ export default function Onde({ variante = 'principale', sections = 5, active = n
      ne le déclarent pas. Sans effet aujourd'hui, `sections` étant constant,
      mais c'est le genre de dette qui se paie le jour où il cesse de l'être. */
   const ampleurCibleRef = useRef(1 / sections);
-  ampleurCibleRef.current = complete ? 1 : 1 / sections;
+
+  /* Le mode ne s'active que si l'appareil est effectivement étroit : sur
+     ordinateur, `defilement` est inerte et le survol reprend la main. */
+  const enDefilement = defilement && mobile;
+
+  /* L'ampleur AU REPOS, c'est-à-dire hors étalement de fin de parcours.
+     Elle sert deux fois : comme cible de la relaxation, et comme point zéro
+     du calcul d'étalement plus bas. Sans cette valeur nommée, ce calcul
+     repartirait de 1 / sections et prendrait toute ampleur donnée de
+     l'extérieur pour un début d'étalement — la lumière se déporterait vers
+     le milieu du tracé sans que rien ne l'ait demandé. */
+  const ampleurRepos = enDefilement
+    ? AMPLEUR_DEFILEMENT
+    : ampleur ?? 1 / sections;
+
+  ampleurCibleRef.current = complete ? 1 : ampleurRepos;
+
+  /* En défilement, la copie dorée est allumée en permanence : c'est la
+     POSITION du segment qui porte l'information, pas sa présence. Sans cette
+     ref, l'opacité suivrait `active`, qui vaut null faute de survol, et la
+     lumière resterait à zéro — le segment défilerait dans le noir. */
+  const defilementRef = useRef(false);
+  defilementRef.current = enDefilement;
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 640px)');
@@ -318,7 +406,8 @@ export default function Onde({ variante = 'principale', sections = 5, active = n
           }
         }
         const kOp = reduit ? 1 : 1 - Math.pow(1 - 0.12, dt);
-        opaciteRef.current += ((cible === null ? 0 : 1) - opaciteRef.current) * kOp;
+        const viseeOpacite = defilementRef.current ? 1 : cible === null ? 0 : 1;
+        opaciteRef.current += (viseeOpacite - opaciteRef.current) * kOp;
 
         const ampleurCible = ampleurCibleRef.current;
         if (ampleurRef.current === null) ampleurRef.current = ampleurCible;
@@ -334,8 +423,26 @@ export default function Onde({ variante = 'principale', sections = 5, active = n
     return () => cancelAnimationFrame(raf);
   }, [nbBrins]);
 
+  /* AMPLITUDE EFFECTIVE.
+   *
+   * Le facteur de largeur fait grandir l'onde sur les grands écrans, à partir
+   * d'une référence de 728 px. Il est NEUTRALISÉ sur mobile.
+   *
+   * Pourquoi : le facteur descend à 0,6 dès qu'on passe sous la référence, et
+   * il s'appliquait à un préréglage déjà réduit. L'amplitude tombait donc à
+   * une vingtaine de pixels — d'où le trait plat au milieu d'un grand vide.
+   * Or les préréglages mobiles sont déjà dimensionnés pour un petit écran ;
+   * les réduire une seconde fois revient à appliquer deux fois la même
+   * correction.
+   *
+   * Le second terme reste le garde-fou : quoi qu'il arrive, le faisceau ne
+   * peut pas dépasser son cadre, gonflement de la respiration compris. */
+  const facteurLargeur = mobile
+    ? 1
+    : Math.min(1.25, Math.max(1, largeur / 728) * 0.6);
+
   const amplitude = Math.min(
-    cfg.amplitude * Math.min(1.25, Math.max(1, largeur / 728) * 0.6),
+    cfg.amplitude * facteurLargeur,
     (hauteur / 2 - 4) / GONFLEMENT_MAX
   );
   const W = largeur || 728;
@@ -401,27 +508,55 @@ export default function Onde({ variante = 'principale', sections = 5, active = n
 
           <g fill="none" stroke={`url(#${idOr})`} opacity={opaciteRef.current}>
             {brinsCalcules.map((b, i) => {
-              const ratio = centreAnime(b, i);
-              const ampleur = ampleurRef.current ?? 1 / sections;
+              const ampleurVive = ampleurRef.current ?? ampleurRepos;
 
-              /* Le CENTRE glisse vers le milieu du tracé à mesure que la
-                 lumière s'étend.
+              let centre;
 
-                 Sans ça, le segment reste calé sur la section active : une
-                 fois porté à la longueur entière, il déborde d'un côté — où
-                 le tracé le rogne — et manque de l'autre. Avec une épreuve
-                 près du bord, il n'en restait visible qu'un peu plus de la
-                 moitié.
+              if (enDefilement) {
+                /* Progression LINÉAIRE du temps, sans relaxation ni courbe
+                   d'accélération : c'est ce qui fait la différence entre une
+                   lumière qui passe et une lumière qui vise. Le modulo est
+                   ramené dans [0,1] par le +1 — l'opérateur de JavaScript
+                   rend un reste négatif pour un dividende négatif, et le
+                   retard d'un brin peut rendre l'argument négatif au premier
+                   cycle. */
+                const retard = Math.abs(b.t) * RETARD_DEFILEMENT;
+                const p = ((temps / PERIODE_DEFILEMENT - retard) % 1 + 1) % 1;
+                centre = -MARGE_DEFILEMENT + p * (1 + 2 * MARGE_DEFILEMENT);
+              } else {
+                /* Le CENTRE glisse vers le milieu du tracé à mesure que la
+                   lumière s'étend.
 
-                 À pleine ampleur le centre vaut donc 0,5, l'écart de phase
-                 s'annule et le tracé est couvert d'un bout à l'autre. */
-              const etendue = sections > 1
-                ? Math.max(0, Math.min(1, (ampleur - 1 / sections) / (1 - 1 / sections)))
-                : 1;
-              const centre = ratio + (0.5 - ratio) * etendue;
+                   Sans ça, le segment reste calé sur la section active : une
+                   fois porté à la longueur entière, il déborde d'un côté — où
+                   le tracé le rogne — et manque de l'autre. Avec une épreuve
+                   près du bord, il n'en restait visible qu'un peu plus de la
+                   moitié.
 
-              const segCoeur = b.total * ampleur;
+                   À pleine ampleur le centre vaut donc 0,5, l'écart de phase
+                   s'annule et le tracé est couvert d'un bout à l'autre. */
+                const ratio = centreAnime(b, i);
+                /* Zéro tant que la lumière est à son ampleur de repos, un
+                   quand elle couvre tout le tracé. */
+                const etendue = ampleurRepos < 1
+                  ? Math.max(0, Math.min(1, (ampleurVive - ampleurRepos) / (1 - ampleurRepos)))
+                  : 1;
+                centre = ratio + (0.5 - ratio) * etendue;
+              }
+
+              const segCoeur = b.total * ampleurVive;
               const segHalo = segCoeur * 1.45;
+
+              /* Le VIDE qui suit le segment.
+                 Il vaut la longueur du tracé en mode section, où le centre
+                 reste dans [0,1] : la répétition suivante du motif tombe hors
+                 cadre. En défilement, le centre sort du tracé aux deux
+                 extrémités, et un vide d'une seule longueur ferait rentrer
+                 par la gauche la répétition d'à côté au moment précis où la
+                 lumière sort par la droite — deux segments à l'écran. Le
+                 doubler éloigne la répétition pour de bon. */
+              const vide = enDefilement ? b.total * 2 : b.total;
+
               const offCoeur = segCoeur / 2 - centre * b.total;
               const offHalo = segHalo / 2 - centre * b.total;
               return (
@@ -430,14 +565,14 @@ export default function Onde({ variante = 'principale', sections = 5, active = n
                     d={b.d}
                     strokeWidth={LARGEUR_HALO}
                     opacity={OPACITE_HALO}
-                    strokeDasharray={`${segHalo} ${b.total}`}
+                    strokeDasharray={`${segHalo} ${vide}`}
                     strokeDashoffset={offHalo}
                   />
                   <path
                     d={b.d}
                     strokeWidth={LARGEUR_COEUR}
                     opacity={b.opacite}
-                    strokeDasharray={`${segCoeur} ${b.total}`}
+                    strokeDasharray={`${segCoeur} ${vide}`}
                     strokeDashoffset={offCoeur}
                   />
                 </g>

@@ -240,6 +240,30 @@ export default function Ambiance({ couperSi = false, compact = false }) {
   const degreSoloRef = useRef(1);
   const tourSoloRef = useRef(0);
 
+  /* ---- Écran tactile : le curseur reste déployé ----
+   *
+   * Le repli au repos suppose un survol pour le rouvrir. Sans pointeur, le
+   * seul geste disponible est le tap, qui sert déjà à couper le son : le
+   * curseur s'ouvrait donc au moment même où on éteignait l'ambiance, et
+   * l'ouverture décalait la ligne au passage — le texte à côté sautait sur
+   * deux lignes sous le doigt.
+   *
+   * Une largeur STABLE vaut mieux qu'une largeur qui s'anime : ce qui gênait
+   * n'était pas le curseur, c'était le mouvement de tout ce qui l'entoure. Il
+   * est donc là dès le premier rendu et n'en bouge plus.
+   */
+  const tactileRef = useRef(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(hover: none)');
+    const maj = () => {
+      tactileRef.current = mq.matches;
+      if (mq.matches) setOuvert(true);
+    };
+    maj();
+    mq.addEventListener('change', maj);
+    return () => mq.removeEventListener('change', maj);
+  }, []);
+
   /** Réservoir de notes de la soliste, dérivé de l'accord en cours. */
   const notesSolo = useCallback(() => {
     const accord = ACCORDS[accordRef.current];
@@ -696,7 +720,7 @@ export default function Ambiance({ couperSi = false, compact = false }) {
   return (
     <div
       onMouseEnter={() => !couperSi && setOuvert(true)}
-      onMouseLeave={() => !actif && setOuvert(false)}
+      onMouseLeave={() => !actif && !tactileRef.current && setOuvert(false)}
       style={{ display: 'flex', alignItems: 'center', gap: 'var(--e2)' }}
     >
       <style>{`
@@ -813,6 +837,7 @@ export default function Ambiance({ couperSi = false, compact = false }) {
           n'encombre pas la barre au repos. Largeur animée plutôt que montage
           conditionnel, pour que l'ouverture soit continue. */}
       <div
+        className="mb-volume-boite"
         style={{
           width: ouvert && !couperSi ? (compact ? 64 : 84) : 0,
           opacity: ouvert && !couperSi ? 1 : 0,

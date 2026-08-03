@@ -86,6 +86,7 @@ function CarteReponse({ libelle, onClick, disabled, etat, icone }) {
     <button
       onClick={onClick}
       disabled={disabled}
+      className="ia-carte"
       style={{
         // Icône et libellé sur UNE ligne : empilés, ils imposaient une hauteur
         // que rien ne remplissait. Deux contrôles larges et plats se lisent
@@ -211,7 +212,19 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
       for (const t of shuffled) {
         const d = await trackDetails(t.trackId);
         if (d.release_date && d.release_date < HUMAN_CUTOFF && d.preview) {
-          return { trackId: t.trackId, isAI: false, artiste: t.artistName, titre: t.trackName, url: d.preview };
+          /* On retient QUE le morceau a un extrait, pas SON URL.
+
+             Le détail vient d'une réponse mise en cache une demi-heure côté
+             serveur, et jusqu'à un jour côté navigateur. Le jeton contenu
+             dans l'URL d'extrait, lui, expire bien avant. Transporter cette
+             URL jusqu'à la lecture, c'est jouer à pile ou face avec sa date
+             de péremption — et un jeton périmé fait répondre au CDN autre
+             chose qu'un MP3, d'où le NotSupportedError de l'élément audio.
+
+             L'URL est donc redemandée fraîche juste avant de jouer, comme
+             pour les morceaux d'IA, qui n'avaient pas ce défaut puisqu'ils
+             ne la transportaient pas. */
+          return { trackId: t.trackId, isAI: false, artiste: t.artistName, titre: t.trackName };
         }
       }
     }
@@ -282,11 +295,12 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
       }
       if (!r) throw new Error('Aucun extrait disponible');
 
-      if (!r.url) {
-        const url = await freshPreviewUrl(r.trackId);
-        if (!url) throw new Error('Preview indisponible pour ce morceau');
-        r.url = url;
-      }
+      /* Sans condition : tous les tirages arrivent ici sans URL, et c'est
+         voulu. Une URL d'extrait ne doit jamais avoir plus de quelques
+         secondes au moment où on la joue. */
+      const url = await freshPreviewUrl(r.trackId);
+      if (!url) throw new Error('Preview indisponible pour ce morceau');
+      r.url = url;
 
       vusRef.current.add(r.trackId);
       artistesVusRef.current.add(normName(r.artiste));
@@ -322,10 +336,24 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
     newRound();
   }
 
-  function relire() {
-    if (!round?.url) return;
+  /* Réécouter redemande une URL FRAÎCHE.
+
+     Un run peut durer plusieurs minutes, et le bouton reste disponible tout
+     ce temps. Rejouer l'URL du tirage, c'est rejouer un jeton qui vieillit à
+     chaque manche — la première écoute passait, la quatrième échouait sans
+     que rien n'ait changé du point de vue du joueur.
+
+     Repli sur l'URL connue si la requête échoue : mieux vaut tenter une URL
+     peut-être périmée que ne rien tenter du tout. */
+  async function relire() {
+    if (!round?.trackId) return;
     if (enLecture) { basculer(); return; }
-    jouer(round.url, EXTRAIT_SEC);
+    let url = round.url;
+    try {
+      url = (await freshPreviewUrl(round.trackId)) || round.url;
+    } catch { /* réseau indisponible : on garde l'URL en main */ }
+    if (!url) return;
+    jouer(url, EXTRAIT_SEC);
   }
 
   function answer(saysAI) {
@@ -495,7 +523,7 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
 
       {/* ---- Transport ---- */}
       {!gameover && (
-        <div style={{
+        <div className="ia-transport" style={{
           display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap',
           justifyContent: 'center', marginBottom: 'var(--e4)',
         }}>
@@ -520,7 +548,14 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
               disabled={loading}
               style={{
                 ...btn(false, loading),
-                display: 'inline-flex', alignItems: 'center', gap: 'var(--e2)',
+                /* justifyContent center est indispensable dès que le bouton
+                   peut être ÉTIRÉ. Tant qu'il prenait la largeur de son
+                   contenu, la question ne se posait pas — le contenu
+                   remplissait la boîte. Étiré sur toute la largeur, un
+                   inline-flex sans justification laisse ses enfants au début
+                   de la ligne, icône et texte collés à gauche. */
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                gap: 'var(--e2)',
                 borderColor: joue ? 'var(--or)' : 'var(--filet-fort)',
                 color: joue ? 'var(--or)' : 'var(--ivoire)',
               }}
@@ -543,7 +578,7 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
 
       {/* ---- Les deux réponses ---- */}
       {!gameover && (
-        <div style={{
+        <div className="ia-reponses" style={{
           display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap',
           justifyContent: 'center', maxWidth: 380, margin: '0 auto',
         }}>

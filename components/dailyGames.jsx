@@ -675,11 +675,30 @@ export function JeuArtiste({ onDone, daily = false, revelation = true }) {
               src={photo}
               alt="Portrait de l'artiste mystère"
               width={190} height={190}
+              /* Glissement interdit.
+
+                 Le navigateur construit l'aperçu de glisser-déposer à partir
+                 du BITMAP SOURCE, en ignorant les filtres CSS : il suffisait
+                 de saisir l'image et de la sortir du cadre pour voir le
+                 portrait net. Le flou n'existe qu'à l'affichage, l'original
+                 reste intact dans le document.
+
+                 pointerEvents: none ferme la même porte côté souris et tactile
+                 — l'image est purement décorative, aucun geste n'a de sens
+                 dessus. userDrag couvre les moteurs WebKit, qui ignorent
+                 l'attribut draggable sur les images. */
+              draggable={false}
+              onDragStart={(ev) => ev.preventDefault()}
+              onContextMenu={(ev) => ev.preventDefault()}
               style={{
                 filter: bilan && devoile ? 'none' : `blur(${FLOU_ARTISTE}px)`,
                 transform: bilan && devoile ? 'scale(1)' : 'scale(1.18)',
                 transition: 'filter 0.6s ease, transform 0.6s ease',
                 display: 'block', width: '100%', height: '100%', objectFit: 'cover',
+                pointerEvents: 'none',
+                userSelect: 'none',
+                WebkitUserSelect: 'none',
+                WebkitUserDrag: 'none',
               }}
             />
           )}
@@ -1146,11 +1165,21 @@ export function JeuPochette({ onDone, daily = false, revelation = true }) {
             <img
               src={track.artworkUrl100}
               alt="Pochette mystère"
+              /* Même verrou que sur le portrait de l'épreuve Artiste : l'aperçu
+                 de glissement montrerait la pochette nette, le filtre CSS
+                 n'étant appliqué qu'au rendu. */
+              draggable={false}
+              onDragStart={(ev) => ev.preventDefault()}
+              onContextMenu={(ev) => ev.preventDefault()}
               style={{
                 filter: `blur(${blur}px)`,
                 transform: bilan && devoile ? 'scale(1)' : 'scale(1.15)',
                 transition: 'filter 0.5s ease, transform 0.5s ease',
                 display: 'block', width: '100%', height: '100%', objectFit: 'cover',
+                pointerEvents: 'none',
+                userSelect: 'none',
+                WebkitUserSelect: 'none',
+                WebkitUserDrag: 'none',
               }}
             />
           )}

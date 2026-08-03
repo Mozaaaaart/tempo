@@ -386,6 +386,18 @@ export default function Quotidien() {
   correctionsRef.current = corrections;
   /* Réponses du dernier défi terminé. Relue au montage, jamais réécrite. */
   const [archive, setArchive] = useState(null);
+  /* Tiroir des réponses de la veille. Fermé par défaut : elles appartiennent
+     au défi d'hier et ne doivent pas disputer la vedette à celui du jour. */
+  const [veilleEpinglee, setVeilleEpinglee] = useState(false);
+  const [veilleSurvolee, setVeilleSurvolee] = useState(false);
+  /* DEUX états, et non un seul. Le clic ÉPINGLE le tiroir, le survol ne fait
+     que l'entrouvrir.
+
+     Avec un booléen unique, sortir du bouton refermait ce qu'on venait
+     d'ouvrir volontairement : le clic ne servait à rien, et le panneau était
+     impossible à parcourir à la souris, puisque le curseur doit bien quitter
+     le bouton pour descendre dedans. */
+  const veilleOuverte = veilleEpinglee || veilleSurvolee;
   const dateDuJour = jour ? dateLisible(jour) : '';
   const restant = resteLisible(reste);
   /* Périmé dès que la date locale a changé. Le décompte seul ne suffisait
@@ -812,7 +824,17 @@ export default function Quotidien() {
 
              900 ms, comme sur les épreuves : on vient jouer, tout ce qui
              retarde le premier clic se paie. */
+          /* Le bandeau de titre porte une animation à remplissage both, qui
+             laisse un transform appliqué en permanence. Un transform non nul
+             crée un CONTEXTE D'EMPILEMENT : le z-index du tiroir des
+             corrections ne vaut plus qu'à l'intérieur de ce contexte, et c'est
+             le contexte entier qui se compare à l'onde — laquelle vient après
+             dans le document, donc passait au-dessus du panneau.
+
+             On situe donc le contexte lui-même, une fois pour toutes. */
           .q-tete {
+            position: relative;
+            z-index: 30;
             animation: qEntree 360ms 50ms cubic-bezier(0.22, 1, 0.36, 1) both;
           }
           .q-onde {
@@ -867,21 +889,136 @@ export default function Quotidien() {
           }
 
           /* ---- Réponses de la veille ----
-             Trois colonnes : le numéro, l'intitulé, la réponse. La réponse
-             est la seule en ivoire — c'est elle qu'on vient lire, le reste
-             situe. */
-          .q-veille { display: grid; gap: var(--e3); max-width: 560px; }
+             Repliées derrière un bouton. Le survol ouvre sur les appareils à
+             pointeur fin, le clic bascule partout — un tiroir qui ne
+             s'ouvrirait qu'au survol n'existerait pas sur mobile. */
+          .q-veille-bouton {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--e2);
+            font-family: var(--mono);
+            font-size: 11px;
+            letter-spacing: 0.09em;
+            text-transform: uppercase;
+            color: var(--or);
+            background: transparent;
+            border: 0.5px solid var(--or);
+            border-radius: var(--rayon-controle);
+            padding: 9px 14px;
+            cursor: pointer;
+            transition: background var(--transition-courte), color var(--transition-courte);
+          }
+          .q-veille-bloc:hover .q-veille-bouton,
+          .q-veille-bouton:focus-visible {
+            background: var(--or);
+            color: var(--noir);
+          }
+
+          /* Le tiroir s'ouvre EN SURIMPRESSION, ancré sous le bouton.
+
+             Il vit maintenant dans la colonne de droite, large de deux cents
+             pixels : un panneau dans le flux y serait comprimé, et pousserait
+             l'onde vers le bas à chaque ouverture. En absolu, il déborde sur
+             la page sans rien déplacer, et retrouve la largeur qu'il faut à
+             un tableau de dix lignes.
+
+             De 0fr à 1fr : la seule façon d'animer une hauteur AUTOMATIQUE.
+             Une max-height chiffrée obligerait à deviner la taille du
+             contenu, et se verrait dès qu'on ajoute une ligne. */
+          /* Le bouton entre EN DERNIER, une fois la page installée.
+
+             Sa colonne appartient au bandeau de titre, qui apparaît dès 50 ms :
+             sans règle propre, le bouton serait donc là avant tout le reste,
+             alors qu'il renvoie au défi d'HIER. Il doit se présenter comme un
+             appoint, pas comme un point de départ.
+
+             1 400 ms : le bouton entre pendant que les dernières lignes du
+             seuil finissent de se poser, plutôt qu'après elles. Attendre la
+             toute dernière — 1 680 ms — faisait un temps mort avant son
+             apparition, et le geste se lisait comme un retard plutôt que comme
+             une suite. Il reste derrière la scène du jeu, la navigation et
+             l'onde, qui sont l'essentiel.
+
+             Le remplissage both le tient invisible jusque-là.
+
+             Aucun accent grave dans ce bloc : il vit dans un gabarit, et un
+             backtick isolé y refermerait la chaîne CSS en plein milieu. */
+          .q-veille-bloc {
+            position: relative;
+            animation: qEntree 520ms 1400ms cubic-bezier(0.22, 1, 0.36, 1) both;
+          }
+          .q-veille-tiroir {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            /* Au-dessus de l'onde, qui traverse la page à cette hauteur et
+               dont le tracé passerait sinon sur le panneau. */
+            z-index: 40;
+            width: min(90vw, 620px);
+            display: grid;
+            grid-template-rows: 0fr;
+            transition: grid-template-rows 460ms cubic-bezier(0.22, 1, 0.36, 1);
+          }
+          /* Fermé, il ne doit intercepter aucun clic : il couvre sinon une
+             bande invisible au-dessus du contenu. */
+          .q-veille-tiroir { pointer-events: none; }
+          .q-veille-tiroir[data-ouvert='true'] { pointer-events: auto; }
+          .q-veille-tiroir[data-ouvert='true'] { grid-template-rows: 1fr; }
+          .q-veille-tiroir > div { overflow: hidden; }
+          /* Panneau opaque : en surimpression, il passe au-dessus de l'onde
+             et du seuil, qu'il doit masquer pour rester lisible. */
+          .q-veille-corps {
+            /* Surface surélevée plutôt que le noir du fond : sur une page
+               noire, un panneau noir n'a pas de bord visible, et seule
+               l'ombre portée le distinguait. */
+            background: var(--onyx-haut);
+            border: 0.5px solid var(--filet-fort);
+            border-radius: var(--rayon-carte);
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+            padding: var(--e4) var(--e4) var(--e3);
+            text-align: left;
+            opacity: 0;
+            transition: opacity 260ms ease;
+          }
+          .q-veille-tiroir[data-ouvert='true'] .q-veille-corps {
+            opacity: 1;
+            transition-delay: 140ms;
+          }
+
+          /* Trois colonnes : rang, épreuve, réponse. La réponse est la seule
+             en pleine lumière — c'est elle qu'on vient lire, le reste situe. */
+          .q-veille { display: grid; max-width: 620px; }
           .q-veille-item {
             display: grid;
-            grid-template-columns: auto 96px 1fr;
+            grid-template-columns: auto 104px 1fr;
             align-items: baseline;
             gap: var(--e3);
-            padding-top: var(--e2);
+            padding: var(--e3) 0;
             border-top: 0.5px solid var(--filet);
           }
-          @media (max-width: 560px) {
+          .q-veille-num {
+            font-family: var(--mono); font-size: 10px;
+            letter-spacing: 0.09em; color: var(--or);
+          }
+          /* Le nom de l'épreuve était en cendre : 2,6 pour 1 sur le fond du
+             panneau, très en dessous du seuil de lisibilité. Le lin le porte à
+             5,4 pour 1. C'est lui qui relie la réponse à ce qu'on a joué — sans
+             lui, la colonne du milieu ne sert plus à rien.
+
+             Un demi-point de plus et un interlettrage un peu resserré : en
+             capitales monospace, 10 px et 0,09 em faisaient un mot étiré et
+             pâle, difficile à lire d'un coup d'œil. */
+          .q-veille-nom {
+            font-family: var(--mono); font-size: 10.5px;
+            letter-spacing: 0.06em; text-transform: uppercase; color: var(--lin);
+          }
+          .q-veille-rep { font-size: 14px; color: var(--ivoire); line-height: 1.35; }
+
+          @media (max-width: 620px) {
+            /* La réponse passe sur sa propre ligne : la comprimer entre deux
+               colonnes fixes la couperait en trois mots par ligne. */
             .q-veille-item { grid-template-columns: auto 1fr; }
-            .q-veille-item > *:nth-child(3) { grid-column: 1 / -1; }
+            .q-veille-rep { grid-column: 1 / -1; }
           }
 
           .q-segments { position: relative; }
@@ -1083,6 +1220,17 @@ export default function Quotidien() {
             </p>
           </div>
 
+          {/* Colonne de droite : le relevé du jour, et sous lui l'accès aux
+              corrections de la veille. Les deux appartiennent au même registre
+              — ce qu'on a fait, ce qu'on aurait dû faire — et se rangent donc
+              ensemble plutôt qu'aux deux extrémités de la page. */}
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
+            gap: 'var(--e3)', flexShrink: 0,
+            /* La colonne prend toute la hauteur du bandeau de titre : c'est
+               ce qui permet au bouton d'aller se caler en bas. */
+            alignSelf: 'stretch',
+          }}>
           {/* Le relevé n'apparaît qu'une fois le défi entamé : au seuil, il
               n'y a rien à relever et un 0,0 encadré serait un faux départ. */}
           {commence && (
@@ -1108,6 +1256,116 @@ export default function Quotidien() {
               </div>
             </div>
           )}
+
+          {/* ================= LES RÉPONSES DE LA VEILLE =================
+              Le contrepoids du masquage : la correction n'est pas supprimée,
+              elle est différée. Plus personne ne joue ce tirage, il n'y a donc
+              plus rien à protéger — et le joueur apprend enfin ce qu'il a raté.
+
+              Affichée après la scène et non à l'ouverture : elle appartient au
+              défi d'hier, elle ne doit pas disputer la vedette à celui du jour.
+
+              Rendue seulement si l'archive contient des réponses, ce qui n'est
+              le cas qu'après un défi joué un jour précédent. Une épreuve non
+              encore migrée n'y figure pas : elle ne transmet pas sa réponse. */}
+          {/* ================= LES RÉPONSES DE LA VEILLE =================
+              Le contrepoids du masquage : la correction n'est pas supprimée,
+              elle est différée. Plus personne ne joue ce tirage, il n'y a donc
+              plus rien à protéger — et le joueur apprend enfin ce qu'il a raté.
+
+              Repliée derrière un bouton : elle appartient au défi d'hier et ne
+              doit pas disputer la vedette à celui du jour, mais elle reste à
+              portée d'un geste plutôt qu'enfouie en bas de page.
+
+              Le survol OUVRE, le clic BASCULE. Le survol seul aurait rendu le
+              bloc inaccessible au tactile, où il n'existe pas ; le clic seul
+              aurait ignoré le geste naturel à la souris. La règle
+              @media (hover: hover) réserve l'ouverture au survol aux appareils
+              qui en ont un. */}
+          {archive && (
+            <section
+              className="q-veille-bloc"
+              /* Poussé en bas de la colonne plutôt que collé sous le titre.
+                 `marginTop: auto` laisse la carte du score en haut si elle
+                 existe, et pose le bouton au niveau de la dernière ligne du
+                 texte de présentation — là où l'œil arrive en fin de lecture,
+                 et non là où il commence. */
+              style={{ marginTop: 'auto' }}
+            /* Le survol porte sur le BLOC entier, bouton et panneau compris :
+               posé sur le seul bouton, le tiroir se refermerait dès qu'on
+               tente d'aller lire dedans. */
+            onMouseEnter={() => setVeilleSurvolee(true)}
+            onMouseLeave={() => setVeilleSurvolee(false)}
+            >
+              <button
+                type="button"
+                className="q-veille-bouton"
+                aria-expanded={veilleOuverte}
+                onClick={() => {
+                  /* Bascule franche : on referme aussi l'état de survol, sinon
+                     le curseur encore posé sur le bouton rouvrirait aussitôt
+                     ce qu'on vient de fermer. */
+                  setVeilleEpinglee((v) => !v);
+                  setVeilleSurvolee(false);
+                }}
+              >
+                <span>Corrections du défi du {dateLisible(archive.jour)}</span>
+                <svg
+                  width="12" height="12" viewBox="0 0 16 16" fill="none"
+                  stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+                  strokeLinejoin="round" aria-hidden="true"
+                  style={{
+                    transform: veilleOuverte ? 'rotate(180deg)' : 'none',
+                    transition: 'transform var(--transition-courte)',
+                  }}
+                >
+                  <path d="M3 6l5 5 5-5" />
+                </svg>
+              </button>
+
+              {/* grid-template-rows de 0fr à 1fr : la seule façon d'animer une
+                  hauteur AUTOMATIQUE. Une max-height chiffrée obligerait à
+                  deviner la taille du contenu, et se verrait dès qu'on ajoute
+                  une ligne. */}
+              <div className="q-veille-tiroir" data-ouvert={veilleOuverte}>
+                <div>
+                  <div className="q-veille-corps">
+                    {/* Une règle se pose, elle ne se plaide pas.
+
+                        L'ancienne phrase parlait de réponses qui circulent et de
+                        scores faussés : elle plaçait le lecteur du côté du
+                        suspect, et donnait au report l'air d'une précaution
+                        défensive plutôt que d'une mécanique du jeu.
+
+                        Celle-ci énonce le principe, puis ce qu'il apporte. */}
+                    <p className="description" style={{ maxWidth: 520, marginBottom: 'var(--e4)' }}>
+                      Chaque défi livre ses réponses le lendemain. Voici celles d&apos;hier —
+                      de quoi voir ce qui t&apos;a échappé.
+                    </p>
+
+                    <div className="q-veille">
+                      {/* La CORRECTION seule, sans le score obtenu.
+
+                          Le score est personnel : il n'existe que dans ce
+                          navigateur, et un joueur en navigation privée, sur un
+                          autre appareil ou après un nettoyage de cache ne le
+                          retrouverait pas. Afficher un tiret à sa place aurait
+                          fait passer une limite d'architecture pour une panne.
+                          La réponse, elle, est la même pour tout le monde. */}
+                      {EPREUVES.filter((e) => archive.corrections?.[e.slug]).map((e) => (
+                        <div key={e.slug} className="q-veille-item">
+                          <span className="q-veille-num">{e.num}</span>
+                          <span className="q-veille-nom">{e.court}</span>
+                          <span className="q-veille-rep">{archive.corrections[e.slug]}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+          </div>
         </div>
 
         {/* ---------- L'onde ---------- */}
@@ -1581,50 +1839,6 @@ export default function Quotidien() {
             </div>
 
             </>
-        )}
-
-        {/* ================= LES RÉPONSES DE LA VEILLE =================
-            Le contrepoids du masquage : la correction n'est pas supprimée,
-            elle est différée. Plus personne ne joue ce tirage, il n'y a donc
-            plus rien à protéger — et le joueur apprend enfin ce qu'il a raté.
-
-            Affichée après la scène et non à l'ouverture : elle appartient au
-            défi d'hier, elle ne doit pas disputer la vedette à celui du jour.
-
-            Rendue seulement si l'archive contient des réponses, ce qui n'est
-            le cas qu'après un défi joué un jour précédent. Une épreuve non
-            encore migrée n'y figure pas : elle ne transmet pas sa réponse. */}
-        {archive && (
-          <section style={{
-            marginTop: 'var(--e8)',
-            paddingTop: 'var(--e5)',
-            borderTop: '0.5px solid var(--filet)',
-          }}>
-            <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>
-              réponses du {dateLisible(archive.jour)}
-            </div>
-            <p className="description" style={{ marginTop: 'var(--e2)', maxWidth: 460 }}>
-              Les corrections sont tenues au secret le jour même : le défi ne
-              commence pas à la même heure partout, et une réponse qui circule
-              fausserait les scores. Les voici, maintenant que la journée est passée.
-            </p>
-
-            <div className="q-veille" style={{ marginTop: 'var(--e5)' }}>
-              {EPREUVES.filter((e) => archive.corrections?.[e.slug]).map((e) => (
-                <div key={e.slug} className="q-veille-item">
-                  <span className="mono" style={{
-                    fontSize: 10, letterSpacing: '0.09em', color: 'var(--or)',
-                  }}>
-                    {e.num}
-                  </span>
-                  <span style={{ fontSize: 12.5, color: 'var(--cendre)' }}>{e.court}</span>
-                  <span style={{ fontSize: 13.5, color: 'var(--ivoire)', lineHeight: 1.35 }}>
-                    {archive.corrections[e.slug]}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
         )}
 
         <footer style={{ marginTop: 'var(--e8)', textAlign: 'center', fontSize: 11, color: 'var(--cendre)' }}>

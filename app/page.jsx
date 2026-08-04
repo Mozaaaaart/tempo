@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Onde from '@/components/Onde';
+import BlocAccueil from '@/components/BlocAccueil';
 import Ambiance from '@/components/Ambiance';
 import { EPREUVES as CATALOGUE, lienEpreuve } from '@/data/epreuves';
 
@@ -101,10 +102,14 @@ export default function Accueil() {
     return () => mq.removeEventListener('change', maj);
   }, []);
 
-  const styleColonne = (k) => ({
+  /* Le filet n'est plus une bordure : il est dessine par deux
+     pseudo-elements, dans le bloc de style plus bas. Une bordure ne peut que
+     changer de couleur d'un coup, alors qu'un element superpose se met a
+     l'echelle depuis son bord gauche — c'est ce qui permet de le TRACER.
+
+     Il ne reste donc ici que ce qui ne depend pas de l'etat. */
+  const styleColonne = () => ({
     paddingTop: 'var(--e3)',
-    borderTop: `${survol === k ? '1px' : '0.5px'} solid ${survol === k ? 'var(--or)' : 'var(--filet)'}`,
-    transition: 'border-color var(--transition-courte)',
     color: 'inherit',
     display: 'block',
   });
@@ -146,7 +151,18 @@ export default function Accueil() {
             3  titre           8  ligne de description (survol)
             4  sous-titre      9  lien vers les dix jeux (mobile seul)
             5  ligne du son   10  bloc du défi du jour
-            6  onde           11  pied de page
+            6  onde           11  bloc « à propos » (hors chorégraphie)
+                             12  pied de page
+
+          Le sous-titre est un CONTENEUR de deux paragraphes, précisément pour
+          ne compter que pour un. Le bloc « à propos » est neutralisé par sa
+          classe plus bas : il a sa propre entrée au défilement.
+
+          TOUT BLOC AJOUTÉ ICI DOIT ÊTRE INSCRIT DEUX FOIS : dans les délais
+          nth-child ci-dessus, et dans la liste des `order` de la requête
+          média. L'oubli du second est silencieux sur ordinateur et renvoie le
+          bloc en tête de page sur mobile ; un garde-fou l'envoie désormais en
+          fin de page à la place, mais il ne dispense pas de la ligne.
 
           Aucun accent grave dans ce bloc : il vit dans un gabarit, et un
           backtick isolé y refermerait la chaîne CSS en plein milieu. */}
@@ -184,6 +200,22 @@ export default function Accueil() {
         .accueil > *:nth-child(9)  { animation-delay: 1800ms; }
         .accueil > *:nth-child(10) { animation-delay: 1930ms; }
         .accueil > *:nth-child(11) { animation-delay: 2060ms; }
+
+        /* ---- Le bloc « à propos » ne participe pas au déroulé d'arrivée ----
+           Il vit tout en bas de la page, hors de l'écran au chargement, et il
+           porte sa PROPRE entrée, déclenchée au défilement. Le laisser dans la
+           chorégraphie l'aurait fait jouer son apparition pendant qu'on
+           regarde le titre, deux mille millisecondes avant qu'on y arrive.
+
+           Ciblé par sa classe et non par son rang : c'est ce qui évite de
+           renuméroter le pied de page, et surtout ce qui rend la règle
+           insensible au prochain élément inséré. */
+        .accueil > .ba { animation: none !important; }
+
+        /* Le pied de page a glissé du onzième au douzième rang. Les deux
+           règles coexistent : la onzième ne s'applique plus qu'au bloc, qui
+           l'annule aussitôt. */
+        .accueil > *:nth-child(12) { animation-delay: 2060ms; }
 
         /* ---- Les cinq épreuves, une par une ----
            La grille elle-même n'est pas animée : ses COLONNES le sont. Animer
@@ -263,6 +295,45 @@ export default function Accueil() {
         .epreuve-accroche { display: none; }
         .epreuve-fleche { display: none; }
 
+        /* ---- Le filet se TRACE de gauche a droite au survol ----
+           Meme procede que les cartes du bloc du bas, et que le filet or de
+           l'en-tete du site : deux pseudo-elements superposes, dont le second
+           part d'une echelle nulle et se deploie depuis son bord gauche.
+
+           scaleX plutot qu'une largeur animee : la mise a l'echelle est
+           composee par le processeur graphique, une largeur declencherait un
+           recalcul de mise en page a chaque image.
+
+           Les epaisseurs suivent le document de design : 0,5 px au repos,
+           1 px sur l'element actif. Le trait dore recouvre le gris.
+
+           Le declencheur est data-actif et non :hover, parce que l'etat vit
+           deja dans React — c'est lui qui allume aussi l'onde et la ligne de
+           description sous la grille. Un second mecanisme de survol pourrait
+           en diverger ; celui-ci ne le peut pas. Il couvre au passage le
+           clavier, puisque onFocus alimente le meme etat. */
+        .epreuve-lien { position: relative; }
+        .epreuve-lien::before,
+        .epreuve-lien::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+        }
+        .epreuve-lien::before {
+          height: 0.5px;
+          background: var(--filet);
+        }
+        .epreuve-lien::after {
+          height: 1px;
+          background: var(--or);
+          transform: scaleX(0);
+          transform-origin: left center;
+          transition: transform 560ms cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .epreuve-lien[data-actif="1"]::after { transform: scaleX(1); }
+
         /* La phrase du son garde l'or sur toutes les tailles d'écran : le
            bloc du défi est le seul autre élément doré et il vit tout en bas,
            les deux ne sont jamais dans l'œil en même temps.
@@ -286,18 +357,41 @@ export default function Accueil() {
              n'y a pas deux rendus à maintenir en parallèle.
 
              Le bloc de style est lui aussi un enfant flex, mais il est en
-             display none : son ordre n'a aucune conséquence. */
+             display none : son ordre n'a aucune conséquence.
+
+             ---- LE PIÈGE, ET LE GARDE-FOU ----
+
+             Un enfant flex sans « order » explicite vaut ZÉRO, et zéro passe
+             AVANT un. Tout bloc ajouté à cette page sans être inscrit dans la
+             liste ci-dessous remontait donc en tête de page — avant l'en-tête,
+             avant le titre — et sur mobile uniquement, puisque « order » n'a
+             aucun effet tant que le conteneur n'est pas flex. C'est ce qui est
+             arrivé au bloc « à propos ».
+
+             D'où la règle universelle posée EN PREMIER : elle rebascule la
+             valeur par défaut de 0 à 999. Même spécificité que les règles
+             nommées qui suivent, donc c'est l'ordre d'écriture qui tranche —
+             elle doit rester en tête du bloc. Un futur oubli atterrira en fin
+             de page : visible, corrigeable, mais sans casser la lecture.
+
+             Et les rangs vont de dix en dix. Insérer un bloc entre deux ne
+             demande plus de renuméroter toute la liste — c'est précisément la
+             corvée qui fait qu'on oublie une ligne. */
           .accueil { display: flex; flex-direction: column; }
-          .accueil-entete  { order: 1; margin-bottom: var(--e6); }
-          .bloc-titre      { order: 2; }
-          .bloc-soustitre  { order: 3; }
-          .bloc-onde       { order: 4; margin-top: var(--e6); }
-          .bloc-son        { order: 5; margin-top: var(--e2); }
-          .grille-epreuves { order: 6; margin-top: var(--e6); }
-          .desc-survol     { order: 7; display: none; }
-          .bloc-tout-voir  { order: 8; }
-          .bloc-quotidien  { order: 9; margin-top: var(--e6); }
-          .bloc-pied       { order: 10; margin-top: var(--e7); }
+
+          .accueil > *     { order: 999; }
+
+          .accueil-entete  { order: 10; margin-bottom: var(--e6); }
+          .bloc-titre      { order: 20; }
+          .bloc-soustitre  { order: 30; }
+          .bloc-onde       { order: 40; margin-top: var(--e6); }
+          .bloc-son        { order: 50; margin-top: var(--e2); }
+          .grille-epreuves { order: 60; margin-top: var(--e6); }
+          .desc-survol     { order: 70; display: none; }
+          .bloc-tout-voir  { order: 80; }
+          .bloc-quotidien  { order: 90; margin-top: var(--e6); }
+          .ba              { order: 100; }
+          .bloc-pied       { order: 110; margin-top: var(--e7); }
 
           /* ---- La navigation d'en-tête disparaît ----
              Ses deux liens pointent vers ce qui est déjà sur la page, deux
@@ -394,6 +488,7 @@ export default function Accueil() {
           .accueil > *:nth-child(9)  { animation-delay: 1120ms; }
           .accueil > *:nth-child(10) { animation-delay: 1190ms; }
           .accueil > *:nth-child(11) { animation-delay: 1260ms; }
+          .accueil > *:nth-child(12) { animation-delay: 1260ms; }
 
           /* Mêmes proportions que sur ordinateur, pour un déroulé deux fois
              plus court : les entrées éclosent toujours sous le bord de l'onde. */
@@ -433,20 +528,77 @@ export default function Accueil() {
         <nav className="accueil-nav">
           {/* Vers la première épreuve directement : /epreuves ne fait que
               rediriger, autant s'épargner l'aller-retour serveur. */}
-          <Link href={lienEpreuve(CATALOGUE[0].slug)}>tous les jeux</Link>
+          <Link href="/jeux">tous les jeux</Link>
           <Link href="/quotidien">défi du jour</Link>
         </nav>
       </header>
 
       {/* 3 — Titre */}
+      {/* ---- Le titre le plus important du site ----
+             Il raconte le site : tout le monde ecoute de la musique tous les
+             jours, dans les transports, en cuisinant, apres une rupture. Cette
+             ecoute a laisse une culture musicale que personne n'a jamais eu
+             l'occasion d'utiliser. Le site ne fait que donner de quoi s'en
+             servir.
+
+             UNE QUESTION, PUIS SA REPONSE. C'est la structure la plus simple
+             qui soit, et la plus efficace : la premiere ligne ouvre un doute
+             flatteur — et si j'avais une qualite que j'ignore ? — la seconde
+             dit ou aller la verifier. Un titre qui interroge sans indiquer la
+             suite laisse partir.
+
+             « SANS LE SAVOIR » porte tout le propos. Il ne demande pas au
+             lecteur d'etre bon, il suggere qu'il l'est peut-etre deja. On ne
+             se defend pas contre une hypothese flatteuse, alors qu'on se
+             defend toujours contre une evaluation.
+
+             « MINI-JEUX » plutot que « jeux » : le mot dit la brievete avant
+             meme que le sous-titre annonce les deux minutes. C'est le premier
+             frein leve, et il l'est en trois lettres.
+
+             L'expression exacte « oreille musicale » est ici, dans le seul
+             <h1> du site. C'est la requete visee et la balise que Google lit
+             juste apres le titre du document. */}
       <h1 className="titre-page bloc-titre">
-        L&apos;oreille se travaille.<br />La tienne vaut combien ?
+        Et si tu avais l&apos;oreille musicale sans le savoir&nbsp;?<br />{CATALOGUE.length} mini-jeux pour le découvrir.
       </h1>
 
-      {/* 4 — Sous-titre */}
-      <p className="lin bloc-soustitre" style={{ marginTop: 'var(--e3)', maxWidth: 390 }}>
-        Cinq épreuves courtes, notées sur dix. Aucune connaissance en solfège requise.
-      </p>
+      {/* 4 — Sous-titre
+             TROIS REGISTRES, ET NON TROIS PHRASES GRISES. Les trois lignes
+             avaient le meme corps, la meme couleur et la meme longueur : elles
+             se lisaient comme une liste de courses, et aucune ne ressortait.
+
+             Chacune a maintenant sa forme, parce qu'elles n'ont pas la meme
+             fonction. L'offre reste en corps de texte, c'est une phrase. Les
+             trois objections passent en etiquette mono separee par des points
+             medians : ce sont des faits, on les balaye au lieu de les lire, et
+             c'est la grammaire que le site emploie partout pour ses donnees.
+             Le conseil passe en dessous, un point plus petit, parce qu'il
+             s'adresse au nouveau venu et pas a l'habitue.
+
+             Le bloc descend ainsi en trois marches au lieu de former un pave.
+             Il tient sur trois lignes comme avant, mais on sait ou regarder.
+
+             LA PREMIERE LIGNE NE REPETE PAS LE TITRE. Celui-ci annonce deja le
+             nombre de jeux et ce qu'on y decouvre ; elle donne donc les deux
+             chiffres qu'il ne dit pas. « Deux minutes » leve le dernier frein,
+             « une note sur 10 » promet un resultat. */}
+      <div className="bloc-soustitre">
+        <p className="lin" style={{ marginTop: 'var(--e3)', maxWidth: 390 }}>
+          Deux minutes par jeu, une note sur 10.
+        </p>
+        <p style={{
+          marginTop: 'var(--e2)', maxWidth: 390,
+          fontFamily: 'var(--mono)', fontSize: 10.5,
+          letterSpacing: '0.09em', textTransform: 'uppercase',
+          color: 'var(--lin)',
+        }}>
+          gratuit · sans inscription · sans solfège
+        </p>
+        <p className="lin" style={{ marginTop: 'var(--e3)', maxWidth: 390, fontSize: 13 }}>
+          Au défi du jour, tu n&apos;as qu&apos;un essai. Entraîne-toi avant.
+        </p>
+      </div>
 
       {/* 5 — Invitation à activer le son, avec le réglage à côté.
           `deploye` garde le curseur visible en permanence : à cet endroit il
@@ -494,9 +646,10 @@ export default function Accueil() {
             key={e.href}
             href={e.href}
             className="epreuve-lien"
+            data-actif={survol === k ? '1' : undefined}
             onMouseEnter={() => entrerEpreuve(k)}
             onFocus={() => setSurvol(k)}
-            style={styleColonne(k)}
+            style={styleColonne()}
           >
             {/* Des span et non des div : le contenu d'un lien reste ainsi du
                 contenu en ligne, quel que soit le display appliqué ensuite. */}
@@ -518,14 +671,14 @@ export default function Accueil() {
       {/* 8 — Ligne de description (hauteur fixe : la page ne saute pas).
              Masquée sous 640 px, où chaque entrée porte son accroche. */}
       <p className="description desc-survol">
-        {survol === null ? 'Survole un jeu pour le découvrir.' : EPREUVES[survol].desc}
+        {survol === null ? 'Survole un jeu pour voir ce qu\'il demande.' : EPREUVES[survol].desc}
       </p>
 
       {/* 9 — Sortie vers le catalogue complet, mobile uniquement.
              La vitrine ne montre que cinq des dix épreuves, et rien ne le
              disait une fois la barre de navigation repliée. */}
       <div className="bloc-tout-voir">
-        <Link href={lienEpreuve(CATALOGUE[0].slug)}>les dix jeux →</Link>
+        <Link href="/jeux">les dix jeux →</Link>
       </div>
 
       {/* 10 — Bloc du défi quotidien : seul élément encadré de la page, et sa
@@ -546,13 +699,28 @@ export default function Accueil() {
       >
         <div className="etiquette-mono">défi du jour</div>
         <p style={{ fontSize: 14, marginTop: 'var(--e2)' }}>
-          Dix épreuves, les mêmes pour tous, jusqu&apos;à minuit. Ton résultat se partage en une ligne.
+          Dix jeux, les mêmes pour tous, jusqu&apos;à minuit. Ton résultat se partage en une ligne.
         </p>
       </Link>
 
-      {/* 11 — Mention de pied */}
+      {/* 11 — Bloc « à propos ».
+
+             Posé ICI, dans le composant, et non dans une enveloppe serveur.
+             La directive 'use client' en tête de fichier ne veut pas dire
+             « rendu uniquement par le navigateur » : Next rend aussi les
+             composants clients sur le serveur, et le HTML servi contient donc
+             ce bloc. Elle dit seulement qu'il sera hydraté ensuite.
+
+             La règle qui compte est ailleurs : un contenu conditionné à un
+             état posé dans un useEffect, lui, est absent du HTML. C'est le cas
+             du catalogue, dont les dix jeux attendent un drapeau `monte`.
+             Cette page n'a rien de tel, tout son texte est servi d'emblée. */}
+      <BlocAccueil />
+
+      {/* 12 — Mention de pied */}
       <footer className="bloc-pied" style={{ textAlign: 'center', fontSize: 11, color: 'var(--cendre)' }}>
-        Mozart Benchmark — extraits fournis par Deezer, sons de synthèse et échantillons libres.
+        Mozart Benchmark, jeux d&apos;oreille musicale gratuits.
+        Extraits fournis par Deezer, sons de synthèse et échantillons libres.
       </footer>
     </main>
   );

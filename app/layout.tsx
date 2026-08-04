@@ -95,6 +95,29 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         description: SITE_ACCROCHE,
         inLanguage: 'fr-FR',
       },
+      /* Ce que le reste du graphe ne dit pas : ce site EST une application
+         jouable dans le navigateur, et elle est gratuite. L'offre à zéro euro
+         est ce qui autorise la mention « gratuit » dans un résultat, et
+         « gratuit » figure dans presque toutes les requêtes de ce domaine.
+
+         Déclaré dans le layout et non dans une page serveur dédiée : le
+         graphe vit déjà ici, et un composant client ne pouvait de toute façon
+         pas être la raison de le déplacer, puisque son rendu serveur existe. */
+      {
+        '@type': 'WebApplication',
+        '@id': `${SITE_URL}/#application`,
+        name: SITE_NOM,
+        url: SITE_URL,
+        description: SITE_ACCROCHE,
+        inLanguage: 'fr-FR',
+        applicationCategory: 'GameApplication',
+        operatingSystem: 'Tous',
+        browserRequirements: 'Navigateur moderne avec le son activé',
+        isAccessibleForFree: true,
+        offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' },
+        featureList: EPREUVES.map((e) => e.nom),
+        isPartOf: { '@id': `${SITE_URL}/#site` },
+      },
       {
         '@type': 'ItemList',
         '@id': `${SITE_URL}/#epreuves`,

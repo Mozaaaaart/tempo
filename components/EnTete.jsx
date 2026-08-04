@@ -196,12 +196,68 @@ export default function EnTete({ liens = [], accent = false, children = null, dr
           to   { opacity: 1; transform: translateY(0); }
         }
 
-        /* Sous 640 px, seuls l'identité et le contenu central subsistent :
-           les liens et les séparateurs se replient plutôt que de comprimer
-           ce qui porte l'information. */
+        /* ============================================================
+           SOUS 640 PX — CE QUI CÈDE, ET DANS QUEL ORDRE
+
+           Le repli couvrait le nom du site et les liens. Sur le défi du jour,
+           où la barre porte en plus une pastille de mode, une date et un
+           décompte, c'était nécessaire. Mais il s'appliquait PARTOUT — y
+           compris sur une page d'épreuve, où la barre ne porte rien d'autre
+           et se retrouvait réduite au seul monogramme, avec deux cents pixels
+           de vide à côté.
+
+           La règle est donc devenue une hiérarchie de sacrifice, du plus
+           dispensable au moins :
+
+             1. les séparateurs — décoration pure ;
+             2. la pastille de mode — le filet or et son halo disent déjà
+                qu'on est dans le défi, et le titre de la page le répète ;
+             3. la date — elle figure en tête du contenu, deux centimètres
+                plus bas ;
+             4. « il reste », dont seul le CHIFFRE porte l information ;
+             5. la sortie — dernier recours, jamais atteint aujourd hui ;
+             6. le nom du site — jamais. C est la seule chose qui dit où l on
+                est, et la seule à ne devoir changer sur aucune page.
+
+           Les quatre premiers portent entete-repli, posé par les PAGES sur ce
+           qu elles injectent. Le composant, lui, ne replie plus rien de ce qui
+           lui appartient.
+
+           Le compte tient sur 320 px, la largeur la plus étroite qu on
+           rencontre encore : 288 restent après les marges, dont 28 pour le
+           monogramme, environ 109 pour le nom du site, 45 pour le décompte
+           réduit à son chiffre et 79 pour la sortie. Les gouttières font le
+           reste, à trois pixels près.
+        ============================================================ */
         @media (max-width: 640px) {
           .entete { padding-left: var(--e4); padding-right: var(--e4); gap: var(--e2); }
           .entete .entete-repli { display: none; }
+
+          /* Le nom du site RÉTRÉCIT au lieu de disparaître. min-width est
+             indispensable : un élément flex refuse par défaut de descendre
+             sous la largeur de son contenu, et sans lui l ellipse ne se
+             déclencherait jamais — la barre déborderait à la place.
+
+             Ce n est qu un filet de sécurité. Aucune page n atteint ce cas
+             aujourd hui ; il couvre celle qui injecterait un jour un élément
+             de plus. */
+          .entete-titre {
+            font-size: 13px;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+
+          /* La sortie ne se comprime JAMAIS : un lien tronqué ne se clique
+             pas, et il ne se lit pas non plus.
+
+             L interlettrage retombe de 0,09 à 0,06 em. Les capitales espacées
+             sont faites pour de courtes étiquettes ; sur onze signes, chaque
+             centième d em coûte un pixel qu on n a pas. */
+          .entete-lien {
+            flex-shrink: 0;
+            letter-spacing: 0.06em;
+          }
         }
       `}</style>
 
@@ -209,7 +265,11 @@ export default function EnTete({ liens = [], accent = false, children = null, dr
         <span className="entete-monogramme">MB</span>
       </Link>
 
-      <Link href="/" className="entete-titre entete-repli">Mozart Benchmark</Link>
+      {/* Le nom du site, sur TOUTES les tailles d'écran. Il ne porte plus
+          entete-repli : un en-tête réduit au seul monogramme ne dit pas où
+          l'on est, il pose une devinette. Sa largeur cède avant lui, par
+          l'ellipse déclarée dans la requête média. */}
+      <Link href="/" className="entete-titre">Mozart Benchmark</Link>
 
       {/* Bloc de GAUCHE : identité, puis ce que la page a de permanent à
           dire sur elle-même — mode, édition. */}
@@ -228,8 +288,12 @@ export default function EnTete({ liens = [], accent = false, children = null, dr
         <span className="entete-sep entete-repli" aria-hidden="true" />
       )}
 
+      {/* La sortie reste elle aussi visible partout. C'est le seul lien de la
+          barre, et sur mobile la navigation d'accueil est repliée : sans lui,
+          passer du défi à l'entraînement demande de revenir à l'accueil puis
+          de redescendre toute la page. */}
       {liens.map((l) => (
-        <Link key={l.href} href={l.href} className="entete-lien entete-repli">
+        <Link key={l.href} href={l.href} className="entete-lien">
           {l.libelle}
         </Link>
       ))}

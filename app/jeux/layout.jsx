@@ -84,7 +84,34 @@ export default function EpreuvesLayout({ children }) {
   const pathname = usePathname();
   const router = useRouter();
 
-  // /epreuves/pochette → 'pochette'
+  /* ---- Remonter en haut EN ARRIVANT, mais jamais entre deux jeux ----
+   *
+   * Le defaut : depuis le bas de l'accueil, un clic sur une carte ouvrait bien
+   * la bonne page mais la laissait a la hauteur ou l'on etait. On atterrissait
+   * au milieu du jeu, ou sous lui, sans avoir vu ni le titre ni la consigne.
+   *
+   * La cause tient a la mecanique de ce layout. Toute la navigation interne
+   * passe par `scroll: false` — sur les fleches, sur le carrousel, sur le
+   * clavier — parce que passer d'un jeu a l'autre ne doit PAS remonter la
+   * page : on reste a la meme hauteur et seul le panneau glisse. C'est ce qui
+   * donne l'impression d'une seule page qui change de contenu.
+   *
+   * Ce refus de defiler s'appliquait aussi aux arrivees depuis l'exterieur,
+   * ou il n'a aucun sens.
+   *
+   * La distinction se fait sur le MONTAGE, pas sur le chemin. Ce layout n'est
+   * jamais demonte quand on passe d'un jeu a l'autre : un effet a dependances
+   * vides ne s'execute donc qu'a l'arrivee depuis une autre page. On n'a rien
+   * a comparer ni a memoriser, la structure de l'application le dit deja.
+   *
+   * `instant` et non `smooth` : un defilement anime depuis le bas d'une page
+   * qui vient d'etre remplacee glisse a travers un contenu qui n'existe plus.
+   * On veut etre en haut, pas y aller. */
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, []);
+
+  // /jeux/pochette → 'pochette'
   const slug = pathname.split('/')[2] ?? '';
   const trouve = EPREUVES.findIndex((x) => x.slug === slug);
   const index = trouve < 0 ? 0 : trouve;

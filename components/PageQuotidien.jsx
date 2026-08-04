@@ -226,6 +226,34 @@ function dateLisible(iso) {
   return `${jour === 1 ? '1er' : jour} ${MOIS[Number(m[2]) - 1]} ${m[1]}`;
 }
 
+/* ---- LA MÊME DATE, PRÉCÉDÉE DE SON JOUR DE SEMAINE ----
+ *
+ * « 4 août 2026 » est une référence d'archive : c'est ainsi qu'on désigne une
+ * édition passée. « mardi 4 août 2026 » est un RENDEZ-VOUS — la forme qu'on
+ * emploie pour ce qui revient. Le défi du jour est précisément cela, et
+ * l'étiquette est le premier mot lu de la page.
+ *
+ * Réservé à cet endroit. La forme sans jour reste partout ailleurs : dans le
+ * texte de partage, où quatre signes de plus coûtent une ligne, et sur les
+ * boutons de la veille, où l'on parle bien d'une archive.
+ *
+ * LE CALCUL PASSE PAR UTC, et ce n'est pas un détail. `new Date('2026-08-04')`
+ * est interprété en temps universel, mais `new Date('2026-08-04T00:00:00')`
+ * l'est en heure locale : à l'ouest de Greenwich, la première forme recule
+ * d'un jour. Date.UTC met les deux à l'abri, et surtout donne au serveur et au
+ * navigateur la même réponse — une divergence d'un jour entre les deux rendus
+ * casserait l'hydratation.
+ */
+const JOURS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi',
+  'vendredi', 'samedi'];
+
+function dateAvecJour(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso ?? ''));
+  if (!m) return iso;
+  const n = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))).getUTCDay();
+  return `${JOURS[n]} ${dateLisible(iso)}`;
+}
+
 /* Temps restant avant minuit LOCAL. Jamais appelé au rendu serveur : la
    valeur dépend de l'heure du client, elle ne peut pas être hydratée. */
 function msAvantMinuit() {
@@ -448,6 +476,7 @@ export default function PageQuotidien() {
      le bouton pour descendre dedans. */
   const veilleOuverte = veilleEpinglee || veilleSurvolee;
   const dateDuJour = jour ? dateLisible(jour) : '';
+  const dateRendezVous = jour ? dateAvecJour(jour) : '';
   const restant = resteLisible(reste);
   /* Périmé dès que la date locale a changé. Le décompte seul ne suffisait
      pas : il touche zéro un instant avant la bascule, et surtout il repart
@@ -785,15 +814,26 @@ export default function PageQuotidien() {
                 nouveau défi — recharger
               </button>
             ) : restant ? (
-              <>il reste <span className="q-jeton-fort">{restant}</span></>
+              /* « il reste » se replie, le chiffre reste. L'échéance est le
+                 seul élément mouvant de la barre et elle porte l'urgence :
+                 elle ne se replie donc pas, contrairement à la date et à la
+                 pastille de mode. Mais deux mots sur quinze ne font que
+                 situer ce que le chiffre dit tout seul — soixante pixels
+                 rendus au nom du site sans rien perdre. */
+              <><span className="entete-repli">il reste </span><span className="q-jeton-fort">{restant}</span></>
             ) : null}
           </span>
         }
       >
         <span className="entete-sep entete-repli" aria-hidden="true" />
 
-        {/* Seul élément en or plein de la page. */}
-        <span className="q-puce">défi du jour</span>
+        {/* Seul élément en or plein de la page.
+
+            REPLIÉE SUR MOBILE. Elle nomme l'endroit où l'on se trouve, ce que
+            disent déjà le filet or, son halo — que cette page est seule à
+            porter — et le titre deux centimètres plus bas. Trois fois la même
+            information, pour cent pixels qui manquaient au nom du site. */}
+        <span className="q-puce entete-repli">défi du jour</span>
 
         <span className="q-jeton entete-repli">{dateDuJour}</span>
       </EnTete>
@@ -1407,56 +1447,144 @@ export default function PageQuotidien() {
         {/* ---------- Titre, et relevé encadré à droite ---------- */}
         <div className="q-tete" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--e5)', flexWrap: 'wrap' }}>
           <div className="q-tete-texte" style={{ flex: '1 1 320px', minHeight: 118 }}>
-            <div className="etiquette-mono">{dateDuJour}</div>
+            <div className="etiquette-mono">{dateRendezVous}</div>
+
+            {/* ---- LE TITRE NOMME LA PAGE ----
+                Un titre-slogan avait été essayé — « Aujourd'hui, ça compte
+                pour de bon » — pour prolonger le fil de l'accueil. Il tenait
+                sur le fond, mais il faisait deux lignes de trente pixels au-
+                dessus d'un bloc déjà dense, et surtout il obligeait le lecteur
+                à deviner où il venait d'arriver. Sur une page qu'on rejoint
+                souvent par un lien direct, ce n'est pas le moment de faire
+                deviner.
+
+                L'expression exacte est celle du title du document et de
+                l'openGraph : ce qu'on a lu dans l'onglet ou dans un partage se
+                retrouve mot pour mot en haut de la page. « Musical » n'est pas
+                un ornement — des défis du jour, il y en a pour les mots
+                croisés, la géographie et le code.
+
+                Le récit n'est pas perdu pour autant : il est passé dans la
+                phrase juste en dessous, qui dit l'irréversible. Un titre
+                situe, une phrase raconte. */}
             <h1 className="titre-page" style={{ marginTop: 'var(--e2)' }}>
               Le défi musical du jour
             </h1>
-            {/* ---- Trois choses, dans cet ordre ----
-                1. CE QU'ON JOUE. « 10 épreuves » ne disait pas de quoi. Les
-                   mots « oreille » et « musique » n'apparaissaient nulle part
-                   sur cette page, alors que c'est son sujet et que c'est ce
-                   qu'un moteur y cherche.
-                2. CE QU'ON GAGNE. Le score sur dix et le partage étaient
-                   absents, alors que c'est le seul motif de revenir demain.
-                3. L'ÉCHAPPATOIRE. Elle vient en dernier : proposer
-                   l'entraînement avant d'avoir donné envie du défi, c'est
-                   inviter à partir.
 
-                « Pour t'entraîner sans limite, elles sont aussi jouables à
-                l'entraînement » disait deux fois le même mot dans une même
-                proposition : c'est une séquelle du renommage, l'ancienne
-                formule se terminait par « en accès libre ». */}
-            {/* ---- Un bloc se juge à sa dernière ligne ----
-                La version précédente en occupait trois, dont la troisième ne
-                portait que « à partager. ». Deux mots seuls sous deux lignes
-                pleines : le lecteur voit la coupure avant de lire la phrase.
+            {/* ---- TROIS REGISTRES, COMME SUR L'ACCUEIL ----
+                Le sous-titre de la page d'accueil descend en trois marches :
+                une phrase en corps de texte, les faits en étiquette mono
+                séparés par des points médians, puis le conseil un point plus
+                bas. Trois formes parce que ce sont trois fonctions.
 
-                La cause n'était pas la mise en forme mais la longueur — 157
-                signes pour une colonne qui en tient une soixantaine par ligne.
-                « Et de culture musicale » est retiré : c'est une précision qui
-                sert le référencement, et le référencement se joue dans la
-                balise meta, où elle est restée. Sur la page, elle coûtait une
-                ligne entière pour ne rien apprendre à qui est déjà arrivé.
+                Ici les mêmes trois éléments existaient, mais tous gris, tous
+                de même corps : deux paragraphes qu'on lit d'un bloc ou qu'on
+                saute d'un bloc. Le visiteur qui vient de l'accueil retrouve
+                maintenant la forme qu'il vient de quitter.
 
-                Les deux paragraphes forment maintenant un dégradé : deux
-                lignes pleines, puis une courte, plus petite et plus pâle.
-                L'échappatoire vers l'entraînement se lit comme ce qu'elle est,
-                un aparté, au lieu de peser autant que la règle du jeu.
+                LA PREMIÈRE PHRASE PORTE L'ENJEU, ET RIEN D'AUTRE. Le nombre de
+                jeux, la tentative unique, puis la conséquence. « Ce que tu
+                joues aujourd'hui ne se rejoue pas » est la ligne la plus dure
+                du site, et c'est justement ce qu'on est venu chercher : sans
+                elle, le défi n'est qu'un entraînement daté.
 
-                LE TOTAL VIENT DE `max`, la même constante que la carte du
-                score. Écrit en dur, il disait « sur dix » — la note d'UNE
-                épreuve — alors que le défi en cumule dix. Le chiffre juste
-                était affiché à trente pixels de là, dans le relevé. */}
-            <p className="lin" style={{ marginTop: 'var(--e2)', maxWidth: 470, textWrap: 'pretty' }}>
-              {EPREUVES.length}{' '}jeux d&apos;oreille, une seule tentative chacun,
-              les mêmes pour tous jusqu&apos;à minuit. Un score sur {max} à partager.
+                Les faits qui SITUENT — même tirage, échéance, barème —
+                descendent en mono. On les balaye au lieu de les lire, ce qui
+                est exactement leur usage, et ils cessent de diluer la phrase
+                au-dessus d'eux. */}
+            <p className="lin" style={{ marginTop: 'var(--e3)', maxWidth: 620, textWrap: 'balance' }}>
+              {EPREUVES.length}{' '}jeux, une seule tentative chacun.
+              Ce que tu joues aujourd&apos;hui ne se rejoue pas.
             </p>
+
+            {/* ---- POURQUOI CETTE LIGNE N'EST PAS EN MONO CAPITALES ----
+                Le mono en capitales est bien la grammaire du site, mais il y
+                sert toujours à ÉTIQUETER : nom de section, date d'édition,
+                mention de statut. Ce sont des repères, pas des phrases, et on
+                les lit d'un coup d'œil sans les parcourir.
+
+                Ces trois faits, eux, sont du CONTENU — le lecteur les lit. Et
+                l'étiquette de date, quinze pixels plus haut, emploie déjà
+                cette forme : deux lignes mono capitales dans le même bloc,
+                dont une seule est vraiment une étiquette. La seconde volait
+                donc son autorité à la première.
+
+                Elle reprend la police du texte, un point en dessous du
+                paragraphe qui la précède. Ce qui fait le pas de lecture n'est
+                pas la police mais les POINTS MÉDIANS : trois membres séparés
+                se balayent, une phrase se lit. La descente en trois marches
+                est intacte, la troisième a simplement cessé de crier.
+
+                Interligne fixé quand même : c'est ce qui rend la marge écrite
+                égale à la marge vue, sans quoi le blanc parasite de la boîte
+                s'y ajoute en douce.
+
+                ---- LES ÉCARTS DISENT LES GROUPES, PAS LES LIGNES ----
+
+                Trois blancs égaux donnaient trois paragraphes gris de corps
+                voisins, sans rien pour dire lesquels vont ensemble : un mur.
+                L'égalité était le défaut, pas le remède.
+
+                Or ces lignes ne sont pas de même rang. La phrase et ces trois
+                faits décrivent tous deux le défi du jour — c'est UN groupe,
+                et --e2 les tient serrés l'un contre l'autre. Le conseil,
+                lui, s'adresse à quelqu'un d'autre et propose d'aller
+                ailleurs : --e6 l'en détache franchement.
+
+                Le blanc devient ainsi porteur de sens au lieu d'être une
+                simple respiration. C'est la règle de proximité, et elle vaut
+                mieux qu'une grille régulière : l'œil regroupe ce qui est
+                proche avant de lire quoi que ce soit.
+
+                ---- 620 ET NON 470 ----
+
+                Les 470 étaient calibrés sur l'ancienne rédaction, plus
+                courte. Avec le texte actuel ils donnaient cinq lignes dont
+                trois cassées à mi-parcours. La colonne peut prendre bien
+                davantage : le relevé fait 190 px au minimum plus une
+                gouttière, il reste plus de sept cents pixels sur un écran
+                courant. À 620, la phrase d'enjeu tient sur un rang, les faits
+                aussi, et le conseil sur deux — quatre lignes pleines.
+
+                textWrap balance PLUTÔT QUE pretty sur les deux paragraphes de
+                prose. Les deux servent la même cause mais pas de la même
+                façon : pretty se contente d'éviter le mot esseulé en dernière
+                ligne, balance répartit la matière également sur tous les
+                rangs. Sur un bloc de deux lignes, c'est exactement ce qu'on
+                veut — et sur une seule, la propriété ne fait rien, donc elle
+                ne coûte rien à la phrase qui tient d'un trait.
+
+                Elle sert aussi de filet : si la police rendue est un peu plus
+                large que prévu et que la phrase d'enjeu déborde sur un second
+                rang, elle se coupera en deux moitiés égales au lieu de laisser
+                deux mots tout seuls. */}
             <p style={{
-              marginTop: 'var(--e3)', maxWidth: 470, fontSize: 13,
-              color: 'var(--lin)', textWrap: 'pretty',
+              marginTop: 'var(--e2)', maxWidth: 620,
+              fontSize: 13, lineHeight: 1.4,
+              color: 'var(--lin)',
             }}>
-              Ces jeux sont aussi jouables sans limite
-              {' '}<Link href={lienEpreuve(EPREUVES[0].slug)}>à l&apos;entraînement</Link>.
+              Les mêmes jeux pour tous&nbsp;· Jusqu&apos;à minuit&nbsp;· Une note sur {max}
+            </p>
+
+            {/* ---- L'ÉCHAPPATOIRE, ET POURQUOI ELLE VIENT EN DERNIER ----
+                Elle protège l'expérience : une seule tentative par jeu, et qui
+                arrive ici sans rien connaître brûle son essai avant d'avoir
+                compris la règle. Mais proposer la sortie avant d'avoir donné
+                envie d'entrer, c'est inviter à partir — d'où sa place, sa
+                taille et sa pâleur.
+
+                LA LEVÉE DE FREIN EST DEVENUE EXPLICITE. « Où tu peux les
+                rejouer sans limite » décrivait l'entraînement ; « ça ne
+                consomme aucune tentative » répond à la question que le titre
+                vient de poser. C'est la seule inquiétude que le mot
+                « irréversible » fait naître, et elle se lève en six mots. */}
+            <p style={{
+              marginTop: 'var(--e6)', maxWidth: 620, fontSize: 13,
+              color: 'var(--lin)', textWrap: 'balance',
+            }}>
+              Première fois&nbsp;? Passe d&apos;abord
+              {' '}<Link href={lienEpreuve(EPREUVES[0].slug)}>à l&apos;entraînement</Link>&nbsp;:
+              tout y est illimité, et ça ne consomme aucune tentative.
             </p>
           </div>
 
@@ -1693,9 +1821,15 @@ export default function PageQuotidien() {
               {restant ? `il reste ${restant}` : ''}
             </div>
 
+            {/* « Joueurs » et non « candidats ». Le second appartient au
+                registre de l'examen, celui que le site a méthodiquement quitté
+                — la baseline est passée d'« évaluation auditive » à « dix jeux
+                d'oreille », et le titre de l'accueil ne mesure plus, il fait
+                découvrir. Un mot d'examen à l'entrée du défi rouvre seul le
+                frein que tout le reste de la page lève. */}
             <p style={{ fontSize: 14, marginTop: 'var(--e5)', maxWidth: 460, marginInline: 'auto' }}>
               {EPREUVES.length}{' '}jeux à la suite, une tentative chacun. Le tirage est le
-              même pour tous les candidats du jour, et il change à minuit.
+              même pour tous les joueurs du jour, et il change à minuit.
             </p>
 
             {/* ---------- Le programme ----------

@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation';
 import { EPREUVES, epreuveDuSlug } from '@/data/epreuves';
 import { SITE_URL, SITE_NOM } from '@/data/site';
 import JeuSlot from '@/components/JeuSlot';
+import BlocPresentation from '@/components/BlocPresentation';
+import { presentationDuSlug } from '@/data/presentations';
 
 /**
  * Une URL par épreuve. Composant serveur : c'est lui qui porte le <title>, la
@@ -67,6 +69,13 @@ export default async function PageEpreuveSlug({ params }) {
 
      BreadcrumbList donne le fil d'Ariane sous le résultat : Accueil ›
      Épreuves › Accords, au lieu d'une URL nue. */
+  /* Le bloc de présentation, s'il existe, alimente aussi un balisage FAQPage.
+     C'est le seul type de données structurées qui puisse décrocher un résultat
+     enrichi sur ce genre de page — mais uniquement si les questions sont
+     réellement affichées, ce que Google vérifie. D'où la lecture de la MÊME
+     source que le rendu : les deux ne peuvent pas diverger. */
+  const presentation = presentationDuSlug(slug);
+
   const donnees = {
     '@context': 'https://schema.org',
     '@graph': [
@@ -83,6 +92,17 @@ export default async function PageEpreuveSlug({ params }) {
         offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' },
         isPartOf: { '@id': `${SITE_URL}/#site` },
       },
+      ...(presentation?.questions?.length
+        ? [{
+          '@type': 'FAQPage',
+          '@id': `${SITE_URL}/jeux/${e.slug}#faq`,
+          mainEntity: presentation.questions.map((item) => ({
+            '@type': 'Question',
+            name: item.q,
+            acceptedAnswer: { '@type': 'Answer', text: item.r },
+          })),
+        }]
+        : []),
       {
         '@type': 'BreadcrumbList',
         itemListElement: [
@@ -102,6 +122,7 @@ export default async function PageEpreuveSlug({ params }) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(donnees) }}
       />
       <JeuSlot slug={slug} />
+      <BlocPresentation slug={slug} />
     </>
   );
 }

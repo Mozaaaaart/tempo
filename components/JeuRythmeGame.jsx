@@ -602,6 +602,12 @@ function Surcouche({ annonce, onPasser }) {
    et une phrase à l'impératif qui dit exactement quoi faire maintenant.
 ============================================================ */
 
+/* Tout le site écrit ses notes à la française : 7,5 et non 7.5. La ligne
+   d'état était le seul endroit qui laissait passer le point décimal. */
+function note(valeur) {
+  return Number(valeur).toFixed(1).replace('.', ',');
+}
+
 const ETATS_ZONE = {
   listen: {
     bordure: 'var(--filet)', accent: 'var(--cendre)', titre: 'var(--lin)',
@@ -617,9 +623,41 @@ const ETATS_ZONE = {
   },
   repos: {
     bordure: 'var(--filet)', accent: 'var(--cendre)', titre: 'var(--lin)',
-    intitule: 'C\'est ici que tu frapperas le rythme', aide: 'au doigt ou avec la barre d\'espace',
+    /* « C'est ici que tu frapperas le rythme » mettait douze mots au futur à
+       dire un seul lieu. L'intitulé nomme la zone, l'aide dit le geste et le
+       moment — voir aideFrappe, qui la remplace selon l'appareil. Celle-ci
+       reste le repli si la détection n'a pas encore eu lieu. */
+    intitule: 'Ta zone de frappe', aide: 'barre d\'espace ou clic, quand elle s\'allume',
   },
 };
+
+/* ---- L'aide dépend de l'appareil, et le geste s'annonce AVANT ----
+ *
+ * Deux corrections dans la même fonction.
+ *
+ * 1. « Au doigt ou avec la barre d'espace » énonçait à chacun un geste qui
+ *    n'est pas le sien : il n'y a pas de barre d'espace sur un téléphone, et
+ *    pas de doigt sur un écran d'ordinateur. Une consigne à moitié fausse se
+ *    lit deux fois avant d'être comprise, et celle-ci n'a qu'une mesure pour
+ *    servir.
+ *
+ * 2. Le repos ne disait plus QUE le moment. C'était trop peu : le repos est
+ *    le seul état que le joueur regarde sans être pressé — pendant l'écoute
+ *    il mémorise, pendant la frappe il joue. C'est donc là, et nulle part
+ *    ailleurs, qu'il a le temps d'apprendre le geste. La zone annonce les
+ *    deux : ce qu'il faudra faire, et quand.
+ *
+ * LE MÊME GESTE SE DIT AVEC LES MÊMES MOTS aux deux états. Au repos on y
+ * ajoute le moment, en jeu on le retire — le joueur reconnaît la phrase qu'il
+ * a lue trente secondes plus tôt au lieu d'en déchiffrer une nouvelle au
+ * moment précis où il doit regarder et non lire.
+ */
+function aideFrappe(phase, tactile) {
+  const geste = tactile ? 'tape dans la zone' : 'barre d\'espace ou clic';
+  if (phase === 'repos') return `${geste}, quand elle s'allume`;
+  if (phase === 'play') return geste;
+  return ETATS_ZONE[phase]?.aide ?? ETATS_ZONE.repos.aide;
+}
 
 /* Cible concentrique : un point de contact et deux ondes qui s'en échappent.
    Le glyphe se lit sans légende — c'est le symbole universel du « tape ici ».
@@ -642,8 +680,9 @@ function CibleFrappe({ couleur, anime }) {
   );
 }
 
-function ZoneFrappe({ phase, running, impulsion, onTap }) {
+function ZoneFrappe({ phase, running, impulsion, onTap, tactile }) {
   const etat = ETATS_ZONE[phase] ?? ETATS_ZONE.repos;
+  const aide = aideFrappe(phase, tactile);
   const enJeu = phase === 'play';
   const enAttente = phase === 'ready';
 
@@ -687,7 +726,7 @@ function ZoneFrappe({ phase, running, impulsion, onTap }) {
       </div>
 
       <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>
-        {etat.aide}
+        {aide}
       </div>
 
       {/* Onde d'impact : la `key` change à chaque frappe, ce qui remonte le
@@ -754,9 +793,22 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
   // Vraie pendant toute la présentation : le tableau de bord attend qu'elle
   // soit finie pour faire rouler son compteur.
   const introEnCours = annonce?.type === 'intro';
-  const [status, setStatus] = useState(daily
-    ? `${DAILY_ROUNDS} patterns, un seul essai chacun. Ton score est la moyenne.`
-    : 'Le niveau monte tant que tu tiens. Trois vies.');
+  /* Pointeur grossier = doigt. `pointer: coarse` plutôt qu'une largeur :
+     c'est le geste qui nous intéresse, pas la taille de l'écran. */
+  const [tactile, setTactile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(pointer: coarse)');
+    const maj = () => setTactile(mq.matches);
+    maj();
+    mq.addEventListener('change', maj);
+    return () => mq.removeEventListener('change', maj);
+  }, []);
+
+  /* Vide au départ. Cette ligne s'affiche SOUS la zone de frappe, donc après
+     le bouton et après la grille : elle y annonçait les règles à un joueur
+     qui avait déjà tout lu et cliqué. Le cadrage remonte en tête de panneau,
+     et la ligne d'état retrouve son seul métier — dire ce qui se passe. */
+  const [status, setStatus] = useState('');
 
   const toneRef = useRef(null);
   const clickRef = useRef(null);
@@ -955,7 +1007,7 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
     setPatternVisible(true);
     setStepFlash({});
     setStatus(daily
-      ? `Pattern ${dailyRoundRef.current + 1} sur ${DAILY_ROUNDS} · ${cfg.steps} cases — écoute et mémorise.`
+      ? `Mesure ${dailyRoundRef.current + 1} sur ${DAILY_ROUNDS} · ${cfg.steps} cases — écoute et mémorise.`
       : `Niveau ${lvl} · ${cfg.bpm} BPM · ${cfg.steps} cases — écoute et mémorise.`);
 
     // La grille doit être POSÉE avant que la mesure ne parte : le premier
@@ -999,7 +1051,9 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
     // précoces restent rejetées par le test de fenêtre dans tap().
     schedule(() => {
       setPhaseBoth('play');
-      setStatus('À toi. Frappe avec la barre d\'espace ou dans la zone.');
+      /* Le comment est déjà dit, en vert, dans la zone. Répéter le geste ici
+         double la lecture au moment où il faut regarder et non lire. */
+      setStatus('À toi. Rejoue la mesure.');
     }, Math.max(0, (r0 - Tone.now()) * 1000 - 250));
 
     schedule(() => animateCursor(r0, bar), Math.max(0, (r0 - Tone.now()) * 1000));
@@ -1081,7 +1135,7 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
         const avg = Math.round((dailyScoresRef.current.reduce((a, b) => a + b, 0) / DAILY_ROUNDS) * 10) / 10;
         setPhaseBoth('gameover');
         setRunActif(false);
-        setStatus(`Terminé : ${dailyScoresRef.current.map(x => x.toFixed(1)).join(' · ')} → moyenne ${avg} sur 10.`);
+        setStatus(`Terminé : ${dailyScoresRef.current.map(note).join(' · ')} → moyenne ${note(avg)} sur 10.`);
         if (!dailyDoneRef.current) { dailyDoneRef.current = true; onDone(avg); }
 
         /* Même séquence que les autres épreuves : le voile occupe le panneau
@@ -1094,7 +1148,7 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
       } else {
         levelRef.current = DAILY_LEVELS[dailyRoundRef.current];
         setLevel(levelRef.current);
-        setStatus(`${s} sur 10. Pattern ${dailyRoundRef.current + 1} sur ${DAILY_ROUNDS} dans un instant.`);
+        setStatus(`${note(s)} sur 10. Mesure ${dailyRoundRef.current + 1} sur ${DAILY_ROUNDS} dans un instant.`);
         schedule(() => startCycle(), 1800);
       }
       return;
@@ -1106,7 +1160,7 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
       setBestLevel((b) => Math.max(b, levelRef.current));
       // Réussite : aucun voile. Le pattern suivant est la récompense, une
       // cérémonie de félicitations ne ferait que casser la série.
-      setStatus(`${s} sur 10. Niveau ${levelRef.current}.`);
+      setStatus(`${note(s)} sur 10. Niveau ${levelRef.current}.`);
       schedule(() => startCycle(), 1600);
     } else {
       livesRef.current -= 1;
@@ -1116,7 +1170,7 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
         // Le voile joue la perte en entier puis le verdict ; l'écran de fin
         // n'arrive qu'une fois la croix tracée.
         setAnnonce({ type: 'perte', restantes: 0, finale: true, duree: DUREE_DEFAITE });
-        setStatus(`${s} sur 10.`);
+        setStatus(`${note(s)} sur 10.`);
         schedule(() => {
           setPhaseBoth('gameover');
           setRunActif(false);
@@ -1132,7 +1186,7 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
           finale: false,
           duree: DUREE_PERTE,
         });
-        setStatus(`${s} sur 10. Le niveau ${levelRef.current} est rejoué.`);
+        setStatus(`${note(s)} sur 10. Le niveau ${levelRef.current} est rejoué.`);
         // La transition attend que le voile soit parti. Le lancer pendant
         // l'annonce faisait jouer les deux mouvements ensemble : la grille
         // se retirait derrière la pastille qui s'éteignait, et les deux se
@@ -1328,10 +1382,35 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
         }
       `}</style>
 
+      {/* ---- Cartouche de tête ----
+          Le panneau n'annonçait rien. Le joueur arrivait sur un tableau de
+          bord — niveau, vies, record — sans qu'aucune ligne lui ait dit à
+          quoi il joue. La seule phrase qui le disait était la ligne d'état,
+          posée SOUS la zone de frappe, c'est-à-dire après le bouton et après
+          la grille : lue, si elle l'était, une fois la partie commencée.
+
+          Même structure que l'épreuve des accords : intitulé, consigne, puis
+          l'enjeu en étiquette mono. Trois lignes, la même partout, et le
+          joueur qui passe d'une épreuve à l'autre n'a jamais à chercher où
+          se trouve la règle. */}
+      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Reproduis le rythme</h3>
+      <p className="description" style={{ maxWidth: 470, margin: '0', textWrap: 'balance' }}>
+        Écoute une mesure, rejoue-la de mémoire au bon tempo.
+      </p>
+      <p style={{
+        fontFamily: 'var(--mono)', fontSize: 10.5, fontWeight: 400,
+        letterSpacing: '0.09em', textTransform: 'uppercase',
+        color: 'var(--lin)', margin: 'var(--e2) 0 var(--e5)',
+      }}>
+        {daily
+          ? `${DAILY_ROUNDS} mesures · ton score est la moyenne`
+          : 'Le niveau monte tant que tu tiens'}
+      </p>
+
       {/* Tableau de bord */}
       <div style={{ display: 'flex', gap: 'var(--e5)', flexWrap: 'wrap', alignItems: 'baseline', marginBottom: 'var(--e4)' }}>
         {daily ? (
-          <Donnee etiquette="pattern" valeur={`${Math.min(dailyRound + 1, DAILY_ROUNDS)} / ${DAILY_ROUNDS}`} />
+          <Donnee etiquette="mesure" valeur={`${Math.min(dailyRound + 1, DAILY_ROUNDS)} / ${DAILY_ROUNDS}`} />
         ) : (
           <>
             {/* Pendant la présentation le compteur affiche 0 : quand le voile
@@ -1468,13 +1547,18 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
       </div>
 
       {/* Zone de frappe : le composant porte lui-même sa pédagogie */}
-      <ZoneFrappe phase={phase} running={running} impulsion={impulsion} onTap={tap} />
+      <ZoneFrappe phase={phase} running={running} impulsion={impulsion} onTap={tap} tactile={tactile} />
 
       {/* La ligne d'état ne sert qu'en cours de partie : à la fin, le bilan
          porte tout ce qu'il y a à dire. Retirée plutôt que vidée, sinon sa
          hauteur minimale laisserait un blanc dans la mise en page. */}
       {status && (
-        <p className="lin" style={{ fontSize: 13, minHeight: '1.5em', marginTop: 'var(--e3)' }}>{status}</p>
+        /* Centrée : elle commente la zone de frappe, qui l'est aussi. Alignée
+           à gauche comme le tableau de bord, elle flottait toute seule sous
+           un bloc centré, sans rattachement visible à quoi que ce soit. */
+        <p className="lin" style={{
+          fontSize: 13, minHeight: '1.5em', marginTop: 'var(--e3)', textAlign: 'center',
+        }}>{status}</p>
       )}
 
       {/* Écran de fin. En quotidien il attend que le voile ait fini de
@@ -1494,7 +1578,7 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
                 <span style={{ color: 'var(--cendre)' }}> / 10</span>
               </div>
               <p className="description" style={{ marginTop: 'var(--e2)' }}>
-                Détail des {DAILY_ROUNDS} patterns :{' '}
+                Détail des {DAILY_ROUNDS} mesures :{' '}
                 {(bilanQuotidien?.notes ?? []).map((x) => x.toFixed(1).replace('.', ',')).join(' · ')}
               </p>
             </>
@@ -1530,7 +1614,7 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
                 transition: 'background var(--transition-courte)',
               }}
             >
-              Recommencer
+              Relancer un run
             </button>
           )}
         </div>
@@ -1544,7 +1628,7 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
       {resultat !== null && bilanQuotidien && (
         <ResultatIA
           score={resultat}
-          detail={`Moyenne de ${DAILY_ROUNDS} patterns : ${bilanQuotidien.notes.map((x) => x.toFixed(1).replace('.', ',')).join(' · ')}`}
+          detail={`Moyenne de ${DAILY_ROUNDS} mesures : ${bilanQuotidien.notes.map(note).join(' · ')}`}
         />
       )}
 

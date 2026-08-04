@@ -418,12 +418,12 @@ button:focus-visible { outline: 1px solid var(--or); outline-offset: 3px; }
    2. LES COMMANDES DEVIENNENT UNE GRILLE.
 
       Un flex avec retour à la ligne range les boutons selon la longueur de
-      leurs intitulés : « Générer une cible » et « Valider » se retrouvaient
+      leurs intitulés : « Écouter l'accord » et « Comparer » se retrouvaient
       côte à côte, de largeurs très différentes, et la rangée changeait de
       forme à chaque changement d'état du jeu. Une grille de deux colonnes
       donne des boutons de largeur égale et une disposition stable.
 
-      Les deux actions structurantes — écouter la cible, valider — prennent
+      Les deux actions structurantes — écouter l'accord, comparer — prennent
       la largeur entière : ce sont l'entrée et la sortie de la manche, elles
       encadrent les deux actions d'ajustement.
 ============================================================ */
@@ -433,6 +433,8 @@ button:focus-visible { outline: 1px solid var(--or); outline-offset: 3px; }
 
   .acc-titre   { order: 1; }
   .acc-desc    { order: 2; }
+  /* Même rang que la consigne : l'ordre du DOM les garde collés. */
+  .acc-bareme  { order: 2; }
   .acc-portee  { order: 3; }
   .acc-statut  { order: 4; }
   .acc-boutons { order: 5; }
@@ -440,10 +442,9 @@ button:focus-visible { outline: 1px solid var(--or); outline-offset: 3px; }
   .acc-bilan   { order: 7; }
 
   /* ---- Les commandes, en colonne ----
-     La grille de deux colonnes rendait « Écouter ma proposition » sur deux
-     lignes à côté d'« Effacer les notes » sur une seule, et les deux boutons
-     pleine largeur qui les encadraient donnaient une pile de trois formes
-     différentes. Le reste du site, sur mobile, aligne des lignes de même
+     La grille de deux colonnes rendait « Écouter mes notes » à côté
+     d'« Effacer mes notes », et les deux boutons pleine largeur qui les
+     encadraient donnaient une pile de trois formes différentes. Le reste du site, sur mobile, aligne des lignes de même
      hauteur — la liste des épreuves, la bande des dix, la navigation.
 
      Une colonne donne quatre boutons identiques, chaque intitulé sur une
@@ -477,11 +478,11 @@ button:focus-visible { outline: 1px solid var(--or); outline-offset: 3px; }
   .acc-portee { margin-top: var(--e3) !important; }
 
   /* ---- Le sélecteur de mode disparaît ----
-     Il oppose « les notes sonnent au survol » à « les notes sonnent au
-     clic ». Sans pointeur, la première branche ne peut rien produire : le
-     choix se réduit à une option et à une option morte. Le composant impose
-     le mode silencieux sur écran tactile ; le sélecteur n'a donc plus rien
-     à régler.
+     Il oppose « chercher à l'oreille » — chaque note sonne au passage du
+     curseur — à « poser directement ». Sans pointeur, la première branche ne
+     peut rien produire : le choix se réduit à une option et à une option
+     morte. Le composant impose « poser directement » sur écran tactile ; le
+     sélecteur n'a donc plus rien à régler.
 
      Retiré et non désactivé : un réglage grisé pose une question à laquelle
      il ne répond pas. */

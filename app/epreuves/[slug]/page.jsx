@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { EPREUVES, epreuveDuSlug } from '@/data/epreuves';
+import { SITE_URL, SITE_NOM } from '@/data/site';
 import JeuSlot from '@/components/JeuSlot';
 
 /**
@@ -26,24 +27,29 @@ export async function generateMetadata({ params }) {
   const e = epreuveDuSlug(slug);
   if (!e) return {};
 
-  const titre = `${e.nom} — Épreuve ${e.num} · Mozart Benchmark`;
+  /* Le titre ne dit plus « Accords — Épreuve 01 ».
+     Personne ne tape « épreuve 01 » dans un moteur, et le numéro consommait
+     un tiers d'une balise qui en compte soixante. Il dit maintenant ce que le
+     visiteur cherche : « Reconnaître un accord à l'oreille ». La marque est
+     ajoutée par le gabarit du layout racine, pas à la main. */
   const url = `/epreuves/${e.slug}`;
 
   return {
-    title: titre,
-    description: e.desc,
+    title: e.titreSeo,
+    description: e.metaDesc,
     alternates: { canonical: url },
     openGraph: {
-      title: titre,
-      description: e.desc,
-      url,
       type: 'website',
-      siteName: 'Mozart Benchmark',
+      locale: 'fr_FR',
+      siteName: SITE_NOM,
+      url,
+      title: `${e.titreSeo} | ${SITE_NOM}`,
+      description: e.metaDesc,
     },
     twitter: {
       card: 'summary_large_image',
-      title: titre,
-      description: e.desc,
+      title: `${e.titreSeo} | ${SITE_NOM}`,
+      description: e.metaDesc,
     },
   };
 }
@@ -53,6 +59,49 @@ export default async function PageEpreuveSlug({ params }) {
   const e = epreuveDuSlug(slug);
   if (!e) notFound();
 
+  /* ---- Données structurées de l'épreuve ----
+     Game plutôt que WebPage : c'en est un, jouable dans le navigateur et
+     gratuit. `offers` à zéro euro n'est pas une coquetterie — c'est ce qui
+     autorise Google à afficher la mention « gratuit », et « gratuit » est
+     dans presque toutes les requêtes de ce domaine.
+
+     BreadcrumbList donne le fil d'Ariane sous le résultat : Accueil ›
+     Épreuves › Accords, au lieu d'une URL nue. */
+  const donnees = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'Game',
+        '@id': `${SITE_URL}/epreuves/${e.slug}#jeu`,
+        name: e.titreSeo,
+        alternateName: e.nom,
+        description: e.metaDesc,
+        url: `${SITE_URL}/epreuves/${e.slug}`,
+        inLanguage: 'fr-FR',
+        genre: ['Musique', 'Éducatif', 'Puzzle'],
+        isAccessibleForFree: true,
+        offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' },
+        isPartOf: { '@id': `${SITE_URL}/#site` },
+      },
+      {
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+          { '@type': 'ListItem', position: 1, name: 'Accueil', item: SITE_URL },
+          { '@type': 'ListItem', position: 2, name: 'Épreuves', item: `${SITE_URL}/epreuves` },
+          { '@type': 'ListItem', position: 3, name: e.nom },
+        ],
+      },
+    ],
+  };
+
   // Le décor (en-tête, onde, carrousel, bandeau) est fourni par le layout.
-  return <JeuSlot slug={slug} />;
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(donnees) }}
+      />
+      <JeuSlot slug={slug} />
+    </>
+  );
 }

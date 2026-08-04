@@ -160,9 +160,11 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
   const [dailyCount, setDailyCount] = useState(0);
   const [resultat, setResultat] = useState(null);    // surcouche de fin (quotidien)
   const [defaite, setDefaite] = useState(false);     // surcouche de fin de run (libre)
-  const [status, setStatus] = useState(daily
-    ? `${DAILY_ROUNDS} extraits à démasquer.`
-    : 'Une seule vie. Va le plus loin possible.');
+  /* Vide au départ. « Une seule vie. Va le plus loin possible. » disait, sous
+     les boutons de réponse, ce que le cartouche dit maintenant au-dessus et
+     ce que la pastille « vie » montre déjà. Trois fois la même chose, dont
+     deux hors du champ de vision au moment utile. */
+  const [status, setStatus] = useState('');
 
   const { jouer, arreter, basculer, enLecture, enPause } = useLecteurAudio();
   const niveauRef = useRef(1);
@@ -308,12 +310,17 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
       setRound(r);
       setAnswered(false);
       setLoading(false);
-      setStatus('Écoute bien — humain ou IA ?');
+      /* Le conseil est passé du cartouche à la ligne d'état. Sa place est
+         ici, à la seconde où l'extrait démarre et où le joueur ne reconnaît
+         rien : c'est le moment exact où il a besoin qu'on lui dise que ce
+         n'est pas grave. En tête de panneau, il désamorçait une inquiétude
+         que le joueur n'avait pas encore. */
+      setStatus('Pas besoin de connaître le morceau. Écoute comment il sonne.');
       jouer(r.url, EXTRAIT_SEC);
     } catch (err) {
       console.error('Erreur IA:', err);
       setLoading(false);
-      setStatus(`Erreur de chargement : ${err?.message ?? err} — réessaie.`);
+      setStatus(`Erreur de chargement : ${err?.message ?? err}. Réessaie.`);
     }
   }
 
@@ -392,7 +399,7 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
       setEnCours(false);
       setGameover(true);
       setDefaite(true);
-      setStatus('Une seule vie — le run s\'arrête ici.');
+      setStatus('Une seule vie, le run s\'arrête ici.');
       bilanTimer.current = setTimeout(() => setBilan(true), DEFAITE_IA_TOTAL);
     }
   }
@@ -440,11 +447,37 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
       )}
       {defaite && <DefaiteIA niveau={niveau} />}
 
-      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Humain ou IA</h3>
-      <p className="description" style={{ maxWidth: 470, margin: '0 auto var(--e4)' }}>
+      {/* ---- Cartouche de tête ----
+          Le titre reprend la QUESTION que posent les deux boutons, point
+          d'interrogation compris : ce panneau ne présente pas une épreuve, il
+          demande de trancher. C'est aussi ce qui le distingue du titre de
+          page juste au-dessus, qui lui est une étiquette de catalogue.
+
+          La consigne tenait en trois phrases et cent quarante-cinq signes,
+          repliées sur deux lignes mal coupées. Elle disait surtout ce que
+          SONT les extraits — information que le joueur découvrira de toute
+          façon en jouant — et enterrait en fin de course la règle qui décide
+          de tout : une erreur et c'est fini.
+
+          Deux lignes courtes la remplacent, chacune tenant sur un rang : la
+          règle d'abord, puis l'accroche.
+
+          L'accroche ne décrit rien du dispositif, et c'est voulu. Cette
+          épreuve n'a pas à s'expliquer, elle a à donner envie : tout le monde
+          a déjà entendu dire que les machines composent, presque personne ne
+          s'est encore demandé s'il saurait le repérer. La question posée
+          directement au joueur fait le reste.
+
+          Le conseil pratique, lui, est descendu dans la ligne d'état, à la
+          seconde où l'extrait démarre. C'est là qu'il sert. */}
+      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Humain ou IA ?</h3>
+      <p className="description" style={{ maxWidth: 470, margin: '0 auto', textWrap: 'balance' }}>
         {daily
-          ? `${DAILY_ROUNDS} extraits. Certains sont de vrais morceaux, d'autres sont entièrement générés par une machine.`
-          : 'Certains extraits sont de vrais morceaux, souvent obscurs. D\'autres sont entièrement générés par une machine. Une seule erreur et le run s\'arrête.'}
+          ? `${DAILY_ROUNDS} extraits, un seul essai chacun.`
+          : 'Écoute l\'extrait, puis décide : une erreur et le run s\'arrête.'}
+      </p>
+      <p className="description" style={{ maxWidth: 470, margin: '2px auto var(--e4)', textWrap: 'balance' }}>
+        L&apos;IA compose de mieux en mieux. Fais-tu encore la différence ?
       </p>
 
       {/* ---- Bandeau de compteurs, sur le modèle des épreuves Rythme et Duel ---- */}
@@ -648,7 +681,7 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
           )}
 
           <button onClick={demarrerRun} style={{ ...btn(true, false), marginTop: 'var(--e4)' }}>
-            Recommencer
+            Relancer un run
           </button>
         </div>
       )}

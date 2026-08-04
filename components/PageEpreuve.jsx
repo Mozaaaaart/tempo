@@ -86,7 +86,13 @@ export default function PageEpreuve({ num, titre, description, children }) {
           {num && <div className="etiquette-mono">épreuve {num}</div>}
           <h1 className="titre-page" style={{ marginTop: 'var(--e2)' }}>{titre}</h1>
           {description && (
-            <p className="lin" style={{ marginTop: 'var(--e2)', maxWidth: 470 }}>{description}</p>
+            /* `pretty` et non `balance` : le texte est aligné à gauche et peut
+               dépasser deux lignes. `balance` égalise les longueurs, ce qui n'a
+               de sens que sur un bloc centré et court ; `pretty` ne corrige que
+               le défaut réel — le dernier mot resté seul sur sa ligne. */
+            <p className="lin" style={{
+              marginTop: 'var(--e2)', maxWidth: 470, textWrap: 'pretty',
+            }}>{description}</p>
           )}
         </div>
 

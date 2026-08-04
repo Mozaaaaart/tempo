@@ -265,6 +265,73 @@ function SurcoucheIntro({ onNote, onPasser }) {
 /* Quatre paliers. Le jade reste réservé au sans-faute — c'est la couleur du
    « juste » partout ailleurs dans l'épreuve, elle perdrait son sens à
    récompenser un à-peu-près. */
+/* ---- Les trois états d'une note corrigée ----
+ *
+ * Deux couleurs ne suffisaient pas. En arpège, une note dont la HAUTEUR est
+ * dans la cible mais qui tombe au mauvais rang n'est ni juste ni fausse :
+ * l'oreille a travaillé, la main s'est trompée de place. La peindre en rouge
+ * dit à ce joueur qu'il n'a rien entendu, ce qui est faux et décourageant.
+ *
+ * La troisième teinte est l'OR, et ce n'est pas une seconde couleur d'accent :
+ * c'est déjà l'intermédiaire de la palette de score du site — jade au-dessus
+ * de 9,5, or au-dessus de 7. La graduation jade → or → carmin est donc celle
+ * que le joueur voit ailleurs sur la page, elle n'a rien à apprendre.
+ *
+ * L'or sert aussi à la note NON ENCORE JUGÉE. Les deux ne se croisent jamais :
+ * avant la validation toutes les notes sont or, après elle il y a du jade et
+ * du carmin à côté pour que l'or se lise comme un état parmi trois.
+ *
+ * Réserve : la distinction reste portée par la seule couleur, et la phrase
+ * d'état est ce qui la rattrape pour qui ne la voit pas.
+ */
+const COULEUR_VERDICT = {
+  juste:    'var(--jade)',
+  ailleurs: 'var(--or)',
+  faux:     'rgba(226, 75, 74, 0.65)',
+};
+
+/* ---- Ce que coûte une note fausse ----
+ *
+ * L'ancienne formule repliait TOUT à l'octave : `min(d % 12, 12 - d % 12)`.
+ * Fa4 contre Mi5, soit onze demi-tons, y devenait « un demi-ton d'écart » et
+ * ne coûtait qu'un point — une manche à onze demi-tons de la cible sortait
+ * à 9,2 sur 10. Pire, la surtaxe d'octave ne se déclenchait qu'à partir de
+ * douze : une note PRESQUE à l'octave coûtait moins cher qu'une note
+ * exactement à l'octave.
+ *
+ * La règle est maintenant en deux temps, et elle se dit en une phrase :
+ *
+ *   — l'écart se compte en demi-tons réels, plafonné à 6. Au-delà du triton,
+ *     se tromper davantage ne veut plus dire grand-chose ;
+ *   — l'octave juste reste l'exception, à 1,5 par octave. Jouer la bonne
+ *     note au mauvais registre n'est pas la même faute que jouer une autre
+ *     note, et c'est la seule erreur que l'oreille reconnaît comme « juste
+ *     mais ailleurs ».
+ *
+ *   d  :  1   3   6   7  11  12  13  24
+ *   →  : 1,0 3,0 6,0 6,0 6,0 1,5 2,5 3,0
+ */
+/* Ce qu'une seule note peut coûter au maximum.
+ *
+ * Le score divisait par un budget de 4 par note alors qu'`ecart` peut en
+ * facturer 6. L'échelle saturait donc dès que l'erreur moyenne dépassait
+ * quatre demi-tons : un arpège où le joueur avait retrouvé deux hauteurs sur
+ * quatre, mais mal placées, sortait à 0,0 — le même chiffre que s'il n'avait
+ * rien entendu du tout. Un score sur dix qui ne distingue plus rien en
+ * dessous d'un certain seuil ne mesure plus : il constate un échec.
+ *
+ * Le budget vaut donc exactement le maximum facturable. Le zéro redevient ce
+ * qu'il doit être — le plancher qu'on n'atteint qu'en se trompant PARTOUT et
+ * d'au moins un triton. */
+const PENALITE_MAX = 6;
+
+function ecart(d) {
+  if (d === 0) return 0;
+  if (d % 12 === 0) return 1.5 * (d / 12);
+  const octaves = Math.floor(d / 12);
+  return Math.min(d - 12 * octaves, 6) + 1.5 * octaves;
+}
+
 function paletteScore(valeur) {
   const n = +valeur;
   if (n >= 9.5) return { couleur: 'var(--jade)', mention: 'accord parfait' };
@@ -412,12 +479,15 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
   const [status, setStatus] = useState('Chargement du piano…');
   const [score, setScore] = useState(null);
   const [hoverPos, setHoverPos] = useState(null);
-  // Mode silencieux par défaut : le survol ne joue rien tant que le
-  // joueur n'a pas activé le mode découverte lui-même.
+  // « Poser directement » par défaut : le survol ne joue rien tant que le
+  // joueur n'a pas demandé à chercher à l'oreille lui-même.
   const [hoverSound, setHoverSound] = useState(false);
   const [revealed, setRevealed] = useState(0);
   const [dragIndex, setDragIndex] = useState(null);
   const [verdicts, setVerdicts] = useState(null);
+  /* Colonne du joueur où poser chaque note de la cible à la correction.
+     Identité tant qu'aucun appariement n'a été calculé. */
+  const [paires, setPaires] = useState(null);
   const [pulse, setPulse] = useState(0);   // incrémenté à chaque note jouée → relance le tracé
   // L'intro se joue à l'ARRIVÉE sur l'épreuve — landing page, onglet sous
   // l'onde — mais pas sur « Relancer l'épreuve », qui remonte pourtant le
@@ -470,13 +540,13 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
     const mq = window.matchMedia('(max-width: 640px)');
     const maj = () => {
       setEtroit(mq.matches);
-      /* Le mode découverte fait sonner la note SOUS LE CURSEUR, avant même
+      /* « Chercher à l'oreille » fait sonner la note SOUS LE CURSEUR, avant
          de la poser : c'est ce qui permet de chercher une hauteur à
          l'oreille. Sans pointeur, il n'y a rien à survoler — le mode existe
          encore mais ne peut plus rien produire, et le proposer revient à
          offrir un réglage sans effet.
 
-         On impose donc le mode silencieux sur écran tactile, et le
+         On impose donc « Poser directement » sur écran tactile, et le
          sélecteur disparaît. Sur mobile, la note sonne au moment où on la
          pose et pendant qu'on la glisse, ce qui rend le même service au
          geste près. */
@@ -546,6 +616,9 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
   const revealTimersRef = useRef([]);
   const dragMovedRef = useRef(false);
   const dragIndexRef = useRef(null);
+  /* Date de la fin du dernier geste sur une note.
+     Voir le garde-fou de onStaffClick, plus bas. */
+  const finGesteNoteRef = useRef(0);
   const dailyDoneRef = useRef(false);
   const scoreTimerRef = useRef(null);
   const bilanTimerRef = useRef(null);
@@ -583,9 +656,12 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
           synthRef.current = sampler;
           hoverSynthRef.current = sampler;
           setPianoPret(true);
+          /* Cette ligne répétait le bouton doré posé juste au-dessus d'elle.
+             Elle sert mieux à lever la seule inquiétude d'un débutant devant
+             une épreuve d'oreille : croire qu'il n'a droit qu'à une écoute. */
           setStatus(daily
-            ? 'Clique sur « Écouter la cible » pour lancer l\'épreuve du jour.'
-            : 'Lance une cible pour commencer.');
+            ? 'Trois ou quatre notes, une seule tentative. Réécoute autant que tu veux.'
+            : 'Trois ou quatre notes, à réécouter autant de fois que tu veux.');
         },
       }).toDestination();
     });
@@ -647,7 +723,7 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
 
      Après un rafraîchissement, aucun geste n'a encore eu lieu dans la page :
      le contexte naît suspendu et rien ne le réveille avant le premier clic
-     sur « Générer une cible » ou sur la portée. L'intro, elle, démarre au
+     sur « Écouter l'accord » ou sur la portée. L'intro, elle, démarre au
      montage — elle restait donc muette.
 
      Deux tentatives complémentaires. La première, dès que le sampler est
@@ -732,9 +808,80 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
     const i = dragIndexRef.current;
     const moved = dragMovedRef.current;
     dragIndexRef.current = null;
+    /* Le geste vient de se terminer SUR UNE NOTE. Le clic de synthèse qui
+       suit n'a rien à faire sur la portée — voir onStaffClick. */
+    finGesteNoteRef.current = Date.now();
     setDragIndex(null);
     if (!moved) removeNote(i);
     else setStatus(`Note déplacée : ${userNotes[i]?.name ?? ''}`);
+  }
+
+  /* ---- Une seule phrase d'état pour toute la pose ----
+   *
+   * L'ancienne consigne de manche annonçait d'un bloc « glisse une note pour
+   * l'ajuster, clique-la pour la retirer » — deux gestes décrits AVANT
+   * qu'il y ait la moindre note à glisser ou à retirer. Une instruction
+   * donnée trop tôt est une instruction perdue.
+   *
+   * Elle arrive donc à la première note posée, c'est-à-dire à l'instant où
+   * elle devient exécutable, et disparaît quand la portée est pleine pour
+   * laisser la place à la seule chose qui reste à faire.
+   *
+   * Les trois formulations tiennent sur une ligne de mono à 12 px : cette
+   * ligne est au-dessus de la portée sur ordinateur, un retour à la ligne y
+   * décalerait tout le reste du panneau.
+   *
+   * LE VERBE SUIT LE GESTE. On ne clique pas sur un téléphone. Décrire à
+   * quelqu'un le geste qu'il ne fait pas, c'est lui faire douter du sien —
+   * et c'est ce qui a fait passer un vrai défaut pour un simple contresens.
+   * `etroit` sert déjà à décider de la géométrie de la portée et du mode
+   * d'écoute ; il décide donc aussi du verbe.
+   */
+  const toucher = etroit ? 'Touche' : 'Clique';
+  const toucherBref = etroit ? 'touche' : 'clique';
+
+  function statutNotes(n, total) {
+    if (!total) return '';
+    if (n === 0) return `${toucher} la portée pour poser une note.`;
+    if (n < total) return `${n}/${total} · glisse pour ajuster, ${toucherBref} pour retirer`;
+    return `${n}/${total} · compare quand tu veux`;
+  }
+
+  /* ---- La phrase de correction ----
+   *
+   * Elle s'affiche à l'instant précis où l'accord se rejoue et se pose,
+   * note à note, sur la portée. C'est la seconde la plus chargée de
+   * l'épreuve, et elle ne durait qu'à décrire des couleurs déjà visibles :
+   * « tes notes justes en vert, tes erreurs en rouge ». Une légende, là où
+   * il fallait un résultat.
+   *
+   * Elle annonce donc D'ABORD le compte. C'est la seule information que le
+   * joueur ne peut pas lire seul : distinguer trois têtes de note vertes de
+   * deux vertes et une rouge demande de compter, et personne ne compte
+   * pendant qu'un accord se joue. Le chiffre arrive avant le son, la
+   * légende des couleurs vient derrière, une fois qu'elle a un sens.
+   *
+   * DEUX NOTES SUR TROIS N'EST PAS UN ÉCHEC, et la phrase ne doit pas le
+   * dire. Elle constate, elle ne juge pas — le jugement est le rôle du
+   * chiffre sur dix, qui tombe deux secondes plus tard.
+   *
+   * En quotidien, l'accord n'est pas dévoilé : le compte reste donné,
+   * puisqu'il n'apprend rien de plus que la note sur dix déjà affichée,
+   * mais la légende des couleurs disparaît avec ce qu'elle désignait.
+   */
+  function phraseCorrection(justes, total, montre, deplacees = 0) {
+    const compte = `${justes} note${justes > 1 ? 's' : ''} sur ${total}`;
+    if (!montre) return `${compte} · l'accord complet demain`;
+    if (justes === total) return `${compte} · écoute-le une dernière fois`;
+    /* Cas propre à l'arpège : les hauteurs sont là, l'ordre ne l'est pas.
+       Le taire laisserait croire à des notes fausses alors que l'oreille,
+       elle, a bien travaillé. */
+    if (deplacees > 0) {
+      return deplacees > 1
+        ? `${justes}/${total} en place · en or, les notes justes mal placées`
+        : `${justes}/${total} en place · en or, la note juste mal placée`;
+    }
+    return `${compte} · en vert l'accord, en rouge tes écarts`;
   }
 
   function onStaffLeave() {
@@ -757,10 +904,14 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
     if (m === 'arpège' && rng() < 0.5) notes = [...notes].reverse();
     clearReveal();
     setMode(m); setTarget(notes); setUserNotes([]);
-    setScore(null); setVerdicts(null); setLocked(false); setHoverPos(null);
+    setScore(null); setVerdicts(null); setPaires(null); setLocked(false); setHoverPos(null);
     setBilan(false); setResultat(null); setEnSequence(false);
     lastHoverRef.current = null;
-    setStatus(`${m === 'accord' ? 'Accord' : 'Arpège'} · ${n} notes à placer. Glisse une note pour l'ajuster, clique-la pour la retirer.`);
+    /* L'ORDRE EST MAINTENANT NOTÉ EN ARPÈGE. Une règle qui coûte des points
+       et que rien n'annonce est un piège ; elle tient en trois mots. */
+    setStatus(m === 'accord'
+      ? `Accord · ${n} notes, ordre libre. ${toucher} la portée.`
+      : `Arpège · ${n} notes, dans l'ordre. ${toucher} la portée.`);
     playNotes(notes, m);
   }
 
@@ -801,7 +952,43 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
     return dur;
   }
 
+  /* ---- Le clic sur une note ne doit pas retomber sur la portée ----
+   *
+   * Retirer une note se fait en la touchant : `pointerdown` la saisit,
+   * `pointerup` constate qu'elle n'a pas bougé et la retire. Mais le
+   * navigateur émet ENSUITE un `click` de synthèse, qui remonte de la note
+   * jusqu'au SVG et arrive ici. Le geste faisait donc deux choses : retirer
+   * la note, puis en poser une nouvelle à l'endroit du doigt.
+   *
+   * Et comme les deux gestionnaires lisent le MÊME `userNotes` — celui du
+   * rendu en cours, aucun des deux ne voyant l'état posé par l'autre — le
+   * second écrasait purement et simplement le premier : `[...userNotes, best]`
+   * repart du tableau complet. Le retrait était annulé dans la même image.
+   *
+   * D'où l'impression que le toucher « ne retire pas ». Le retrait avait bien
+   * lieu ; il durait quelques millisecondes.
+   *
+   * POURQUOI SEULEMENT SUR MOBILE — il n'y a en réalité rien de tactile
+   * là-dedans, le même enchaînement se produit à la souris. Mais la seconde
+   * branche est gardée par `canPlace()`, qui est FAUX dès que la portée est
+   * pleine : sur une manche menée jusqu'au bout, le clic parasite ne pouvait
+   * rien poser et le retrait tenait. Le défaut ne se voit donc qu'en cours de
+   * pose — c'est-à-dire à 2/4, exactement le cas de la capture.
+   *
+   * Deux gardes plutôt qu'une, parce qu'elles ne couvrent pas le même cas :
+   *
+   *   — `stopPropagation` sur le `<g>` de la note arrête le clic à la source,
+   *     tant que sa cible est bien la note ;
+   *   — ce délai rattrape les cas où elle ne l'est pas. Avec la capture de
+   *     pointeur, un doigt qui quitte la boîte de la note pendant le geste
+   *     fait viser au clic l'élément situé DESSOUS, c'est-à-dire la portée,
+   *     et le `<g>` ne le voit jamais passer.
+   *
+   * Le clic de synthèse suit son `pointerup` de quelques millisecondes.
+   * Cent cinquante suffisent donc largement, et restent bien en deçà du délai
+   * qu'il faut à un doigt pour se reposer ailleurs sur la portée. */
   async function onStaffClick(e) {
+    if (Date.now() - finGesteNoteRef.current < 150) return;
     if (dragMovedRef.current) { dragMovedRef.current = false; return; }
     if (!canPlace()) return;
     const best = posFromEvent(e);
@@ -810,7 +997,7 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
     synthRef.current?.triggerAttackRelease(best.name, '8n');
     const next = [...userNotes, best];
     setUserNotes(next);
-    setStatus(`${next.length}/${target.length} note(s) posée(s)`);
+    setStatus(statutNotes(next.length, target.length));
     if (next.length >= target.length) setHoverPos(null);
   }
 
@@ -818,7 +1005,7 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
     if (locked) return;
     const next = userNotes.filter((_, idx) => idx !== i);
     setUserNotes(next);
-    setStatus(`${next.length}/${target?.length ?? 0} note(s) posée(s)`);
+    setStatus(statutNotes(next.length, target?.length ?? 0));
   }
 
   async function validate() {
@@ -827,48 +1014,84 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
     setEnSequence(true);
     setHoverPos(null);
     setRevealed(0);
-    setStatus('Lecture : ta version…');
+    setStatus('Lecture de tes notes…');
     const d1 = await playNotes(userNotes, mode);
     setTimeout(async () => {
-      /* APPARIEMENT : d'abord les hauteurs identiques, ensuite le reste.
-
-         L'ancienne version comparait la cible et la proposition RANG PAR
-         RANG, une fois les deux triées. Une seule note fausse placée hors du
-         registre de la cible décalait alors tout l'alignement : sur une cible
-         Do5-Mi5-Sol5 jouée Fa4-Do5-Mi5, le Fa4 passait en tête du tri, Do5 se
-         retrouvait comparé à Fa4, Mi5 à Do5, Sol5 à Mi5. Aucun écart nul,
-         donc aucune note verte et une pénalité au plafond — zéro point pour
-         deux notes justes sur trois.
-
-         On sort donc d'abord toutes les correspondances exactes, quel que
-         soit leur rang. Ce qui reste de part et d'autre est ensuite trié et
-         apparié comme avant, pour mesurer l'écart des notes réellement
-         fausses. */
-      const uRestant = userNotes.map((n, idx) => ({ midi: n.midi, idx }));
-      const tRestant = target.map((n) => n.midi);
+      /* ---- L'APPARIEMENT SUIT LE MODE ----
+       *
+       * Un accord se joue d'un bloc : ses notes n'ont pas d'ordre, et la
+       * colonne où le joueur pose son Do n'a aucune importance. Un arpège se
+       * joue note après note : c'est une mélodie, et l'ordre EST la moitié
+       * de la réponse. Les deux ne peuvent donc pas être corrigés pareil.
+       *
+       * ACCORD — appariement libre. On sort d'abord toutes les hauteurs
+       * identiques, quel que soit leur rang, puis on trie et on apparie le
+       * reste. Sans cela, une seule note fausse posée hors du registre de la
+       * cible décalait tout l'alignement : sur Do5-Mi5-Sol5 joué Fa4-Do5-Mi5,
+       * plus aucun écart nul, donc zéro point pour deux notes justes.
+       *
+       * ARPÈGE — rang par rang. Chaque note est jugée à sa place, avec un
+       * palier intermédiaire : une hauteur qui appartient bien à la cible
+       * mais tombe au mauvais rang coûte un forfait de 2, et non l'écart
+       * brut. Sans ce palier, un arpège joué à l'envers — toutes les notes
+       * entendues, l'ordre inversé — tombait à zéro, ce qui est faux : ce
+       * joueur-là a bien plus entendu que celui qui a tout raté.
+       *
+       * `p` retient DANS QUELLE COLONNE poser chaque note de la cible à la
+       * correction. C'est ce qui garde la portée et le score d'accord : une
+       * note verte est toujours coiffée par la note juste, une rouge toujours
+       * décalée. Sans cette table, l'écran proposait des duels colonne par
+       * colonne pendant que le calcul, lui, appariait librement — d'où des
+       * notes vertes en face de hauteurs qui n'étaient pas les leurs. */
       let penalty = 0;
-      const v = Array(userNotes.length).fill(false);
+      /* 'juste' | 'ailleurs' | 'faux' — voir COULEUR_VERDICT. */
+      const v = Array(userNotes.length).fill('faux');
+      const p = Array(target.length).fill(-1);
 
-      for (let i = uRestant.length - 1; i >= 0; i -= 1) {
-        const j = tRestant.indexOf(uRestant[i].midi);
-        if (j === -1) continue;
-        v[uRestant[i].idx] = true;
-        tRestant.splice(j, 1);
-        uRestant.splice(i, 1);
+      if (mode === 'arpège') {
+        // Les rangs justes d'abord : ils consomment leur hauteur.
+        const libres = target.map((n) => n.midi);
+        target.forEach((t, k) => {
+          if (userNotes[k]?.midi === t.midi) { v[k] = 'juste'; libres[k] = null; }
+        });
+        target.forEach((t, k) => {
+          p[k] = k;                       // en arpège la colonne EST le rang
+          if (v[k] === 'juste') return;
+          const u = userNotes[k];
+          if (!u) { penalty += PENALITE_MAX; return; }
+          const j = libres.indexOf(u.midi);
+          if (j !== -1) { libres[j] = null; v[k] = 'ailleurs'; penalty += 2; return; }
+          penalty += ecart(Math.abs(u.midi - t.midi));
+        });
+      } else {
+        const uRestant = userNotes.map((n, idx) => ({ midi: n.midi, idx }));
+        const tRestant = target.map((n, k) => ({ midi: n.midi, k }));
+
+        for (let i = uRestant.length - 1; i >= 0; i -= 1) {
+          const j = tRestant.findIndex((t) => t.midi === uRestant[i].midi);
+          if (j === -1) continue;
+          v[uRestant[i].idx] = 'juste';
+          p[tRestant[j].k] = uRestant[i].idx;
+          tRestant.splice(j, 1);
+          uRestant.splice(i, 1);
+        }
+
+        const uSorted = uRestant.sort((a, b) => a.midi - b.midi);
+        const tSorted = tRestant.sort((a, b) => a.midi - b.midi);
+        tSorted.forEach((t, i) => {
+          const um = uSorted[i];
+          if (um === undefined) { penalty += PENALITE_MAX; return; }
+          p[t.k] = um.idx;
+          const d = Math.abs(um.midi - t.midi);
+          if (d === 0) { v[um.idx] = 'juste'; return; }
+          penalty += ecart(d);
+        });
       }
 
-      const uSorted = uRestant.sort((a, b) => a.midi - b.midi);
-      const tSorted = tRestant.sort((a, b) => a - b);
-      tSorted.forEach((tm, i) => {
-        const um = uSorted[i];
-        if (um === undefined) { penalty += 4; return; }
-        const d = Math.abs(um.midi - tm);
-        if (d === 0) { v[um.idx] = true; return; }
-        if (d % 12 === 0) penalty += 1.5;
-        else penalty += Math.min(d % 12, 12 - d % 12) + (d >= 12 ? 1 : 0);
-      });
-      const s = Math.max(0, 10 - Math.min(penalty, target.length * 4) * (10 / (target.length * 4)));
+      const budget = target.length * PENALITE_MAX;
+      const s = Math.max(0, 10 - Math.min(penalty, budget) * (10 / budget));
       setScore(s.toFixed(1));
+      setPaires(p);
 
       if (daily && !dailyDoneRef.current) {
         dailyDoneRef.current = true;
@@ -883,9 +1106,12 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
       // apparaît sur son attaque — c'est playTargetWithReveal qui aligne les
       // deux, sur le même PREROLL et le même NOTE_GAP que la lecture.
       setVerdicts(v);
-      setStatus(devoile
-        ? 'Tes notes justes en vert, tes erreurs en rouge — la cible se dévoile note à note.'
-        : 'Épreuve terminée. La cible sera donnée demain, avec le prochain défi.');
+      setStatus(phraseCorrection(
+        v.filter((x) => x === 'juste').length,
+        target.length,
+        devoile,
+        v.filter((x) => x === 'ailleurs').length,
+      ));
 
       /* On rejoue la cible dans les deux cas — l'entendre une dernière fois
          n'apprend pas où elle se pose sur la portée, et couper le son ferait
@@ -927,13 +1153,18 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
   );
 
   const boutons = [
-    // Une seule cible par manche, et un seul bouton pour elle : « Générer »
-    // tant qu'elle n'existe pas, « Réécouter » une fois qu'elle est là. Les
-    // deux ne coexistent jamais — l'un désactivé à côté de l'autre ne
-    // ferait qu'encombrer la rangée.
+    /* Un seul accord par manche, et un seul bouton pour lui : « Écouter »
+       tant qu'il n'a pas sonné, « Réécouter » une fois qu'il est là. Les deux
+       ne coexistent jamais — l'un désactivé à côté de l'autre ne ferait
+       qu'encombrer la rangée.
+
+       Même intitulé en libre et en quotidien. Le bouton GÉNÈRE bien un
+       accord, mais ce que le joueur constate, c'est qu'il l'entend : nommer
+       l'effet plutôt que le mécanisme, et une action garde le même nom d'un
+       bout à l'autre du site. */
     ...(target
       ? [{
-          label: 'Réécouter la cible',
+          label: 'Réécouter l\'accord',
           /* `devoile` en troisième argument : réécouter ne doit pas
              redonner la correction. Sans lui, le bouton rejouait la
              révélation graphique après coup et rendait le masquage du défi
@@ -944,31 +1175,32 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
           disabled: enSequence,
         }]
       : [{
-          label: daily ? 'Écouter la cible' : 'Générer une cible',
+          label: 'Écouter l\'accord',
           onClick: () => newRound(daily ? seeded('accords') : undefined),
           primaire: true,
           disabled: !pianoPret || enSequence,
         }]),
-    { label: 'Écouter ma proposition', onClick: () => userNotes.length && playNotes(userNotes, mode), disabled: !userNotes.length || enSequence },
+    { label: 'Écouter mes notes', onClick: () => userNotes.length && playNotes(userNotes, mode), disabled: !userNotes.length || enSequence },
 
     /* Effacer et valider n'existent que TANT QUE LA MANCHE EST OUVERTE.
 
        Une fois la note donnée, elles n'ont plus d'objet : effacer reviendrait
-       à défaire une proposition déjà jugée, et valider à rejuger la même. Les
+       à défaire des notes déjà jugées, et comparer à rejuger les mêmes. Les
        laisser en place, l'une grise et l'autre dorée sous un bilan qui vient
        d'annoncer le résultat, donne deux actions qui contredisent ce que la
        page vient de dire.
 
        La suite du parcours est portée par le bilan lui-même, qui offre
        « Nouvel accord ». Les deux boutons d'écoute, eux, restent : réentendre
-       la cible et sa propre version après coup, c'est là que se fait l'oreille.
+       l'accord et ses propres notes après coup, c'est là que se fait
+       l'oreille.
 
        Retirés et non désactivés, comme ailleurs : un bouton grisé promet un
        retour, et ceux-là ne reviendront pas dans cette manche. */
     ...(score === null
       ? [
-          { label: 'Effacer les notes', onClick: () => { setUserNotes([]); setStatus('Notes effacées.'); }, disabled: !userNotes.length || locked || enSequence },
-          { label: 'Valider', onClick: validate, primaire: true, disabled: !canValidate },
+          { label: 'Effacer mes notes', onClick: () => { setUserNotes([]); setStatus(statutNotes(0, target?.length ?? 0)); }, disabled: !userNotes.length || locked || enSequence },
+          { label: 'Comparer', onClick: validate, primaire: true, disabled: !canValidate },
         ]
       : []),
   ];
@@ -1025,8 +1257,32 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
       `}</style>
 
       <h3 className="titre-section acc-titre" style={{ marginBottom: 'var(--e1)' }}>Retrouve l&apos;accord</h3>
-      <p className="description acc-desc" style={{ maxWidth: 470, margin: '0 auto var(--e4)' }}>
-        Écoute la cible, pose tes notes sur la portée, ajuste-les en les glissant, puis valide.
+      {/* ---- Consigne et barème sont deux choses ----
+          Réunies dans un même paragraphe centré, elles produisaient un
+          orphelin : « sur dix. » restait seul sur la seconde ligne. Le défaut
+          n'était pas la longueur mais le mélange — une consigne se lit, un
+          barème se constate.
+
+          La consigne garde le corps de texte et tient sur une ligne jusqu'à
+          470 px. `text-wrap: balance` la répartit sur deux lignes égales en
+          dessous, au lieu de casser au dernier mot possible.
+
+          Le barème passe en étiquette mono capitales, le rôle que le document
+          de design réserve aux données. Il devient une ligne qu'on scanne, et
+          non une phrase qu'on lit — ce qui est exactement son usage : on ne
+          lit pas deux fois « noté sur 10 », on le vérifie d'un regard. En lin
+          et non en or, parce que le bouton principal est juste en dessous et
+          que deux surfaces dorées dans la même zone s'annulent. */}
+      <p className="description acc-desc"
+        style={{ maxWidth: 470, margin: '0 auto', textWrap: 'balance' }}>
+        Écoute un accord de trois ou quatre notes, repose-le sur la portée.
+      </p>
+      <p className="acc-bareme" style={{
+        fontFamily: 'var(--mono)', fontSize: 10.5, fontWeight: 400,
+        letterSpacing: '0.09em', textTransform: 'uppercase',
+        color: 'var(--lin)', margin: 'var(--e2) auto var(--e4)',
+      }}>
+        Écart noté sur 10
       </p>
 
       <div className="acc-boutons" style={{ display: 'flex', gap: 'var(--e2)', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 'var(--e3)' }}>
@@ -1037,7 +1293,7 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
             /* ---- L'état désactivé n'est pas l'état actif en plus pâle ----
                Un fond or à 40 % d'opacité sur du noir donne un brun terreux
                qui n'est dans aucun jeton de la palette, et qui pèse autant
-               qu'un bouton plein : « Valider » indisponible attirait l'œil
+               qu'un bouton plein : « Comparer » indisponible attirait l'œil
                plus que l'action réellement possible.
 
                Un bouton désactivé perd donc sa surface. Il garde sa place et
@@ -1124,6 +1380,10 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
             }}
             onPointerMove={onStaffMove}
             onPointerUp={endDrag}
+            /* Le clic de synthèse émis après le pointerup s'arrête ici : sans
+               cela il remonte jusqu'au SVG, où onStaffClick pose une note à
+               l'endroit même de celle qu'on vient de retirer. */
+            onClick={(e) => e.stopPropagation()}
             /* iOS interrompt un geste pour ses propres raisons — un appel,
                un balayage depuis le bord. Sans cette ligne, la note restait
                accrochée au doigt jusqu'au prochain toucher. */
@@ -1136,13 +1396,13 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
               <NoteCreuse cx={P.noteX0 + i * P.notePas} cy={n.y} couleur="var(--ivoire)" />
             ) : (
               <ellipse cx={P.noteX0 + i * P.notePas} cy={n.y} rx={11} ry={8}
-                fill={verdicts === null ? 'var(--or)' : verdicts[i] ? 'var(--jade)' : 'rgba(226, 75, 74, 0.65)'}
+                fill={verdicts === null ? 'var(--or)' : COULEUR_VERDICT[verdicts[i]]}
                 style={{ cursor: locked ? 'default' : 'grab' }} />
             )}
             <rect x={P.noteX0 + i * P.notePas - 22} y={n.y - 16} width={44} height={32} fill="transparent"
               style={{ cursor: locked ? 'default' : 'grab' }} />
             <text x={P.noteX0 + i * P.notePas} y={200} textAnchor="middle" fontSize={12}
-              fill={verdicts === null ? 'var(--lin)' : verdicts[i] ? 'var(--jade)' : 'rgba(226, 75, 74, 0.65)'}
+              fill={verdicts === null ? 'var(--lin)' : COULEUR_VERDICT[verdicts[i]]}
               fontFamily="var(--mono)">
               {n.name}
             </text>
@@ -1167,7 +1427,10 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
              vertical dans une seule colonne — c'est-à-dire l'intervalle
              manqué, exactement ce que la disposition côte à côte donnait à
              lire, sans avoir besoin du double de largeur. */
-          const x = P.noteX0 + i * P.notePas + P.decalage;
+          /* La colonne vient de l'appariement, pas du rang : c'est ce qui
+             fait que l'anneau coiffe toujours une note verte. */
+          const colonne = paires?.[i] ?? i;
+          const x = P.noteX0 + (colonne < 0 ? i : colonne) * P.notePas + P.decalage;
           return (
             <g key={'t' + i} style={{ pointerEvents: 'none' }}>
               {n.ledger && (
@@ -1195,8 +1458,8 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
         justifyContent: 'center', maxWidth: 560, marginLeft: 'auto', marginRight: 'auto',
       }}>
         {[
-          { on: true, titre: 'Mode découverte', desc: 'les notes sonnent au survol' },
-          { on: false, titre: 'Mode silencieux', desc: 'les notes sonnent seulement au clic' },
+          { on: true, titre: 'Chercher à l\u2019oreille', desc: 'chaque note sonne au passage du curseur' },
+          { on: false, titre: 'Poser directement', desc: 'la note sonne quand tu la places' },
         ].map((m) => (
           <button key={m.titre} onClick={() => setHoverSound(m.on)}
             style={{
@@ -1226,7 +1489,7 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
           </div>
           {devoile ? (
             <p className="description" style={{ marginTop: 'var(--e2)' }}>
-              Cible : <span style={{ color: 'var(--jade)' }}>{target?.map(n => n.name).join(' · ')}</span>
+              L&apos;accord : <span style={{ color: 'var(--jade)' }}>{target?.map(n => n.name).join(' · ')}</span>
               {' — '}Toi : <span style={{ color: 'var(--or)' }}>{userNotes.map(n => n.name).join(' · ')}</span>
             </p>
           ) : (
@@ -1234,7 +1497,7 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
                les taire ne protégerait rien et le priverait de son geste. */
             <p className="description" style={{ marginTop: 'var(--e2)' }}>
               Toi : <span style={{ color: 'var(--or)' }}>{userNotes.map(n => n.name).join(' · ')}</span>
-              {' — '}cible donnée demain, avec le prochain défi.
+              {' — '}accord donné demain, avec le prochain défi.
             </p>
           )}
 

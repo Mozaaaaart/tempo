@@ -463,7 +463,11 @@ export function JeuArtiste({ onDone, daily = false, revelation = true }) {
   const [input, setInput] = useState('');
   const [guesses, setGuesses] = useState([]);
   const [done, setDone] = useState(false);
-  const [status, setStatus] = useState(`Devine l'artiste du jour — ${MAX_TRIES} essais.`);
+  /* La consigne et le nombre d'essais sont montés en tête de panneau. Cette
+     ligne, posée sous le champ, sert donc à ce qu'elle seule peut faire :
+     débloquer le premier geste. « Par où je commence ? » est le seul vrai
+     obstacle d'un jeu de déduction — pas la règle, qui est évidente. */
+  const [status, setStatus] = useState('Commence par un artiste que tu connais bien.');
   const [score, setScore] = useState(null);
   const [animatingRow, setAnimatingRow] = useState(-1);
 
@@ -545,7 +549,7 @@ export function JeuArtiste({ onDone, daily = false, revelation = true }) {
     setBilan(false);
     setPhoto(null);
     setPistes([]);
-    setStatus(`Devine l'artiste — ${MAX_TRIES} essais.`);
+    setStatus('Commence par un artiste que tu connais bien.');
   }
 
   async function jouerExtrait() {
@@ -567,7 +571,7 @@ export function JeuArtiste({ onDone, daily = false, revelation = true }) {
     const g = ARTISTS.find((a) => norm(a.nom) === norm(input));
     // Le champ se vide dans TOUS les cas, y compris sur un refus.
     setInput('');
-    if (!g) { setStatus('Artiste absent de la base — utilise l\'autocomplétion.'); return; }
+    if (!g) { setStatus('Cet artiste n\'est pas dans la liste. Choisis une suggestion.'); return; }
     if (guesses.some((x) => x.nom === g.nom)) { setStatus(`${g.nom} a déjà été proposé.`); return; }
     const next = [...guesses, g];
     setGuesses(next);
@@ -580,7 +584,7 @@ export function JeuArtiste({ onDone, daily = false, revelation = true }) {
       setTrouve(true);
       setStatus('…');
       setTimeout(() => {
-        terminerPartie(POINTS_ARTISTE[next.length - 1], `🎉 Trouvé en ${next.length} essai(s) !`);
+        terminerPartie(POINTS_ARTISTE[next.length - 1], `🎉 Trouvé en ${next.length} essai${next.length > 1 ? 's' : ''} !`);
       }, revealMs);
     } else if (next.length >= MAX_TRIES) {
       setDone(true);
@@ -598,8 +602,8 @@ export function JeuArtiste({ onDone, daily = false, revelation = true }) {
       setTimeout(() => {
         setStatus(
           next.length === MAX_TRIES - 1
-            ? `Dernier essai — un extrait de ${EXTRAIT_SEC} secondes est débloqué.`
-            : `Raté — ${MAX_TRIES - next.length} essai(s) restant(s).`
+            ? `Dernier essai. Un extrait de ${EXTRAIT_SEC} secondes est débloqué.`
+            : `Raté. ${MAX_TRIES - next.length} essai${MAX_TRIES - next.length > 1 ? 's' : ''} restant${MAX_TRIES - next.length > 1 ? 's' : ''}.`
         );
       }, revealMs);
     }
@@ -676,22 +680,44 @@ export function JeuArtiste({ onDone, daily = false, revelation = true }) {
         <ResultatArtiste score={resultat} artiste={devoile ? target.nom : null} />
       )}
 
-      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Trouve l'artiste</h3>
-      <p className="description" style={{ maxWidth: 460, margin: '0 auto var(--e3)' }}>
-        Propose un artiste : chaque colonne le compare à l'artiste du jour.
-      </p>
+      {/* ---- Cartouche de tête ----
+          « L'artiste du jour » était faux partout sauf à la première manche
+          du défi : hors défi le tirage est libre, et le bouton « Nouvel
+          artiste » en tire un nouveau à chaque relance. Le nom de l'objet
+          cherché est donc « l'artiste mystère » — celui que porte déjà
+          l'étiquette sous le portrait, et qui reste vrai dans les deux modes.
 
-      {/* ---- Légende : reprend les couleurs exactes des cases ---- */}
-      <div style={{
-        display: 'flex', gap: 'var(--e4)', flexWrap: 'wrap', justifyContent: 'center',
-        fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--lin)',
-        marginBottom: 'var(--e5)',
+          L'enjeu passe en étiquette mono, comme sur les autres épreuves : il
+          était jusqu'ici dans la ligne d'état, c'est-à-dire SOUS le champ de
+          saisie, donc lu après avoir tapé. */}
+      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Trouve l'artiste</h3>
+      {/* ---- Où va quoi ----
+          La règle est allée dans le corps de texte, l'étiquette mono ne garde
+          que les chiffres.
+
+          « Plus tu trouves tôt, plus tu marques » cumulait deux défauts.
+          Marquer est un verbe de sport : rien n'y relie la note sur dix, et
+          rien ne dit de combien ça change. Et une PHRASE en capitales
+          espacées ne se lit pas — le mono en capitales est réservé aux
+          données par le document de design, précisément parce qu'on les
+          repère au lieu de les lire.
+
+          Une règle se lit, deux nombres se repèrent : chacun retrouve donc sa
+          casse et sa fonte. L'étiquette tombe à vingt-deux caractères, ce qui
+          la rend enfin lisible sur un écran étroit. */}
+      <p className="description" style={{ maxWidth: 460, margin: '0 auto', textWrap: 'balance' }}>
+        Propose un artiste, compare-le à l&apos;artiste mystère.
+      </p>
+      <p className="description" style={{ maxWidth: 460, margin: '2px auto 0', textWrap: 'balance' }}>
+        Le score baisse à chaque essai.
+      </p>
+      <p style={{
+        fontFamily: 'var(--mono)', fontSize: 10.5, fontWeight: 400,
+        letterSpacing: '0.09em', textTransform: 'uppercase',
+        color: 'var(--lin)', margin: 'var(--e2) auto var(--e3)',
       }}>
-        <span><span style={{ color: 'var(--jade)' }}>■</span> identique</span>
-        <span><span style={{ color: 'rgba(226,75,74,0.65)' }}>■</span> différent</span>
-        <span>▲ plus grand</span>
-        <span>▼ plus petit</span>
-      </div>
+        {MAX_TRIES} essais · noté sur 10
+      </p>
 
       {/* ---- Portrait : le flou ne bouge pas, il se lève quand le voile se lève ---- */}
       <div style={{ marginBottom: 'var(--e5)' }}>
@@ -774,7 +800,9 @@ export function JeuArtiste({ onDone, daily = false, revelation = true }) {
           value={input} onChange={setInput} onSubmit={guess}
           disabled={done} exclure={guesses.map((g) => g.nom)}
         />
-        <button onClick={guess} disabled={done} style={btn(true, done)}>Essayer</button>
+        {/* La consigne dit « Propose un artiste » : le bouton dit le même
+            verbe. Une action garde le même nom d'un bout à l'autre. */}
+        <button onClick={guess} disabled={done} style={btn(true, done)}>Proposer</button>
       </div>
 
       {/* ---- Extrait audio : débloqué après le 6ᵉ essai raté ----
@@ -820,7 +848,35 @@ export function JeuArtiste({ onDone, daily = false, revelation = true }) {
         </div>
       )}
 
-      {/* ---- Grille des tentatives ---- */}
+      {/* ---- Grille des tentatives, précédée de sa légende ----
+          La légende vivait en tête de panneau, sous la consigne. Elle y
+          expliquait un code couleur et deux flèches AVANT qu'il existe la
+          moindre case à décoder — et elle pesait, en corps de texte et sur
+          toute la largeur, autant que la consigne elle-même : quatre blocs de
+          texte se disputaient le haut de l'épreuve.
+
+          Elle descend donc contre la grille et n'apparaît qu'avec elle. Une
+          clé se lit à côté de ce qu'elle déchiffre.
+
+          « Plus grand » ne voulait par ailleurs rien dire : les flèches ne
+          servent que sur « Débuts » et « Streams », deux échelles sans
+          rapport, et un plus grand nombre y signifie une décennie plus
+          tardive dans un cas, plus d'écoutes dans l'autre. « Vise plus haut »
+          vaut pour les deux et dit ce qu'il faut FAIRE — la convention que
+          tout joueur de jeu de nombres reconnaît déjà. */}
+      {guesses.length > 0 && (
+        <div style={{
+          display: 'flex', gap: 'var(--e3)', flexWrap: 'wrap', justifyContent: 'center',
+          fontFamily: 'var(--mono)', fontSize: 10.5, letterSpacing: '0.06em',
+          color: 'var(--lin)', marginTop: 'var(--e5)',
+        }}>
+          <span><span style={{ color: 'var(--jade)' }}>■</span> identique</span>
+          <span><span style={{ color: 'rgba(226,75,74,0.65)' }}>■</span> différent</span>
+          <span>▲ vise plus haut</span>
+          <span>▼ vise plus bas</span>
+        </div>
+      )}
+
       {guesses.length > 0 && (
         <div className="artiste-grille" style={{
           display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr 0.8fr 0.9fr 0.8fr 0.9fr',
@@ -833,10 +889,26 @@ export function JeuArtiste({ onDone, daily = false, revelation = true }) {
              dimensions de l'ancienne révélation. */
           /* Plus de textAlign left ici : chaque cellule décide de son
              alignement, et elles sont toutes centrées sous leur en-tête. */
-          gap: 0, marginTop: 'var(--e5)',
+          gap: 0, marginTop: 'var(--e3)',
         }}>
+          {/* ---- Les en-têtes portent de l'information, ils doivent se lire ----
+              Ils étaient en cendre à 9,5 px. Le cendre tient 2,6:1 sur le noir,
+              et le document de design dit lui-même qu'il ne porte JAMAIS
+              d'information nécessaire — or sans ces sept mots, une rangée de
+              valeurs ne veut rien dire : « France », « 1990s », « Solo » ne
+              s'interprètent qu'à la verticale de leur colonne.
+
+              Ivoire, donc, mais jamais le blanc pur, qui vibre sur du noir.
+              Et 10 px plutôt que 9,5 : c'est le plancher que le document fixe
+              pour une étiquette mono, sous lequel les capitales espacées se
+              referment.
+
+              La hiérarchie tient sans le contraste : les en-têtes restent
+              deux points plus petits que les valeurs, et ce sont les valeurs
+              qui portent la couleur — jade ou carmin. L'œil va donc toujours
+              au résultat, l'en-tête n'est là que lorsqu'on le cherche. */}
           {['Artiste', 'Genre', 'Pays', 'Débuts', 'Format', 'Sexe', 'Streams'].map((h) => (
-            <div key={h} className="etiquette-mono" style={{ color: 'var(--cendre)', textAlign: 'center', fontSize: 9.5 }}>{h}</div>
+            <div key={h} className="etiquette-mono" style={{ color: 'var(--ivoire)', textAlign: 'center', fontSize: 10 }}>{h}</div>
           ))}
           {guesses.map((g, rowIdx) => {
             const animate = rowIdx === animatingRow;
@@ -850,7 +922,7 @@ export function JeuArtiste({ onDone, daily = false, revelation = true }) {
                 {cell(g.debut + 's', g.debut === target.debut, 3, animate, arrowDebut)}
                 {cell(g.type, g.type === target.type, 4, animate)}
                 {cell(g.sexe, g.sexe === target.sexe, 5, animate)}
-                {cell('~' + g.streams + ' Mds', g.streams === target.streams, 6, animate, arrowStreams)}
+                {cell('~' + String(g.streams).replace('.', ',') + ' Mds', g.streams === target.streams, 6, animate, arrowStreams)}
               </RowFragment>
             );
           })}
@@ -978,7 +1050,7 @@ export function JeuPochette({ onDone, daily = false, revelation = true }) {
   const [tries, setTries] = useState(0);
   const [tried, setTried] = useState([]);
   const [done, setDone] = useState(false);
-  const [status, setStatus] = useState('Chargement de la pochette du jour…');
+  const [status, setStatus] = useState('Chargement de la pochette…');
   const [score, setScore] = useState(null);
   /* Trouvé ? Conditionne le droit de voir la réponse pendant le défi : celui
      qui a trouvé la connaît déjà, la lui masquer ne protégerait rien. */
@@ -1012,7 +1084,7 @@ export function JeuPochette({ onDone, daily = false, revelation = true }) {
 
   async function load() {
     setLoadError(false);
-    setStatus('Chargement de la pochette du jour…');
+    setStatus('Chargement de la pochette…');
     try {
       const rng = manche === 0 ? seeded('pochette') : Math.random;
 
@@ -1045,7 +1117,10 @@ export function JeuPochette({ onDone, daily = false, revelation = true }) {
       if (!t) throw new Error('Aucune pochette exploitable');
 
       setTrack({ ...t, artisteNom: artist.nom });
-      setStatus(`De quel artiste est cette pochette ? ${POCH_TRIES} essais.`);
+      /* Le nombre d'essais est monté en tête de panneau. Cette ligne, posée
+         sous le champ, sert au premier geste — le seul moment où le joueur ne
+         sait pas quoi taper. */
+      setStatus('Regarde les couleurs et les formes, puis tente un nom.');
     } catch (err) {
       console.error('Erreur pochette:', err);
       setLoadError(true);
@@ -1117,14 +1192,14 @@ export function JeuPochette({ onDone, daily = false, revelation = true }) {
     // Le champ se vide dans TOUS les cas, y compris sur un refus : sinon le
     // nom rejeté reste sous les yeux et invite à revalider le même.
     setInput('');
-    if (!g) { setStatus('Artiste absent de la base — utilise l\'autocomplétion.'); signalerErreur(); return; }
+    if (!g) { setStatus('Cet artiste n\'est pas dans la liste. Choisis une suggestion.'); signalerErreur(); return; }
     // tried contient des objets { nom, bon } : un includes() sur le tableau
     // ne trouvait jamais rien, et les doublons passaient.
     if (tried.some((t) => t.nom === g.nom)) { setStatus(`${g.nom} a déjà été proposé.`); signalerErreur(); return; }
     if (norm(g.nom) === norm(track.artisteNom)) {
       setTried([...tried, { nom: g.nom, bon: true }]);
       setTrouve(true);
-      terminerPartie(POINTS[tries], `🎉 Exact ! C'était ${track.artistName} — album « ${track.albumName} ».`);
+      terminerPartie(POINTS[tries], `🎉 Exact ! C'était ${track.artistName}, album « ${track.albumName} ».`);
     } else {
       setTried([...tried, { nom: g.nom, bon: false }]);
       signalerErreur();
@@ -1134,13 +1209,16 @@ export function JeuPochette({ onDone, daily = false, revelation = true }) {
         terminerPartie(
           0,
           revelation
-            ? `Perdu… c'était ${track.artistName} — « ${track.albumName} ».`
+            ? `Perdu… c'était ${track.artistName}, album « ${track.albumName} ».`
             : 'Perdu.'
         );
       } else if (next === POCH_TRIES - 1) {
-        setStatus(`Dernier essai — un extrait de ${POCH_EXTRAIT_SEC} secondes est débloqué.`);
+        setStatus(`Dernier essai. Un extrait de ${POCH_EXTRAIT_SEC} secondes est débloqué.`);
       } else {
-        setStatus(`Raté — le flou diminue. ${POCH_TRIES - next} essai(s) restant(s).`);
+        {
+          const reste = POCH_TRIES - next;
+          setStatus(`Raté, le flou se lève. ${reste} essai${reste > 1 ? 's' : ''} restant${reste > 1 ? 's' : ''}.`);
+        }
       }
     }
   }
@@ -1175,10 +1253,42 @@ export function JeuPochette({ onDone, daily = false, revelation = true }) {
         <ResultatPochette score={resultat} artiste={devoile ? track?.artistName : null} />
       )}
 
-      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Pochette floutée</h3>
-      <p className="description" style={{ marginBottom: 'var(--e4)' }}>
-        Le flou diminue à chaque mauvaise réponse. Trouve l'artiste de cet album en {POCH_TRIES} essais.
-      </p>
+      {/* ---- Cartouche de tête ----
+          « Pochette floutée » nommait un objet là où les autres épreuves
+          nomment une action — « Retrouve l'accord », « Reproduis le rythme »,
+          « Trouve l'artiste ». Un titre qui ne contient pas de verbe ne dit
+          pas ce qu'on attend du joueur.
+
+          La consigne, elle, commençait par la MÉCANIQUE et finissait par le
+          BUT. On lisait comment le flou évolue avant de savoir ce qu'on
+          cherche. L'ordre est inversé : d'abord ce qu'il faut faire, ensuite
+          ce qui se passe si on échoue — qui est aussi la récompense, et se
+          lit mieux une fois le but connu.
+
+          « Mauvaise réponse » devient « erreur » : deux mots de moins et une
+          notion que personne n'a à interpréter. */}
+      {/* Le cartouche est centré PAR LUI-MÊME, et non par le panneau.
+          Contrairement aux accords et à l'artiste, ce panneau-ci n'a pas de
+          textAlign central à sa racine : sa scène est une grille de trois
+          colonnes bâtie sur l'alignement à gauche, et la basculer entière
+          décentrerait les jetons de réponse et le champ de saisie.
+
+          Le conteneur porte donc le centrage, et la consigne une largeur
+          maximale — sans borne, `margin: auto` n'a rien à centrer, un bloc
+          occupant déjà toute la place offerte. C'est ce qui manquait. */}
+      <div style={{ textAlign: 'center', marginBottom: 'var(--e4)' }}>
+        <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Reconnais la pochette</h3>
+        <p className="description" style={{ maxWidth: 460, margin: '0 auto', textWrap: 'balance' }}>
+          Nomme l&apos;artiste de cet album. À chaque erreur, le flou se lève un peu.
+        </p>
+        <p style={{
+          fontFamily: 'var(--mono)', fontSize: 10.5, fontWeight: 400,
+          letterSpacing: '0.09em', textTransform: 'uppercase',
+          color: 'var(--lin)', margin: 'var(--e2) 0 0',
+        }}>
+          {POCH_TRIES} essais · noté sur 10
+        </p>
+      </div>
 
       {/* ---- Pochette centrée, réponses à sa droite ----
            Grille à trois colonnes plutôt qu'un flottant : les deux colonnes
@@ -1239,10 +1349,14 @@ export function JeuPochette({ onDone, daily = false, revelation = true }) {
           alignItems: 'flex-start', gap: POCH_JETON_GAP, minWidth: 0,
         }}>
           {tried.length > 0 && (
+            /* « 4/7 » en cendre ne se lisait pas, et deux nombres nus ne
+               disent pas de quoi ils comptent. Le mot les qualifie, le lin
+               les rend lisibles — c'est le jeton du texte secondaire, et
+               c'est bien le statut d'un compteur à côté de ses jetons. */
             <div className="etiquette-mono poch-compteur" style={{
-              color: 'var(--cendre)', height: POCH_ENTETE_H, lineHeight: `${POCH_ENTETE_H}px`,
+              color: 'var(--lin)', height: POCH_ENTETE_H, lineHeight: `${POCH_ENTETE_H}px`,
             }}>
-              {tried.length}/{POCH_TRIES}
+              {tried.length}/{POCH_TRIES} essais
             </div>
           )}
           {tried.map((t, i) => (
@@ -1272,7 +1386,7 @@ export function JeuPochette({ onDone, daily = false, revelation = true }) {
             disabled={done || !track} erreur={erreur}
             exclure={tried.map((t) => t.nom)}
           />
-          <button onClick={guess} disabled={done || !track} style={btn(true, done || !track)}>Essayer</button>
+          <button onClick={guess} disabled={done || !track} style={btn(true, done || !track)}>Proposer</button>
         </div>
       )}
 
@@ -1403,7 +1517,7 @@ export function JeuBPM({ onDone, daily = false, revelation = true }) {
   const [loadError, setLoadError] = useState(false);
   const [guess, setGuess] = useState(110);
   const [done, setDone] = useState(false);
-  const [status, setStatus] = useState('Chargement du morceau du jour…');
+  const [status, setStatus] = useState('Chargement du morceau…');
   const [score, setScore] = useState(null);
   const [tone, setTone] = useState(null);
   const [metroActif, setMetroActif] = useState(false);
@@ -2009,7 +2123,7 @@ export function JeuSeconde({ onDone, daily = false, revelation = true }) {
      joueur qui n'a que l'artiste ne l'a pas encore. */
   const [titreTrouve, setTitreTrouve] = useState(false);
   const [done, setDone] = useState(false);
-  const [status, setStatus] = useState('Chargement du morceau du jour…');
+  const [status, setStatus] = useState('Chargement du morceau…');
   const [score, setScore] = useState(null);
   const [erreur, setErreur] = useState(false);
   const erreurTimer = useRef(null);
@@ -2067,7 +2181,10 @@ export function JeuSeconde({ onDone, daily = false, revelation = true }) {
       if (!t) throw new Error('Aucun morceau exploitable');
 
       setTrack(t);
-      setStatus(`Écoute ${SEC_DURATIONS[0]} seconde, puis propose un titre ou un artiste.`);
+      /* Ne répète plus la consigne. Ce que le joueur ignore à cet instant,
+         c'est qu'un titre approché suffit : l'orthographe exacte n'est pas
+         demandée, et le croire fait renoncer à des réponses justes. */
+      setStatus('Le titre suffit, même approximatif. L\'artiste rapporte moitié moins.');
       // Un court battement avant de rendre la main : un tirage instantané ne
       // se voit pas, et l'écran semblerait n'avoir pas bougé. Juste de quoi
       // laisser la sortie se jouer, pas de quoi faire attendre.
@@ -2149,7 +2266,7 @@ export function JeuSeconde({ onDone, daily = false, revelation = true }) {
         ? `Perdu — c'était « ${track.trackName} » de ${track.artistName}.`
         : 'Perdu.');
     } else {
-      setStatus(`${passed ? 'Extrait allongé' : 'Raté'} — tu entends maintenant ${SEC_DURATIONS[next]} secondes.`);
+      setStatus(`${passed ? 'Extrait allongé' : 'Raté'}. Tu entends maintenant ${SEC_DURATIONS[next]} secondes.`);
     }
   }
 
@@ -2165,7 +2282,7 @@ export function JeuSeconde({ onDone, daily = false, revelation = true }) {
     // Une saisie qui ne contient aucun caractère exploitable n'est pas une
     // proposition : elle ne consomme pas d'essai.
     if (!a && !saisieArtiste) {
-      setStatus('Saisie vide — écris un titre ou un artiste.');
+      setStatus('Écris un titre ou un artiste avant de proposer.');
       signalerErreur();
       return;
     }
@@ -2178,15 +2295,15 @@ export function JeuSeconde({ onDone, daily = false, revelation = true }) {
     if (titleOk) {
       setTried([...tried, { texte: g, verdict: 'titre' }]);
       setTitreTrouve(true);
-      finish(SEC_POINTS[tries], `🎉 Exact — « ${track.trackName} » de ${track.artistName}.`);
+      finish(SEC_POINTS[tries], `🎉 Exact ! « ${track.trackName} » de ${track.artistName}.`);
     } else if (artistOk && !artistFound) {
       setTried([...tried, { texte: g, verdict: 'artiste' }]);
       setArtistFound(true);
       artistFoundAtRef.current = tries;
-      setStatus(`Artiste trouvé. Le titre vaut encore le score plein.`);
+      setStatus('Artiste trouvé. Le titre rapporte encore le maximum.');
     } else if (artistOk && artistFound) {
       signalerErreur();
-      setStatus('Artiste déjà trouvé — cherche le titre.');
+      setStatus('Artiste déjà trouvé. Cherche le titre.');
     } else {
       setTried([...tried, { texte: g, verdict: 'faux' }]);
       signalerErreur();
@@ -2222,10 +2339,40 @@ export function JeuSeconde({ onDone, daily = false, revelation = true }) {
         />
       )}
 
-      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Une seconde de plus</h3>
-      <p className="description" style={{ maxWidth: 470, margin: '0 auto var(--e5)' }}>
-        Trouve le titre pour le score plein, l&apos;artiste pour la moitié.
-        Chaque erreur allonge l&apos;extrait.
+      {/* ---- Cartouche de tête ----
+          Le titre répétait mot pour mot celui de la page. Les autres épreuves
+          ouvrent leur panneau sur un verbe — « Retrouve l'accord », « Reconnais
+          la pochette » — parce qu'un titre doit dire ce qu'on attend du joueur,
+          pas seulement comment s'appelle l'épreuve.
+
+          La consigne, elle, ouvrait sur le BARÈME : « pour le score plein »,
+          « pour la moitié ». Deux tournures comptables placées avant qu'on ait
+          dit qu'il fallait écouter quelque chose. Le geste passe donc devant,
+          et le barème descend dans l'étiquette mono, où deux chiffres se
+          repèrent d'un coup d'œil au lieu de se lire. */}
+      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Reconnais le morceau</h3>
+      {/* Une phrase au lieu de deux. Les deux tenaient 81 signes et se
+          coupaient forcément ; en une seule proposition il en reste 53, et la
+          virgule porte le lien que faisait le point.
+
+          L'espace insécable après « à » n'est pas un détail : c'est lui qui a
+          produit le défaut visible. Un mot d'une lettre laissé en fin de ligne
+          se remarque avant que la phrase soit lue, et `text-wrap: balance`
+          n'en protège pas — il égalise des longueurs, il ne connaît pas cette
+          règle-là. */}
+      <p className="description" style={{ maxWidth: 470, margin: '0 auto', textWrap: 'balance' }}>
+        Une seconde d&apos;extrait, et un peu plus à&nbsp;chaque erreur.
+      </p>
+      {/* Le barème titre/artiste est redescendu dans la ligne d'état, où il
+          arrive au moment de saisir. L'étiquette ne garde que ce que gardent
+          les autres épreuves, dans les mêmes mots : de quoi se repérer d'une
+          épreuve à l'autre sans rien relire. */}
+      <p style={{
+        fontFamily: 'var(--mono)', fontSize: 10.5, fontWeight: 400,
+        letterSpacing: '0.09em', textTransform: 'uppercase',
+        color: 'var(--lin)', margin: 'var(--e2) auto var(--e5)',
+      }}>
+        {SEC_DURATIONS.length} essais · noté sur 10
       </p>
 
       {/* ---- Bloc de jeu ----
@@ -2317,7 +2464,10 @@ export function JeuSeconde({ onDone, daily = false, revelation = true }) {
         })}
       </div>
 
-      <div className="etiquette-mono" style={{ color: 'var(--cendre)', marginBottom: 'var(--e5)' }}>
+      {/* Lin et non cendre : ce compteur dit combien de tentatives il reste,
+          c'est-à-dire l'information qui décide de continuer ou de tenter le
+          coup. Le cendre est réservé à ce dont on peut se passer. */}
+      <div className="etiquette-mono" style={{ color: 'var(--lin)', marginBottom: 'var(--e5)' }}>
         {done ? 'partie terminée' : `${restants} essai${restants > 1 ? 's' : ''} restant${restants > 1 ? 's' : ''}`}
       </div>
 
@@ -2339,7 +2489,7 @@ export function JeuSeconde({ onDone, daily = false, revelation = true }) {
                 transition: 'border-color var(--transition-courte)',
               }}
             />
-            <button onClick={guess} disabled={done || !track} style={btn(true, done || !track)}>Valider</button>
+            <button onClick={guess} disabled={done || !track} style={btn(true, done || !track)}>Proposer</button>
           </div>
 
           {/* Passer coûte un palier : c'est une décision, pas une commande de
@@ -3124,7 +3274,7 @@ export function JeuParoles({ onDone }) {
   const [input, setInput] = useState('');
   const [tries, setTries] = useState(0);
   const [done, setDone] = useState(false);
-  const [status, setStatus] = useState('Chargement des paroles du jour…');
+  const [status, setStatus] = useState('Chargement des paroles…');
   const [score, setScore] = useState(null);
   const { jouer } = useLecteurAudio();
 
@@ -3134,7 +3284,7 @@ export function JeuParoles({ onDone }) {
 
   async function load() {
     setLoadError(false);
-    setStatus('Chargement des paroles du jour…');
+    setStatus('Chargement des paroles…');
     try {
       const rng = seeded('paroles');
       const artistStart = Math.floor(rng() * ARTISTS.length);

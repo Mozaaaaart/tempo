@@ -134,7 +134,9 @@ export default function IntroArtiste({ onFin, exclure = null }) {
     return () => { annule = true; };
   }, [demoNom]);
 
-  const indices = [demo.nom, demo.genre, demo.pays, demo.debut + 's', demo.type, demo.sexe, '~' + demo.streams + ' Mds'];
+  // Virgule décimale : le reste du site écrit 28,8 et non 28.8.
+  const indices = [demo.nom, demo.genre, demo.pays, demo.debut + 's', demo.type, demo.sexe,
+    '~' + String(demo.streams).replace('.', ',') + ' Mds'];
 
   return (
     <div
@@ -337,10 +339,14 @@ export default function IntroArtiste({ onFin, exclure = null }) {
                dimensions. */
             gap: 0,
           }}>
+            {/* Ivoire à 10 px, comme dans le jeu. La démonstration doit
+                montrer le tableau QU'ON VA VOIR : des en-têtes plus pâles ici
+                que là-bas apprendraient au joueur à ne pas les regarder,
+                juste avant de les lui rendre nécessaires. */}
             {COLONNES.map((h) => (
               <div key={h} style={{
-                fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: '0.08em',
-                textTransform: 'uppercase', color: 'var(--cendre)', textAlign: 'center',
+                fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.08em',
+                textTransform: 'uppercase', color: 'var(--ivoire)', textAlign: 'center',
                 opacity: 0,
                 animation: `artParution 200ms ${T_INDICES - 120}ms ease-out both`,
               }}>{h}</div>
@@ -378,7 +384,7 @@ export default function IntroArtiste({ onFin, exclure = null }) {
             letterSpacing: '0.02em', color: 'var(--lin)',
             animation: `artEntree 320ms ${T_ACCROCHE}ms ease-out both`,
           }}>
-            7 essais pour le trouver
+            7 essais · le score baisse à chaque fois
           </div>
 
           {/* ---------- Curseur ----------

@@ -719,7 +719,12 @@ export default function EpreuvesLayout({ children }) {
           <div className="epreuve-tete-texte">
             <div className="etiquette-mono">épreuve {e.num} · accès libre</div>
             <h1 className="titre-page" style={{ marginTop: 'var(--e2)' }}>{e.nom}</h1>
-            <p className="lin" style={{ marginTop: 'var(--e2)', maxWidth: 470 }}>{e.desc}</p>
+            {/* `pretty` empêche le dernier mot de rester seul sur sa ligne.
+                Le défaut se voyait sur « Une seconde de plus », où « plus. »
+                se retrouvait isolé. */}
+            <p className="lin" style={{
+              marginTop: 'var(--e2)', maxWidth: 470, textWrap: 'pretty',
+            }}>{e.desc}</p>
           </div>
 
           <CarteDefi variante="bureau" />

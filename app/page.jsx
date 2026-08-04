@@ -144,7 +144,7 @@ export default function Accueil() {
           POSITIONS, une fois pour toutes :
             2  en-tête         7  grille des épreuves
             3  titre           8  ligne de description (survol)
-            4  sous-titre      9  lien vers les dix épreuves (mobile seul)
+            4  sous-titre      9  lien vers les dix jeux (mobile seul)
             5  ligne du son   10  bloc du défi du jour
             6  onde           11  pied de page
 
@@ -422,13 +422,18 @@ export default function Accueil() {
           </div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 500 }}>Mozart Benchmark</div>
-            <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>évaluation auditive</div>
+            {/* La baseline dit ce que le site EST, en trois mots lus sous le nom.
+                « Évaluation auditive » annonçait un examen ; le site n'en est pas
+                un, et tous les arbitrages de rédaction l'ont montré. « Dix jeux
+                d'oreille » est vrai, se comprend sans effort, et contient les
+                deux mots qu'on tape pour chercher ça. */}
+            <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>dix jeux d&apos;oreille</div>
           </div>
         </div>
         <nav className="accueil-nav">
           {/* Vers la première épreuve directement : /epreuves ne fait que
               rediriger, autant s'épargner l'aller-retour serveur. */}
-          <Link href={lienEpreuve(CATALOGUE[0].slug)}>toutes les épreuves</Link>
+          <Link href={lienEpreuve(CATALOGUE[0].slug)}>tous les jeux</Link>
           <Link href="/quotidien">défi du jour</Link>
         </nav>
       </header>
@@ -513,14 +518,14 @@ export default function Accueil() {
       {/* 8 — Ligne de description (hauteur fixe : la page ne saute pas).
              Masquée sous 640 px, où chaque entrée porte son accroche. */}
       <p className="description desc-survol">
-        {survol === null ? 'Survole une épreuve pour la découvrir.' : EPREUVES[survol].desc}
+        {survol === null ? 'Survole un jeu pour le découvrir.' : EPREUVES[survol].desc}
       </p>
 
       {/* 9 — Sortie vers le catalogue complet, mobile uniquement.
              La vitrine ne montre que cinq des dix épreuves, et rien ne le
              disait une fois la barre de navigation repliée. */}
       <div className="bloc-tout-voir">
-        <Link href={lienEpreuve(CATALOGUE[0].slug)}>les dix épreuves →</Link>
+        <Link href={lienEpreuve(CATALOGUE[0].slug)}>les dix jeux →</Link>
       </div>
 
       {/* 10 — Bloc du défi quotidien : seul élément encadré de la page, et sa

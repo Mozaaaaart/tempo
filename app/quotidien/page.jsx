@@ -21,7 +21,7 @@ import { SITE_NOM } from '@/data/site';
 export const metadata = {
   title: 'Le défi musical du jour',
   description:
-    'Dix épreuves d\u2019oreille renouvelées chaque jour, identiques pour tous : '
+    'Dix jeux d\u2019oreille renouvelés chaque jour, identiques pour tous : '
     + 'blind test, accords, tempo, pochettes. Un score sur 100 à partager.',
   alternates: { canonical: '/quotidien' },
   openGraph: {
@@ -31,7 +31,7 @@ export const metadata = {
     url: '/quotidien',
     title: `Le défi musical du jour | ${SITE_NOM}`,
     description:
-      'Dix épreuves musicales renouvelées chaque jour, les mêmes pour tous. '
+      'Dix jeux musicaux renouvelés chaque jour, les mêmes pour tous. '
       + 'Un score sur 100 à partager. Gratuit, sans inscription.',
   },
 };

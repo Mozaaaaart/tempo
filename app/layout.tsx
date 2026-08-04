@@ -104,7 +104,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           '@type': 'ListItem',
           position: i + 1,
           name: e.titreSeo,
-          url: `${SITE_URL}/epreuves/${e.slug}`,
+          url: `${SITE_URL}/jeux/${e.slug}`,
         })),
       },
     ],

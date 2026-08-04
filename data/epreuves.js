@@ -155,7 +155,11 @@ export function epreuveDuSlug(slug) {
   return EPREUVES.find((e) => e.slug === slug);
 }
 
-/** Chemin public d'une épreuve. */
+/** Chemin public d'un jeu.
+ *
+ *  `/jeux/` et non `/epreuves/` depuis août 2026. Les anciennes adresses sont
+ *  rattrapées par deux redirections permanentes dans next.config.ts, qui
+ *  couvrent la page catalogue et les dix jeux d'un seul motif. */
 export function lienEpreuve(slug) {
-  return `/epreuves/${slug}`;
+  return `/jeux/${slug}`;
 }

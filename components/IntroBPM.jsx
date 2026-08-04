@@ -243,7 +243,7 @@ export default function IntroBPM({ onFin }) {
             letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--or)',
             animation: `bpmEntree 340ms ${T_TITRE}ms ease-out both`,
           }}>
-            Trouve le BPM
+            Trouve le tempo
           </div>
 
           {/* ---------- Accroche ---------- */}

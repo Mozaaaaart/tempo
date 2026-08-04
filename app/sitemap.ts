@@ -19,10 +19,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   return [
     { url: `${SITE_URL}/`, lastModified: maj, changeFrequency: 'weekly', priority: 1 },
-    { url: `${SITE_URL}/epreuves`, lastModified: maj, changeFrequency: 'weekly', priority: 0.9 },
+    { url: `${SITE_URL}/jeux`, lastModified: maj, changeFrequency: 'weekly', priority: 0.9 },
     { url: `${SITE_URL}/quotidien`, lastModified: maj, changeFrequency: 'daily', priority: 0.9 },
     ...EPREUVES.map((e) => ({
-      url: `${SITE_URL}/epreuves/${e.slug}`,
+      url: `${SITE_URL}/jeux/${e.slug}`,
       lastModified: maj,
       changeFrequency: 'monthly' as const,
       priority: 0.8,

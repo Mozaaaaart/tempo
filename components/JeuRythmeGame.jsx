@@ -82,9 +82,22 @@ const D2 = DELAI_ENTREE + 1900;
 const PAS_DEMO = 180;                       // durée d'un pas de la mesure
 const DEMO_MOTIF = [0, 2, 3, 5];            // les temps frappés, sur 8 pas
 const DEMO_PAS = 8;
-const D2_ECOUTE = D2;                       // étiquette « écoute »
-const D2_GRILLE = D2 + 260;                 // la grille apparaît
-const D2_LECTURE = D2 + 620;                 // la tête de lecture part
+/* L'acte II s'ouvre sur le NOM DU JEU, puis sa règle, puis la démonstration.
+   Même découpage que l'intro du Duel, et pour la même raison : l'acte I dit
+   le cadre — mode survie, trois vies — mais ne nomme jamais le jeu. Un
+   spectateur qui arrive sur la seconde d'après voyait une grille apparaître
+   sans savoir de quelle épreuve il s'agit.
+
+   Les trois temps sont espacés de 340 puis 280 ms : le titre se pose, la
+   règle le complète, la démonstration démarre. Ensemble ils feraient un pavé
+   à lire ; l'un après l'autre, ils se lisent comme une phrase. */
+const D2_TITRE = D2;                        // le nom du jeu
+const D2_REGLE = D2 + 340;                  // la règle, une fois le titre posé
+const D2_DEMO = D2 + 620;                   // la démonstration prend le relais
+
+const D2_ECOUTE = D2_DEMO;                  // étiquette « écoute »
+const D2_GRILLE = D2_DEMO + 260;            // la grille apparaît
+const D2_LECTURE = D2_DEMO + 620;           // la tête de lecture part
 /* Entre l'écoute et la reprise, le jeu laisse passer UNE mesure à vide : le
    métronome bat, on ne tape pas encore. C'est le contretemps le plus courant
    chez un nouveau joueur — il frappe dès la fin de l'écoute et rate tout. La
@@ -327,6 +340,27 @@ function Surcouche({ annonce, onPasser }) {
             pointerEvents: 'none',
             animation: `duelActeSortie 340ms ${D2_SORTIE}ms ease-in both`,
           }}>
+            {/* En-tête : le nom du jeu, puis la règle. Un seul enfant de la
+                colonne pour les deux, avec leur propre écart interne : la
+                démonstration garde ainsi la gouttière du conteneur, et
+                l'ensemble ne coûte qu'un rang de plus en hauteur. */}
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 500, lineHeight: 1,
+                letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--or)',
+                animation: `duelTexteEntree 340ms ${D2_TITRE}ms ease-out both`,
+              }}>
+                Reproduis le rythme
+              </div>
+              <div style={{
+                fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 500,
+                letterSpacing: '0.02em', color: 'var(--lin)', marginTop: 10,
+                animation: `duelTexteEntree 320ms ${D2_REGLE}ms ease-out both`,
+              }}>
+                Écoute une mesure, rejoue-la de mémoire
+              </div>
+            </div>
+
             {/* Étiquette de phase : « écoute » puis « à toi », au même endroit,
                 l'une remplaçant l'autre — c'est le basculement du jeu. */}
             <div style={{ position: 'relative', height: 20, width: '100%', maxWidth: 320 }}>
@@ -1210,7 +1244,7 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
   return (
     // Le fond du panneau manquait à cette épreuve : les neuf autres
     // l'utilisent, et `position: relative` ancre en prime la surcouche.
-    <div style={{ ...panel, position: 'relative' }}>
+    <div style={{ ...panel, position: 'relative', textAlign: 'center' }}>
       <style>{`
         @keyframes rytAttenteEntre {
           from { opacity: 0; }
@@ -1394,21 +1428,34 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
           joueur qui passe d'une épreuve à l'autre n'a jamais à chercher où
           se trouve la règle. */}
       <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Reproduis le rythme</h3>
-      <p className="description" style={{ maxWidth: 470, margin: '0', textWrap: 'balance' }}>
+      <p className="description" style={{ maxWidth: 470, margin: '0 auto', textWrap: 'balance' }}>
         Écoute une mesure, rejoue-la de mémoire au bon tempo.
       </p>
       <p style={{
         fontFamily: 'var(--mono)', fontSize: 10.5, fontWeight: 400,
         letterSpacing: '0.09em', textTransform: 'uppercase',
-        color: 'var(--lin)', margin: 'var(--e2) 0 var(--e5)',
+        color: 'var(--lin)', margin: 'var(--e2) auto var(--e5)',
       }}>
         {daily
           ? `${DAILY_ROUNDS} mesures · ton score est la moyenne`
           : 'Le niveau monte tant que tu tiens'}
       </p>
 
-      {/* Tableau de bord */}
-      <div style={{ display: 'flex', gap: 'var(--e5)', flexWrap: 'wrap', alignItems: 'baseline', marginBottom: 'var(--e4)' }}>
+      {/* ---- Tableau de bord, centré comme le reste ----
+          Ce panneau était le seul des huit jeux à cartouche à ne pas porter
+          `textAlign: center` sur sa racine : titre, consigne, barème et
+          compteurs se calaient à gauche d'une carte large de mille pixels,
+          au-dessus d'une grille et d'une zone de frappe qui, elles, sont
+          centrées. Le bloc de tête flottait donc en haut à gauche, sans
+          rapport avec ce qu'il annonçait.
+
+          Le tableau de bord prend le même axe. C'est déjà ce que fait
+          « Humain ou IA », qui a exactement la même structure : compteurs,
+          bouton de départ, scène. */}
+      <div style={{
+        display: 'flex', gap: 'var(--e5)', flexWrap: 'wrap',
+        alignItems: 'baseline', justifyContent: 'center', marginBottom: 'var(--e4)',
+      }}>
         {daily ? (
           <Donnee etiquette="mesure" valeur={`${Math.min(dailyRound + 1, DAILY_ROUNDS)} / ${DAILY_ROUNDS}`} />
         ) : (
@@ -1465,7 +1512,7 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
             transition: 'background var(--transition-courte)',
           }}>
           {dailyFini ? 'Terminé pour aujourd\'hui'
-            : daily ? 'Commencer l\'épreuve'
+            : daily ? 'Commencer'
             : 'Commencer le jeu'}
         </button>
       )}
@@ -1572,7 +1619,7 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
         }}>
           {daily ? (
             <>
-              <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>score de l&apos;épreuve</div>
+              <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>score du jeu</div>
               <div className="score-affiche" style={{ fontSize: 38, marginTop: 'var(--e2)' }}>
                 {(bilanQuotidien?.moyenne ?? 0).toFixed(1).replace('.', ',')}
                 <span style={{ color: 'var(--cendre)' }}> / 10</span>

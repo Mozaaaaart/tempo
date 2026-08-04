@@ -646,7 +646,7 @@ export default function PageQuotidien() {
       '',
       ...lignes,
       '',
-      'Une tentative par épreuve, le même défi pour tout le monde',
+      'Une tentative par jeu, le même défi pour tout le monde',
       'jusqu\'à minuit.',
       '',
       `→ ${LIEN_PUBLIC}`,
@@ -1448,14 +1448,14 @@ export default function PageQuotidien() {
                 épreuve — alors que le défi en cumule dix. Le chiffre juste
                 était affiché à trente pixels de là, dans le relevé. */}
             <p className="lin" style={{ marginTop: 'var(--e2)', maxWidth: 470, textWrap: 'pretty' }}>
-              {EPREUVES.length}{' '}épreuves d&apos;oreille, une seule tentative chacune,
+              {EPREUVES.length}{' '}jeux d&apos;oreille, une seule tentative chacun,
               les mêmes pour tous jusqu&apos;à minuit. Un score sur {max} à partager.
             </p>
             <p style={{
               marginTop: 'var(--e3)', maxWidth: 470, fontSize: 13,
               color: 'var(--lin)', textWrap: 'pretty',
             }}>
-              Ces épreuves sont aussi jouables sans limite
+              Ces jeux sont aussi jouables sans limite
               {' '}<Link href={lienEpreuve(EPREUVES[0].slug)}>à l&apos;entraînement</Link>.
             </p>
           </div>
@@ -1579,9 +1579,29 @@ export default function PageQuotidien() {
                         défensive plutôt que d'une mécanique du jeu.
 
                         Celle-ci énonce le principe, puis ce qu'il apporte. */}
-                    <p className="description" style={{ maxWidth: 520, marginBottom: 'var(--e4)' }}>
-                      Chaque défi livre ses réponses le lendemain. Voici celles d&apos;hier —
-                      de quoi voir ce qui t&apos;a échappé.
+                    {/* ---- Deux phrases, deux lignes ----
+                        Les deux tenaient dans un même paragraphe et la coupure
+                        tombait où la largeur le décidait : « échappé. » restait
+                        seul sur un second rang. Un bloc de texte se juge à sa
+                        dernière ligne, et deux mots orphelins la font paraître
+                        ratée.
+
+                        `balance` n'aurait rien réglé : il égalise des LONGUEURS
+                        et aurait coupé au milieu de la seconde phrase, ce qui
+                        est un défaut de lecture plus grave qu'un défaut de
+                        forme. La seule coupure juste est celle du sens, elle se
+                        pose donc à la main.
+
+                        Deux paragraphes plutôt qu'un <br /> : sur un écran
+                        étroit, chacun se replie pour son propre compte au lieu
+                        de traîner une coupure forcée qui n'a plus lieu d'être.
+                        43 signes puis 52 : la seconde ligne est la plus longue,
+                        ce qui pose le bloc au lieu de le laisser en suspens. */}
+                    <p className="description" style={{ maxWidth: 520, textWrap: 'pretty' }}>
+                      Chaque défi livre ses réponses le lendemain.
+                    </p>
+                    <p className="description" style={{ maxWidth: 520, marginBottom: 'var(--e4)', textWrap: 'pretty' }}>
+                      Voici celles d&apos;hier, de quoi voir ce qui t&apos;a échappé.
                     </p>
 
                     <div className="q-veille">
@@ -1674,7 +1694,7 @@ export default function PageQuotidien() {
             </div>
 
             <p style={{ fontSize: 14, marginTop: 'var(--e5)', maxWidth: 460, marginInline: 'auto' }}>
-              {EPREUVES.length}{' '}épreuves à la suite, une tentative chacune. Le tirage est le
+              {EPREUVES.length}{' '}jeux à la suite, une tentative chacun. Le tirage est le
               même pour tous les candidats du jour, et il change à minuit.
             </p>
 
@@ -1756,7 +1776,7 @@ export default function PageQuotidien() {
                 trajet derrière lui est accompli. */}
             <nav
               className="q-segments"
-              aria-label={`Progression dans les ${EPREUVES.length} épreuves du défi`}
+              aria-label={`Progression dans les ${EPREUVES.length} jeux du défi`}
               style={{ marginTop: 'var(--e6)' }}
             >
               <div className="q-segments-grille">
@@ -1811,7 +1831,7 @@ export default function PageQuotidien() {
 
               <div className="q-nav-titre" style={{ textAlign: 'center', flexShrink: 0 }}>
                 <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>
-                  épreuve {epreuve.num} / {EPREUVES.length}
+                  jeu {epreuve.num} / {EPREUVES.length}
                 </div>
                 <div style={{ fontSize: 15, fontWeight: 500, marginTop: 2 }}>{epreuve.nom}</div>
                 <div className="etiquette-mono" style={{ marginTop: 4 }}>
@@ -2004,7 +2024,7 @@ export default function PageQuotidien() {
                         background: 'var(--onyx)',
                       }}>
                         <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>
-                          épreuve terminée
+                          jeu terminé
                         </div>
                         <div className="score-affiche" style={{ marginTop: 'var(--e3)', fontSize: 32 }}>
                           {scores[x.slug].toFixed(1).replace('.', ',')}{' '}

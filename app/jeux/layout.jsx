@@ -310,10 +310,10 @@ export default function EpreuvesLayout({ children }) {
       const c = ev.target;
       if (c && (c.tagName === 'INPUT' || c.tagName === 'TEXTAREA')) return;
       if (ev.key === 'ArrowLeft' && index > 0) {
-        router.push(`/epreuves/${EPREUVES[index - 1].slug}`, { scroll: false });
+        router.push(`/jeux/${EPREUVES[index - 1].slug}`, { scroll: false });
       }
       if (ev.key === 'ArrowRight' && index < EPREUVES.length - 1) {
-        router.push(`/epreuves/${EPREUVES[index + 1].slug}`, { scroll: false });
+        router.push(`/jeux/${EPREUVES[index + 1].slug}`, { scroll: false });
       }
     }
     document.addEventListener('keydown', onKey);
@@ -750,7 +750,7 @@ export default function EpreuvesLayout({ children }) {
                 deviner laquelle. Celui-ci décrit une ACTIVITÉ, et il s'oppose
                 de lui-même au défi du jour : on s'entraîne ici, on se mesure
                 là. C'est déjà le verbe qu'emploie la page du quotidien. */}
-            <div className="etiquette-mono">épreuve {e.num} · entraînement</div>
+            <div className="etiquette-mono">jeu {e.num} · entraînement</div>
             <h1 className="titre-page" style={{ marginTop: 'var(--e2)' }}>{e.nom}</h1>
             {/* `pretty` empêche le dernier mot de rester seul sur sa ligne.
                 Le défaut se voyait sur « Une seconde de plus », où « plus. »
@@ -789,7 +789,7 @@ export default function EpreuvesLayout({ children }) {
             et se recentre toute seule sur l'épreuve courante. */}
         <nav
           ref={railRef}
-          aria-label="Les dix épreuves"
+          aria-label="Les dix jeux"
           className="epreuve-carrousel"
           style={{
             display: 'grid',
@@ -802,7 +802,7 @@ export default function EpreuvesLayout({ children }) {
           {EPREUVES.map((x, k) => (
             <Link
               key={x.slug}
-              href={`/epreuves/${x.slug}`}
+              href={`/jeux/${x.slug}`}
               scroll={false}
               prefetch
               aria-current={k === index ? 'page' : undefined}
@@ -843,14 +843,14 @@ export default function EpreuvesLayout({ children }) {
             disabled={relanceFermee}
             aria-live="polite"
           >
-            Relancer<span className="relance-suite"> l&apos;épreuve</span>
+            Rejouer<span className="relance-suite"> ce jeu</span>
           </button>
 
           <VolumeControl compact />
 
           <div className="epreuve-nav-fleches">
             {precedente ? (
-              <Link href={`/epreuves/${precedente.slug}`} scroll={false} prefetch
+              <Link href={`/jeux/${precedente.slug}`} scroll={false} prefetch
                 className="epreuve-fleche-rond"
                 aria-label={`Épreuve précédente : ${precedente.nom}`}>
                 {SVG_GAUCHE}
@@ -860,7 +860,7 @@ export default function EpreuvesLayout({ children }) {
             )}
 
             {suivante ? (
-              <Link href={`/epreuves/${suivante.slug}`} scroll={false} prefetch
+              <Link href={`/jeux/${suivante.slug}`} scroll={false} prefetch
                 className="epreuve-fleche-rond"
                 aria-label={`Épreuve suivante : ${suivante.nom}`}>
                 {SVG_DROITE}

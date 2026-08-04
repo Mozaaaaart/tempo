@@ -32,7 +32,7 @@ export async function generateMetadata({ params }) {
      un tiers d'une balise qui en compte soixante. Il dit maintenant ce que le
      visiteur cherche : « Reconnaître un accord à l'oreille ». La marque est
      ajoutée par le gabarit du layout racine, pas à la main. */
-  const url = `/epreuves/${e.slug}`;
+  const url = `/jeux/${e.slug}`;
 
   return {
     title: e.titreSeo,
@@ -72,11 +72,11 @@ export default async function PageEpreuveSlug({ params }) {
     '@graph': [
       {
         '@type': 'Game',
-        '@id': `${SITE_URL}/epreuves/${e.slug}#jeu`,
+        '@id': `${SITE_URL}/jeux/${e.slug}#jeu`,
         name: e.titreSeo,
         alternateName: e.nom,
         description: e.metaDesc,
-        url: `${SITE_URL}/epreuves/${e.slug}`,
+        url: `${SITE_URL}/jeux/${e.slug}`,
         inLanguage: 'fr-FR',
         genre: ['Musique', 'Éducatif', 'Puzzle'],
         isAccessibleForFree: true,
@@ -87,7 +87,7 @@ export default async function PageEpreuveSlug({ params }) {
         '@type': 'BreadcrumbList',
         itemListElement: [
           { '@type': 'ListItem', position: 1, name: 'Accueil', item: SITE_URL },
-          { '@type': 'ListItem', position: 2, name: 'Épreuves', item: `${SITE_URL}/epreuves` },
+          { '@type': 'ListItem', position: 2, name: 'Jeux', item: `${SITE_URL}/jeux` },
           { '@type': 'ListItem', position: 3, name: e.nom },
         ],
       },

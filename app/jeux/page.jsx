@@ -18,12 +18,12 @@ export const metadata = {
   description:
     'Accords, rythme, tempo, pochettes floutées, blind test, musique générée par IA : '
     + 'dix jeux pour tester ton oreille, gratuits et sans inscription.',
-  alternates: { canonical: '/epreuves' },
+  alternates: { canonical: '/jeux' },
   openGraph: {
     type: 'website',
     locale: 'fr_FR',
     siteName: SITE_NOM,
-    url: '/epreuves',
+    url: '/jeux',
     title: `Les dix jeux d\u2019oreille musicale | ${SITE_NOM}`,
     description:
       'Dix jeux pour tester ton oreille : accords, rythme, tempo, blind test, musique IA. '

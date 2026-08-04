@@ -295,7 +295,7 @@ export default function IntroPochette({ onFin, exclure = null }) {
             letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--or)',
             animation: `pochEntree 340ms ${T_TITRE}ms ease-out both`,
           }}>
-            Pochette floutée
+            Reconnais la pochette
           </div>
 
           {/* ---------- Accroche ---------- */}

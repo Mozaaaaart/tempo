@@ -307,7 +307,7 @@ export default function IntroRythmeQuotidien({ manches = 5, onFin }) {
               letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--or)',
               animation: 'rqEntree 340ms ' + T_TITRE + 'ms ease-out both',
             }}>
-              Rythme
+              Reproduis le rythme
             </div>
             <div style={{
               fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 500,

@@ -36,29 +36,46 @@ const A1_SORTIE = 1780;   // l'acte s'efface
    340 ms, l'entrée du suivant peut donc commencer avant qu'elle soit terminée.
    Attendre la fin complète créait un temps mort au milieu de l'intro. */
 const A2 = 1980;   // origine de l'acte II
-const T_ACCROCHE = A2 + 0;
-const T_BOUTON = A2 + 320;   // « Nouvel extrait » apparaît
-const T_CURSEUR = A2 + 620;
-const D_CURSEUR = 2900;       // durée totale du trajet
-const T_CLIC1 = A2 + 1300;  // clic sur « Nouvel extrait »
-const T_LECTURE = A2 + 1480;  // l'extrait part : l'indicateur pulse
-const T_CARTES = A2 + 2050;  // les deux réponses apparaissent
-const T_CLIC2 = A2 + 3050;  // le curseur choisit « IA »
-const T_VERDICT = A2 + 3350;  // la carte bascule en jade, l'autre s'estompe
-const T_REVELATION = A2 + 3750;
+
+/* L'acte II s'ouvre sur le NOM DU JEU, puis sa règle, puis la démonstration.
+   Même découpage que les intros du Duel et du Rythme, et pour la même raison :
+   l'acte I dit le cadre — mode survie, une vie — mais ne nomme jamais le jeu.
+   On voyait donc un bouton et deux cartes apparaître sans savoir de quelle
+   épreuve il s'agissait.
+
+   340 ms entre le titre et la règle, 280 de plus avant la démonstration.
+   Ensemble ils feraient un pavé à lire ; l'un après l'autre, une phrase. */
+const T_TITRE = A2;            // le nom du jeu
+const T_REGLE = A2 + 340;      // la règle, une fois le titre posé
+const A2D = A2 + 620;          // origine de la démonstration
+
+const T_BOUTON = A2D;           // « Nouvel extrait » apparaît
+const T_CURSEUR = A2D + 300;
+const D_CURSEUR = 2900;         // durée totale du trajet
+const T_CLIC1 = A2D + 980;   // clic sur « Nouvel extrait »
+const T_LECTURE = A2D + 1160;  // l'extrait part : l'indicateur pulse
+const T_CARTES = A2D + 1730;  // les deux réponses apparaissent
+const T_CLIC2 = A2D + 2730;  // le curseur choisit « IA »
+const T_VERDICT = A2D + 3030;  // la carte bascule en jade, l'autre s'estompe
+const T_REVELATION = A2D + 3430;
 /* La montée de niveau ferme la démonstration : c'est elle qui dit ce qu'on
    gagne à répondre juste, et donc pourquoi on enchaîne. */
-const T_NIVEAU = A2 + 4250;
-const T_SORTIE = A2 + 5800;
-export const INTRO_IA_TOTAL = A2 + 6250;
+const T_NIVEAU = A2D + 3930;
+const T_SORTIE = A2D + 5480;
+export const INTRO_IA_TOTAL = A2D + 5930;
 
 const SCENE_L = 520;
-const SCENE_H = 344;
+/* 378 et non 344 : le titre de l'acte II occupe trente-quatre pixels en tête.
+   La hauteur de scène sert au calcul d'échelle — la laisser à 344 aurait fait
+   déborder la démonstration sur les petits écrans au lieu de la réduire. */
+const SCENE_H = 378;
 const H_CONTRAINTE = SCENE_H + 40;
 
-const REPOS = { x: 430, y: 290 };
-const BOUTON = { x: 268, y: 64 };
-const CARTE_IA = { x: 348, y: 195 };
+/* Repères du curseur, tous décalés de 34 px comme le reste de la scène :
+   ils visent des éléments, pas des coordonnées absolues. */
+const REPOS = { x: 430, y: 324 };
+const BOUTON = { x: 268, y: 98 };
+const CARTE_IA = { x: 348, y: 229 };
 
 function keyframesCurseur() {
   const p = (t) => (((t - T_CURSEUR) / D_CURSEUR) * 100).toFixed(1);
@@ -265,20 +282,31 @@ export default function IntroIA({ onFin }) {
             à-coup de mise en page quand l'acte I s'efface. */}
         <div style={{ position: 'absolute', inset: 0, animation: `iaSortie 340ms ${T_SORTIE}ms ease-in both` }}>
 
-          {/* ---------- Accroche ---------- */}
+          {/* ---------- Titre du jeu ---------- */}
           <div style={{
-            position: 'absolute', top: 8, left: 0, right: 0, textAlign: 'center',
+            position: 'absolute', top: 0, left: 0, right: 0, textAlign: 'center',
+            fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 500, lineHeight: 1,
+            letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--or)',
+            opacity: 0,
+            animation: `iaEntree 340ms ${T_TITRE}ms ease-out both`,
+          }}>
+            Humain ou IA ?
+          </div>
+
+          {/* ---------- La règle, une fois le titre posé ---------- */}
+          <div style={{
+            position: 'absolute', top: 42, left: 0, right: 0, textAlign: 'center',
             fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 500,
             letterSpacing: '0.02em', color: 'var(--lin)',
             opacity: 0,
-            animation: `iaEntree 320ms ${T_ACCROCHE}ms ease-out both`,
+            animation: `iaEntree 320ms ${T_REGLE}ms ease-out both`,
           }}>
             Écoute l&apos;extrait, puis tranche
           </div>
 
           {/* ---------- 1 · on lance l'extrait ---------- */}
           <div style={{
-            position: 'absolute', top: 48, left: 0, right: 0,
+            position: 'absolute', top: 82, left: 0, right: 0,
             display: 'flex', justifyContent: 'center',
             opacity: 0,
             animation: `iaEntree 340ms ${T_BOUTON}ms ease-out both`,
@@ -295,7 +323,7 @@ export default function IntroIA({ onFin }) {
 
           {/* ---------- 2 · il joue ---------- */}
           <div style={{
-            position: 'absolute', top: 110, left: 0, right: 0,
+            position: 'absolute', top: 144, left: 0, right: 0,
             display: 'flex', justifyContent: 'center',
             opacity: 0,
             animation: `iaEntree 320ms ${T_LECTURE}ms ease-out both`,
@@ -316,7 +344,7 @@ export default function IntroIA({ onFin }) {
 
           {/* ---------- 3 · on tranche ---------- */}
           <div style={{
-            position: 'absolute', top: 172, left: 0, right: 0,
+            position: 'absolute', top: 206, left: 0, right: 0,
             display: 'flex', gap: 'var(--e2)', justifyContent: 'center',
           }}>
             <div style={carte(false)}>
@@ -337,7 +365,7 @@ export default function IntroIA({ onFin }) {
 
           {/* ---------- Révélation ---------- */}
           <div style={{
-            position: 'absolute', top: 246, left: 0, right: 0, textAlign: 'center',
+            position: 'absolute', top: 280, left: 0, right: 0, textAlign: 'center',
             fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--lin)',
             opacity: 0,
             animation: `iaEntree 340ms ${T_REVELATION}ms ease-out both`,
@@ -351,7 +379,7 @@ export default function IntroIA({ onFin }) {
                on voit le chiffre CHANGER, ce qu'un « niveau 2 » posé d'un coup
                ne dirait pas. */}
           <div style={{
-            position: 'absolute', top: 288, left: 0, right: 0,
+            position: 'absolute', top: 322, left: 0, right: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--e3)',
             opacity: 0,
             animation: `iaEntree 320ms ${T_NIVEAU}ms ease-out both`,

@@ -118,7 +118,7 @@ export default function CatalogueEpreuves() {
         }}>MB</a>
         <div style={{ flex: 1 }}>
           <a href="/" style={{ fontSize: 14, fontWeight: 500, color: 'var(--ivoire)' }}>Mozart Benchmark</a>
-          <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>évaluation auditive</div>
+          <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>dix jeux d&apos;oreille</div>
         </div>
         <nav style={{ display: 'flex', gap: 'var(--e4)', fontSize: 12 }}>
           <a href="/" style={{ color: 'var(--lin)' }}>accueil</a>
@@ -128,7 +128,7 @@ export default function CatalogueEpreuves() {
       {/* Titre de l'épreuve · carte du défi */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--e5)', flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 320px', minHeight: 118 }}>
-          <div className="etiquette-mono">épreuve {e.num} · entraînement</div>
+          <div className="etiquette-mono">jeu {e.num} · entraînement</div>
           <h1 className="titre-page" style={{ marginTop: 'var(--e2)' }}>{e.nom}</h1>
           <p className="lin" style={{ marginTop: 'var(--e2)', maxWidth: 470 }}>{e.desc}</p>
         </div>

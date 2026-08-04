@@ -1663,7 +1663,14 @@ export function JeuBPM({ onDone, daily = false, revelation = true }) {
 
       setTrack(found);
       setRealBpm(found.bpm);
-      setStatus(`Écoute l'extrait, règle le tempo, puis valide.`);
+      /* Ne répète plus la consigne posée trois lignes plus haut. Deux verbes,
+         dans l'ordre où ils se font : d'abord ressentir, ensuite régler.
+
+         « Ressens » plutôt que « compte » ou « évalue » : le tempo n'est pas
+         un calcul, et le présenter comme tel écarte d'emblée tous ceux qui se
+         croient sans oreille. Un rythme se reçoit avant de se mesurer, et
+         c'est une chose que personne ne se sent incapable de faire. */
+      setStatus('Ressens le rythme, puis retrouve-le sur le curseur.');
     } catch (err) {
       console.error('Erreur BPM:', err);
       setLoadError(true);
@@ -1821,10 +1828,30 @@ export function JeuBPM({ onDone, daily = false, revelation = true }) {
         />
       )}
 
-      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Trouve le BPM</h3>
-      <p className="description" style={{ maxWidth: 470, margin: '0 auto var(--e5)' }}>
-        Le BPM est le nombre de battements par minute. Écoute l&apos;extrait, règle le tempo,
-        et compare-le au métronome.
+      {/* ---- Cartouche de tête ----
+          La définition du BPM reste, et elle passe même en tête : c'est la
+          seule épreuve du site dont l'intitulé contient un sigle, et un joueur
+          qui ne le connaît pas ne peut rien faire. Elle sert aussi
+          l'indexation — « battements par minute » est la formulation que tape
+          quelqu'un qui ignore le mot « BPM », donc exactement le public que
+          cette page doit capter.
+
+          Le reste tenait dans la même phrase et répétait mot pour mot la ligne
+          d'état posée en bas de panneau. Une seule des deux survit ; l'autre
+          sert désormais à donner la technique, qui n'était écrite nulle part. */}
+      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Trouve le tempo</h3>
+      <p className="description" style={{ maxWidth: 470, margin: '0 auto', textWrap: 'balance' }}>
+        Le BPM, c&apos;est le nombre de battements par minute.
+      </p>
+      <p className="description" style={{ maxWidth: 470, margin: '2px auto 0', textWrap: 'balance' }}>
+        Écoute l&apos;extrait, règle le curseur, compare au métronome.
+      </p>
+      <p style={{
+        fontFamily: 'var(--mono)', fontSize: 10.5, fontWeight: 400,
+        letterSpacing: '0.09em', textTransform: 'uppercase',
+        color: 'var(--lin)', margin: 'var(--e2) auto var(--e5)',
+      }}>
+        {BPM_MIN} à {BPM_MAX} bpm · noté sur 10
       </p>
 
       {loadError ? (
@@ -1999,8 +2026,10 @@ export function JeuBPM({ onDone, daily = false, revelation = true }) {
                     : `Écouter l'extrait (${BPM_EXTRAIT_SEC} s)`}
             </button>
 
+            {/* « Valider » est proscrit par le document de design, et il ne
+                disait rien : ce bouton soumet un tempo. */}
             <button onClick={validate} disabled={!track || done} style={btn(true, !track || done)}>
-              Valider
+              Proposer ce tempo
             </button>
           </div>
 
@@ -2335,7 +2364,7 @@ export function JeuSeconde({ onDone, daily = false, revelation = true }) {
       {resultat !== null && (
         <ResultatSeconde
           score={resultat}
-          detail={devoile && track ? `${track.trackName} — ${track.artistName}` : null}
+          detail={devoile && track ? `${track.trackName}, ${track.artistName}` : null}
         />
       )}
 
@@ -2669,7 +2698,19 @@ export function JeuInstrument({ onDone, daily = false, revelation = true }) {
   const bilanTimer = useRef(null);
   const [loadingSound, setLoadingSound] = useState(false);
   const [joue, setJoue] = useState(false);
-  const [status, setStatus] = useState('Écoute l\'instrument mystère, puis retrouve-le.');
+  /* Répétait le titre du panneau et la question posée sous le disque. Elle
+     donne maintenant la seule chose qui décide de la réponse : où porter son
+     attention. Un débutant suit l'air joué, qui ne renseigne sur rien.
+
+     « Sonorité » et non « couleur du son » : la synesthésie est une image de
+     musicien, et il faut déjà connaître le mot « timbre » pour la décoder.
+     « Sonorité » est du français courant et désigne exactement la même chose.
+
+     La première phrase écarte la fausse piste avant que la seconde donne la
+     bonne — dans l'autre sens, le joueur continue de suivre la mélodie tout
+     en croyant appliquer le conseil. */
+  const MSG_ECOUTE = 'L\'air joué ne t\'aidera pas. C\'est la sonorité qui compte.';
+  const [status, setStatus] = useState(MSG_ECOUTE);
   const [score, setScore] = useState(null);
   const [tone, setTone] = useState(null);
   const samplerRef = useRef(null);
@@ -2869,7 +2910,7 @@ export function JeuInstrument({ onDone, daily = false, revelation = true }) {
       } catch (e) {
         console.error('Échec chargement samples:', e);
         setLoadingSound(false);
-        setStatus('Impossible de charger ce son — réessaie.');
+        setStatus('Impossible de charger ce son. Réessaie.');
         return;
       }
       setLoadingSound(false);
@@ -2902,21 +2943,21 @@ export function JeuInstrument({ onDone, daily = false, revelation = true }) {
     else if (bonneFamille) s = 5;
 
     let msg;
-    if (exact) msg = `🎉 Exact — c'était bien ${target}.`;
+    if (exact) msg = `🎉 Exact ! C'était bien ${target}.`;
     else if (montrer) {
       msg = bonneFamille
-        ? `Bonne famille, mauvais instrument — c'était ${target}.`
+        ? `Bon groupe, mauvais instrument. C'était ${target}.`
         : `C'était ${target}.`;
     } else {
       msg = bonneFamille
-        ? 'Bonne famille, mauvais instrument.'
+        ? 'Bon groupe, mauvais instrument.'
         : 'Raté.';
     }
 
     setDevoile(montrer);
     /* La réponse part avec le score : la page l'archive et la rendra demain,
        une fois le tirage clos. */
-    onDone(s, `${target} — famille ${FAMILLES[target].toLowerCase()}`);
+    onDone(s, `${target}, groupe ${FAMILLES[target].toLowerCase()}`);
     setStatus(msg);
     setResultat(s);
     bilanTimer.current = setTimeout(() => {
@@ -2942,7 +2983,7 @@ export function JeuInstrument({ onDone, daily = false, revelation = true }) {
       setFamille(null);
       setScore(null);
       setJoue(false);
-      setStatus('Écoute l\'instrument mystère, puis retrouve-le.');
+      setStatus(MSG_ECOUTE);
       setRechargement(false);
     }, 200);
   }
@@ -2974,14 +3015,28 @@ export function JeuInstrument({ onDone, daily = false, revelation = true }) {
            révélation est permise. Le score, lui, s'affiche toujours. */
         <ResultatInstrument
           score={resultat}
-          detail={devoile ? `${target} — groupe ${FAMILLES[target].toLowerCase()}` : null}
+          detail={devoile ? `${target}, groupe ${FAMILLES[target].toLowerCase()}` : null}
         />
       )}
 
+      {/* ---- Cartouche de tête ----
+          La consigne portait le dispositif ET le barème dans la même phrase,
+          et se coupait au milieu. Le barème descend dans l'étiquette mono :
+          deux chiffres se repèrent, ils ne se lisent pas.
+
+          « Seul » est ajouté et n'est pas décoratif : c'est ce qui distingue
+          cette épreuve d'un blind test. Rien d'autre ne joue, il n'y a donc
+          rien à démêler — l'oreille n'a qu'un timbre à qualifier. */}
       <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Trouve l&apos;instrument</h3>
-      <p className="description" style={{ maxWidth: 470, margin: '0 auto var(--e5)' }}>
-        Un instrument joue une mélodie connue. Le bon groupe vaut cinq points,
-        le bon instrument en vaut dix.
+      <p className="description" style={{ maxWidth: 470, margin: '0 auto', textWrap: 'balance' }}>
+        Un seul instrument joue un air connu. Trouve son groupe, puis son nom.
+      </p>
+      <p style={{
+        fontFamily: 'var(--mono)', fontSize: 10.5, fontWeight: 400,
+        letterSpacing: '0.09em', textTransform: 'uppercase',
+        color: 'var(--lin)', margin: 'var(--e2) auto var(--e5)',
+      }}>
+        Groupe 5 pts · instrument 10
       </p>
 
       {/* ---- Corps de l'épreuve ----
@@ -3267,6 +3322,12 @@ export function JeuInstrument({ onDone, daily = false, revelation = true }) {
 const PAROLES_POINTS = [10, 5, 2];
 const PAROLES_LINES = 4; // nb de lignes affichées — rester court (droit de citation)
 
+/* ⚠ ÉPREUVE RETIRÉE, conservée pour mémoire.
+   Ce composant demandait de reconnaître un morceau à partir de quatre lignes
+   de paroles. Il ne figure plus dans data/epreuves.js ni dans registreJeux.js,
+   et plus rien ne l'appelle depuis que le catalogue a cessé de tenir sa propre
+   liste. Le nom « Paroles » désigne désormais l'épreuve 10, dont le composant
+   reste JeuRefrain. À supprimer une fois qu'on aura tranché. */
 export function JeuParoles({ onDone }) {
   const [track, setTrack] = useState(null);
   const [excerpt, setExcerpt] = useState('');
@@ -3496,7 +3557,7 @@ export function JeuRefrain({ onDone, daily = false, revelation = true }) {
   // Manche 0 : le refrain du jour, tiré par la graine — identique pour tous.
   const [manche, setManche] = useState(0);
   // L'intro ne se joue qu'à l'arrivée sur l'épreuve, pas sur une relance.
-  const [intro, setIntro] = useState(useIntro('refrain'));
+  const [intro, setIntro] = useState(useIntro('paroles'));
   // Surcouche de résultat, posée à la fin de la partie puis retirée seule.
   const [resultat, setResultat] = useState(null);
   // Le bilan du bas attend que le voile soit levé : deux fois le même chiffre
@@ -3563,7 +3624,7 @@ export function JeuRefrain({ onDone, daily = false, revelation = true }) {
     setChargement(true);
     setStatus('Recherche de paroles…');
     try {
-      const rng = manche === 0 ? seeded('refrain') : Math.random;
+      const rng = manche === 0 ? seeded('paroles') : Math.random;
       const artistStart = Math.floor(rng() * ARTISTS.length);
 
       /* Les paroles sont interrogées EN PARALLÈLE.
@@ -3646,7 +3707,12 @@ export function JeuRefrain({ onDone, daily = false, revelation = true }) {
           setTrack(candidats[idx]);
           setContext(sequences[idx].context);
           setAnswer(sequences[idx].answer);
-          setStatus('Tape la ligne qui manque.');
+          /* Répétait le titre et la consigne. Elle dit maintenant ce que le
+             code fait sans que personne puisse le deviner : `guess` accepte
+             une distance de Levenshtein d'environ vingt pour cent de la
+             longueur. Un joueur qui a la ligne en tête mais doute d'un mot
+             renonçait à répondre, alors que sa réponse serait passée. */
+          setStatus('Écris de mémoire, une faute ou deux ne comptent pas.');
           setChargement(false);
           return;
         }
@@ -3751,7 +3817,7 @@ export function JeuRefrain({ onDone, daily = false, revelation = true }) {
         : suivant === REFRAIN_TITRE_DES ? ' Le titre est révélé.'
           : '';
     const restants = REFRAIN_ESSAIS - suivant;
-    setStatus(`Raté — d'autres mots apparaissent.${gain} `
+    setStatus(`Raté, d'autres mots apparaissent.${gain} `
       + `${restants} essai${restants > 1 ? 's' : ''} restant${restants > 1 ? 's' : ''}.`);
   }
 
@@ -3806,10 +3872,29 @@ export function JeuRefrain({ onDone, daily = false, revelation = true }) {
         />
       )}
 
-      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Complète le refrain</h3>
-      <p className="description" style={{ maxWidth: 470, margin: '0 auto var(--e5)' }}>
-        Trois lignes du morceau, puis la tienne. Chaque erreur dévoile des mots
-        et coûte deux points.
+      {/* ---- Cartouche de tête ----
+          « Trois lignes du morceau, puis la tienne » demandait un effort
+          d'interprétation : « la tienne » désigne une ligne qui n'existe pas
+          encore et qu'on doit écrire. La consigne dit maintenant les deux
+          gestes dans l'ordre où ils se font, lire puis écrire.
+
+          Le barème descend dans l'étiquette mono, qui existait déjà sous le
+          champ de saisie mais en bas de panneau — c'est-à-dire après le
+          premier essai pour qui lit de haut en bas. */}
+      {/* Le titre suit le nom de l'épreuve, passée de « Refrain » à
+          « Paroles ». Il rejoint aussi la balise <title> de la page,
+          « Compléter les paroles d'une chanson » : ce qu'un visiteur lit dans
+          Google et ce qu'il trouve en arrivant disent enfin la même chose. */}
+      <h3 className="titre-section" style={{ marginBottom: 'var(--e1)' }}>Complète les paroles</h3>
+      <p className="description" style={{ maxWidth: 470, margin: '0 auto', textWrap: 'balance' }}>
+        Lis les trois premières lignes, puis écris celle qui suit.
+      </p>
+      <p style={{
+        fontFamily: 'var(--mono)', fontSize: 10.5, fontWeight: 400,
+        letterSpacing: '0.09em', textTransform: 'uppercase',
+        color: 'var(--lin)', margin: 'var(--e2) auto var(--e5)',
+      }}>
+        {REFRAIN_ESSAIS} essais · noté sur 10
       </p>
 
       {/* ---- Attente ----
@@ -3944,7 +4029,7 @@ export function JeuRefrain({ onDone, daily = false, revelation = true }) {
               transition: 'border-color var(--transition-courte)',
             }}
           />
-          <button onClick={guess} disabled={done || !answer} style={btn(true, done || !answer)}>Valider</button>
+          <button onClick={guess} disabled={done || !answer} style={btn(true, done || !answer)}>Proposer</button>
         </div>
       )}
 

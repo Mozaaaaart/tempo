@@ -2,7 +2,9 @@
 import { useEffect, useRef, useState } from 'react';
 
 /* ============================================================
-   SURCOUCHE D'INTRODUCTION — ÉPREUVE « COMPLÈTE LE REFRAIN »
+   SURCOUCHE D'INTRODUCTION — ÉPREUVE « COMPLÈTE LES PAROLES »
+   (composant nommé IntroRefrain pour raisons historiques : l'épreuve
+   s'appelait « Refrain » jusqu'au renommage.)
 
    Même dispositif que les autres épreuves : une surcouche `absolute` posée
    DANS le panneau du jeu, pas un voile plein écran, pour que le jeu reste
@@ -32,7 +34,7 @@ const CYCLES = [2250, 4900, 7550];
 const C_VERS_CHAMP = 0;
 const C_CLIC = 440;    // il est arrivé : clic, la frappe commence
 const C_VERS_BOUTON = 1300;
-const C_VALIDE = 1740;   // clic sur « Valider »
+const C_VALIDE = 1740;   // clic sur « Proposer »
 const C_VERDICT = 1960;   // les mots se dévoilent, ou la ligne est juste
 
 const PAS_LETTRE = 32;     // écart entre deux caractères frappés
@@ -67,11 +69,16 @@ const H_CONTRAINTE = SCENE_H + 40;
 
 /* Cibles du curseur, calculées sur la rangée de saisie : elle fait 430 px de
    large, centrée sur une scène de 520 — donc son bord gauche est à 45. Le
-   bouton « Valider » occupe les ~77 px de droite, son centre tombe donc vers
-   436, pas 372 : le clic atterrissait dans le champ. */
+   bouton occupe la droite de la rangée, et son centre en dépend : posé à 372
+   au lieu de 436, le clic atterrissait dans le champ.
+
+   BOUTON_L SUIT L'INTITULÉ. « Valider » mesurait environ 45 px de texte plus
+   32 de rembourrage, soit 77. « Proposer » est plus long d'un caractère et de
+   lettres plus larges : 88. Sans cet ajustement, le curseur cliquerait à côté
+   du bouton qu'il est censé actionner. */
 const RANGEE_X = (SCENE_L - 430) / 2;
 const RANGEE_Y = 292 + 19;              // haut de la rangée + demi-hauteur
-const BOUTON_L = 77;
+const BOUTON_L = 88;
 
 const REPOS = { x: 430, y: 372 };
 const CHAMP = { x: RANGEE_X + 160, y: RANGEE_Y };
@@ -225,7 +232,7 @@ export default function IntroRefrain({ onFin }) {
             letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--or)',
             animation: `refIntroEntree 340ms ${T_TITRE}ms ease-out both`,
           }}>
-            Complète le refrain
+            Complète les paroles
           </div>
 
           {/* ---------- Accroche ---------- */}
@@ -235,7 +242,7 @@ export default function IntroRefrain({ onFin }) {
             letterSpacing: '0.02em', color: 'var(--lin)',
             animation: `refIntroEntree 320ms ${T_ACCROCHE}ms ease-out both`,
           }}>
-            Chaque erreur dévoile des mots
+            Chaque erreur dévoile des mots, et coûte des points
           </div>
 
           {/* ---------- Le bloc de paroles ---------- */}
@@ -350,7 +357,7 @@ export default function IntroRefrain({ onFin }) {
               border: '1px solid var(--or)',
               fontFamily: 'var(--sans)', fontSize: 13.5, fontWeight: 500,
             }}>
-              Valider
+              Proposer
             </div>
           </div>
 
@@ -402,11 +409,16 @@ export default function IntroRefrain({ onFin }) {
 
 function paletteScore(valeur) {
   const n = +valeur;
+  /* Un seul axe : LA VITESSE. Le barème de cette épreuve ne mesure que ça —
+     dix points au premier essai, deux au cinquième. « Bien vu » félicitait la
+     perspicacité, « trouvé » constatait le résultat : deux registres pour une
+     même échelle, qui obligeaient à se demander lequel valait mieux.
+     Ici chaque mention situe l'essai où la ligne est tombée. */
   if (n <= 0) return { couleur: 'var(--carmin)', mention: 'ligne manquée' };
   if (n >= 9.5) return { couleur: 'var(--jade)', mention: 'du premier coup' };
-  if (n >= 7) return { couleur: 'var(--or)', mention: 'bien vu' };
+  if (n >= 7) return { couleur: 'var(--or)', mention: 'vite trouvé' };
   if (n >= 4) return { couleur: 'var(--ivoire)', mention: 'trouvé' };
-  return { couleur: 'var(--ivoire)', mention: 'de justesse' };
+  return { couleur: 'var(--ivoire)', mention: 'sur le fil' };
 }
 
 const RES_ETIQUETTE = 280;

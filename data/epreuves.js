@@ -82,49 +82,66 @@ export const EPREUVES = [
     metaDesc: 'Les machines composent, et ça s\'entend de moins en moins. Écoute un extrait et décide : musicien ou intelligence artificielle. Une seule erreur permise.',
   },
   {
-    slug: 'une-seconde',
+    /* Renommée « Blind test » en août 2026, ancien slug `une-seconde`.
+       Une redirection permanente le rattrape dans next.config.ts.
+
+       C'est la seule épreuve du site où l'on nomme un morceau à partir du
+       son : Pochette est visuelle, Instrument porte sur le timbre, Duel sur
+       des chiffres. Le terme ne décrit donc qu'elle, malgré son apparente
+       généralité — et c'est de loin le plus recherché des dix.
+
+       « Une seconde de plus » avait deux défauts. Il ne tenait pas dans le
+       carrousel, d'où un `court` qui disait déjà autre chose. Et il était
+       faux : les paliers montent de 1, 2, 3, 4 puis 5 secondes, jamais d'une
+       seule. La `desc` garde le différenciateur — un titre pose une énigme,
+       il n'explique pas la mécanique. */
+    slug: 'blind-test',
     num: '06',
-    nom: 'Une seconde de plus',
-    court: 'Une seconde',
+    nom: 'Blind test',
+    court: 'Blind test',
     desc: 'Une seconde d\'extrait, et il faut nommer le morceau. Chaque erreur t\'en offre un peu plus, mais coûte des points.',
-    titreSeo: 'Reconnaître un morceau en une seconde',
-    metaDesc: 'Une seconde d\'extrait pour nommer le morceau. Chaque erreur t\'en offre un peu plus, mais coûte des points. Blind test express gratuit, sans inscription.',
+    titreSeo: 'Blind test musical en une seconde',
+    metaDesc: 'Blind test en ligne gratuit : une seconde d\'extrait pour nommer le morceau. Chaque erreur t\'en offre un peu plus, mais coûte des points. Sans inscription.',
   },
   {
     slug: 'tempo',
     num: '07',
     nom: 'Tempo',
     court: 'Tempo',
-    desc: 'Sept secondes d\'écoute, un curseur, un métronome pour comparer.',
+    desc: 'Quinze secondes d\'écoute, un curseur, un métronome : retrouve le nombre de battements par minute.',
     titreSeo: 'Trouver le BPM d\'un morceau à l\'oreille',
-    metaDesc: 'Sept secondes d\'écoute, un curseur et un métronome pour comparer : retrouve le tempo exact du morceau en BPM. Exercice d\'oreille rythmique gratuit.',
+    metaDesc: 'Quinze secondes d\'écoute, un curseur et un métronome : retrouve le tempo du morceau en battements par minute. Exercice d\'oreille rythmique gratuit.',
   },
   {
     slug: 'instrument',
     num: '08',
     nom: 'Instrument',
     court: 'Instrument',
-    desc: 'Un timbre acoustique isolé sur un air connu. Vingt-et-un instruments possibles.',
+    desc: 'Un seul instrument joue un air connu. Six groupes, vingt-et-un instruments : lequel entends-tu ?',
     titreSeo: 'Reconnaître un instrument à l\'oreille',
-    metaDesc: 'Un timbre acoustique isolé sur un air connu, vingt-et-un instruments possibles. Entraîne ton oreille à distinguer les timbres, gratuitement et sans inscription.',
+    metaDesc: 'Un seul instrument joue un air connu : piano, violon, flûte ou trompette ? Six groupes, vingt-et-un instruments. Reconnais le timbre, gratuitement.',
   },
   {
     slug: 'duel',
     num: '09',
     nom: 'Duel',
     court: 'Duel',
-    desc: 'Deux morceaux, un seul a plus de streams. Cinq duels pour trancher.',
+    desc: 'Deux morceaux face à face, un seul a plus de streams.\nJusqu\'où iras-tu sans te tromper ?',
     titreSeo: 'Quel morceau a le plus de streams ?',
-    metaDesc: 'Deux morceaux face à face, un seul est le plus écouté au monde. Cinq duels pour trancher. Jeu de culture musicale gratuit, sans inscription.',
+    metaDesc: 'Deux morceaux face à face : lequel a le plus de streams Spotify ? Enchaîne les duels sans te tromper. Jeu de culture musicale gratuit, sans inscription.',
 },
   {
-    slug: 'refrain',
+    /* Renommée « Paroles » en août 2026. L'ancien slug `refrain` a été servi
+       et soumis à Google : une redirection permanente le rattrape dans
+       next.config.ts. Ne pas la retirer — une URL indexée ne meurt jamais
+       vraiment, elle reste dans des favoris et des liens. */
+    slug: 'paroles',
     num: '10',
-    nom: 'Refrain',
-    court: 'Refrain',
-    desc: 'Trois lignes te sont données. Tape celle qui suit.',
+    nom: 'Paroles',
+    court: 'Paroles',
+    desc: 'Trois lignes de paroles s\u2019affichent.\nÀ toi d\u2019écrire celle qui suit.',
     titreSeo: 'Compléter les paroles d\'une chanson',
-    metaDesc: 'Trois lignes de paroles te sont données, tape celle qui suit. Jeu de mémoire des refrains, gratuit et sans inscription, noté sur dix.',
+    metaDesc: 'Trois lignes de paroles s\u2019affichent, à toi d\u2019écrire la suivante. Teste ta mémoire des refrains de chansons, gratuitement et sans inscription.',
   },
 ];
 

@@ -2,23 +2,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { tirerVariante } from '@/utils/variante';
 import Onde from '@/components/Onde';
-import { setSeedSalt, JeuArtiste, JeuPochette, JeuBPM, JeuSeconde, JeuInstrument, JeuParoles, JeuRefrain } from '@/components/dailyGames';
-import JeuAccordsGame from '@/components/JeuAccordsGame';
-import JeuRythmeGame from '@/components/JeuRythmeGame';
-import JeuIAGame from '@/components/JeuIAGame';
+import { setSeedSalt } from '@/components/dailyGames';
+import { EPREUVES } from '@/data/epreuves';
+import { jeuDuSlug } from '@/components/registreJeux';
 
-const EPREUVES = [
-  { num: '01', nom: 'Accords', court: 'Accords', desc: 'Place trois ou quatre notes sur la portée, écoute l\'écart avec la cible.' },
-  { num: '02', nom: 'Rythme', court: 'Rythme', desc: 'Reproduis un pattern de batterie de mémoire, à cinquante millisecondes près.' },
-  { num: '03', nom: 'Artiste', court: 'Artiste', desc: 'Devine l\'artiste. Genre, pays, décennie : les indices tombent à chaque erreur.' },
-  { num: '04', nom: 'Pochette', court: 'Pochette', desc: 'Une pochette d\'album, floutée à l\'extrême. Le flou se lève à chaque tentative.' },
-  { num: '05', nom: 'Humain ou IA', court: 'Humain / IA', desc: 'Un extrait, deux origines possibles : un musicien ou une machine.' },
-  { num: '06', nom: 'Une seconde de plus', court: 'Une seconde', desc: 'Une seconde d\'extrait pour commencer. Chaque erreur en dévoile un peu plus.' },
-  { num: '07', nom: 'Tempo', court: 'Tempo', desc: 'Sept secondes d\'écoute, un curseur, un métronome pour comparer.' },
-  { num: '08', nom: 'Instrument', court: 'Instrument', desc: 'Un timbre acoustique isolé sur un air connu. Vingt-et-un instruments possibles.' },
-  { num: '09', nom: 'Paroles', court: 'Paroles', desc: 'Quatre lignes de paroles. Retrouve le morceau dont elles viennent.' },
-  { num: '10', nom: 'Refrain', court: 'Refrain', desc: 'Trois lignes te sont données. Tape celle qui suit.' },
-];
+/* ---- Plus de liste locale ----
+ *
+ * Ce fichier tenait sa PROPRE copie des dix épreuves, et elle avait divergé.
+ * Elle annonçait « Paroles » en 09 et « Refrain » en 10, quand data/epreuves.js
+ * dit « Duel » puis « Refrain » : la vitrine montrait donc un jeu retiré à la
+ * place du Duel, qui n'y apparaissait nulle part. Toutes les descriptions y
+ * étaient également restées dans leur version d'origine.
+ *
+ * Deux listes finissent toujours par diverger. Celle-ci disparaît au profit de
+ * data/epreuves.js, et le composant à monter vient du registre — le même que
+ * celui qu'utilisent /epreuves/[slug] et le défi du jour. Le garde-fou de
+ * registreJeux.js vérifie au build que les deux se recouvrent exactement. */
 
 // Bouton en contour : s'inverse au survol
 const BOUTON_CONTOUR = {
@@ -129,7 +128,7 @@ export default function CatalogueEpreuves() {
       {/* Titre de l'épreuve · carte du défi */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--e5)', flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 320px', minHeight: 118 }}>
-          <div className="etiquette-mono">épreuve {e.num} · accès libre</div>
+          <div className="etiquette-mono">épreuve {e.num} · entraînement</div>
           <h1 className="titre-page" style={{ marginTop: 'var(--e2)' }}>{e.nom}</h1>
           <p className="lin" style={{ marginTop: 'var(--e2)', maxWidth: 470 }}>{e.desc}</p>
         </div>
@@ -144,7 +143,7 @@ export default function CatalogueEpreuves() {
             transition: 'box-shadow var(--transition-courte), background var(--transition-courte), border-color var(--transition-courte)',
           }}
           onMouseEnter={(ev) => {
-            ev.currentTarget.style.boxShadow = '0 0 22px rgba(239, 159, 39, 0.6)';
+            ev.currentTarget.style.boxShadow = 'var(--halo-or)';
             ev.currentTarget.style.background = 'var(--onyx-haut)';
             ev.currentTarget.style.borderColor = 'var(--or-clair)';
           }}
@@ -202,7 +201,7 @@ export default function CatalogueEpreuves() {
         borderTop: '0.5px solid var(--filet)', paddingTop: 'var(--e3)', marginBottom: 'var(--e4)',
       }}>
         <span className="etiquette-mono" style={{ color: 'var(--cendre)' }}>
-          {e.nom} · rejouable à volonté
+          {e.nom}
         </span>
 
         <button
@@ -244,17 +243,8 @@ export default function CatalogueEpreuves() {
       <div style={{ overflowX: 'clip', overflowY: 'visible' }}>
         <div style={{ animation: `${nomAnim} 300ms cubic-bezier(0.4, 0, 0.2, 1) both` }}>
           {monte ? EPREUVES.map((x, k) => (
-            <div key={x.num} style={{ display: k === index ? 'block' : 'none' }}>
-              {k === 0 && <JeuAccordsGame key={cles[0]} />}
-              {k === 1 && <JeuRythmeGame key={cles[1]} />}
-              {k === 2 && <JeuArtiste key={cles[2]} onDone={() => {}} />}
-              {k === 3 && <JeuPochette key={cles[3]} onDone={() => {}} />}
-              {k === 4 && <JeuIAGame key={cles[4]} />}
-              {k === 5 && <JeuSeconde key={cles[5]} onDone={() => {}} />}
-              {k === 6 && <JeuBPM key={cles[6]} onDone={() => {}} />}
-              {k === 7 && <JeuInstrument key={cles[7]} onDone={() => {}} />}
-              {k === 8 && <JeuParoles key={cles[8]} onDone={() => {}} />}
-              {k === 9 && <JeuRefrain key={cles[9]} onDone={() => {}} />}
+            <div key={x.slug} style={{ display: k === index ? 'block' : 'none' }}>
+              {(() => { const Jeu = jeuDuSlug(x.slug); return Jeu ? <Jeu key={cles[k]} onDone={() => {}} /> : null; })()}
             </div>
           )) : (
             <p className="lin" style={{ fontSize: 13 }}>Chargement des épreuves…</p>

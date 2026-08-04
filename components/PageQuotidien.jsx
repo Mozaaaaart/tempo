@@ -68,6 +68,33 @@ const CLE_STOCKAGE = 'mb-quotidien';
    qui se complète. */
 const CLE_ARCHIVE = 'mb-quotidien-veille';
 
+/* ---- Slugs d'hier ----
+ *
+ * L'archive est indexée par SLUG, et deux épreuves ont été renommées en
+ * août 2026 : `une-seconde` est devenue `blind-test`, `refrain` est devenue
+ * `paroles`. Les réponses écrites la veille portent donc l'ancienne clé, que
+ * la page cherche désormais sous la nouvelle : les deux corrections
+ * disparaissaient du tableau, sans erreur ni trace.
+ *
+ * Le défaut se serait résorbé tout seul en vingt-quatre heures, ce qui est
+ * précisément ce qui le rend pernicieux : on le constate une fois, on ne
+ * parvient plus à le reproduire, et il reviendra au prochain renommage.
+ *
+ * La table est donc permanente. Elle ne coûte rien et couvre aussi le cas
+ * d'un joueur revenu après plusieurs jours d'absence, dont l'archive dort
+ * dans le navigateur depuis avant les renommages. */
+const ANCIENS_SLUGS = {
+  'blind-test': 'une-seconde',
+  'paroles': 'refrain',
+};
+
+/* Correction archivée d'une épreuve, sous son slug actuel ou l'ancien. */
+function correctionDe(archive, epreuve) {
+  const table = archive?.corrections;
+  if (!table) return null;
+  return table[epreuve.slug] ?? table[ANCIENS_SLUGS[epreuve.slug]] ?? null;
+}
+
 /* Adresse publique du défi, telle qu'elle apparaît dans le partage.
 
    Écrite en dur plutôt que déduite de window.location.origin : un partage
@@ -179,6 +206,18 @@ function carre(s) {
    installée sur la machine. Format inattendu → valeur brute. */
 const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin',
   'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+
+/* Date sans millésime, pour les intitulés courts.
+   « 3 août 2026 » et « 3 août » disent la même chose quand il s'agit de la
+   veille : l'année n'apporte rien et coûte cinq caractères sur un bouton qui
+   n'en a pas à perdre. La forme complète reste dans l'attribut title, pour
+   qui survole ou lit à la synthèse vocale. */
+function dateCourte(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso ?? ''));
+  if (!m) return iso;
+  const jour = Number(m[3]);
+  return `${jour === 1 ? '1er' : jour} ${MOIS[Number(m[2]) - 1]}`;
+}
 
 function dateLisible(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso ?? ''));
@@ -708,7 +747,7 @@ export default function PageQuotidien() {
           or, sa pastille de mode, la date et le décompte. */}
       <EnTete
         accent
-        liens={[{ href: lienEpreuve(EPREUVES[0].slug), libelle: 'accès libre' }]}
+        liens={[{ href: lienEpreuve(EPREUVES[0].slug), libelle: 'entraînement' }]}
         droite={
           /* L'échéance est le seul élément de la barre qui CHANGE. Elle va
              donc à droite, avec la sortie, et non au milieu du bloc
@@ -913,7 +952,16 @@ export default function PageQuotidien() {
             padding: 9px 14px;
             cursor: pointer;
             transition: background var(--transition-courte), color var(--transition-courte);
+            /* Un inline-flex se dimensionne sur son contenu et ne recule
+               devant rien : sur un intitulé daté, il sortait de sa colonne.
+               Ces trois lignes le bornent sans lui imposer de largeur. */
+            max-width: 100%;
+            text-align: left;
           }
+          .q-veille-bouton > span { min-width: 0; }
+          /* Le chevron ne se comprime jamais : c'est lui qui dit que le bloc
+             s'ouvre, et un chevron écrasé ne veut plus rien dire. */
+          .q-veille-bouton > svg { flex: 0 0 auto; }
           .q-veille-bloc:hover .q-veille-bouton,
           .q-veille-bouton:focus-visible {
             background: var(--or);
@@ -1099,7 +1147,7 @@ export default function PageQuotidien() {
           /* Halo doré seul, sans filet : pour les blocs qui portent déjà
              leur propre bordure or. Même valeur que .q-scene — les deux se
              règlent donc ensemble, et rien ne peut se désaccorder. */
-          .q-lueur { box-shadow: 0 0 26px rgba(239, 159, 39, 0.6); }
+          .q-lueur { box-shadow: var(--halo-or); }
 
           /* ---- Le relevé du score se pose, il n'apparaît pas ----
              Il n'existe qu'une fois le défi entamé : au seuil, il n'y a rien
@@ -1124,7 +1172,7 @@ export default function PageQuotidien() {
             border-radius: var(--rayon-carte);
             box-shadow:
               0 0 0 1px var(--or),
-              0 0 26px rgba(239, 159, 39, 0.6);
+              var(--halo-or);
             /* La première mesure ne s'anime pas : une hauteur automatique
                n'est pas interpolable, le passage à une valeur en pixels est
                donc instantané. Les suivantes, de pixels à pixels, glissent.
@@ -1329,6 +1377,30 @@ export default function PageQuotidien() {
 
             /* Quarante-deux pixels : une cible qu'on atteint sans viser. */
             .q-fleche { width: 42px; height: 42px; }
+
+            /* ---- Le bouton des corrections prend toute la largeur ----
+               Il tenait sur une rangée de deux cents pixels sur ordinateur.
+               Sur 296, son intitulé daté en capitales espacées en demandait
+               plus de trois cents : il sortait de la carte du score, seul
+               élément de la page à déborder.
+
+               Il devient donc une LIGNE, comme la carte du score au-dessus de
+               lui et comme les épreuves plus bas : intitulé calé à gauche,
+               chevron poussé à droite, toute la largeur entre les deux. C'est
+               la grammaire du reste de la page en petit format, et la cible
+               tactile passe au passage de deux cents pixels à la largeur
+               entière.
+
+               L'interlettrage retombe de 0,09 à 0,06 em. Les capitales
+               espacées sont faites pour de courtes étiquettes ; sur une ligne
+               de vingt-cinq signes, chaque centième d'em coûte deux pixels
+               qu'on n'a pas. */
+            .q-veille-bouton {
+              display: flex;
+              width: 100%;
+              justify-content: space-between;
+              letter-spacing: 0.06em;
+            }
           }
         `}</style>
 
@@ -1337,12 +1409,54 @@ export default function PageQuotidien() {
           <div className="q-tete-texte" style={{ flex: '1 1 320px', minHeight: 118 }}>
             <div className="etiquette-mono">{dateDuJour}</div>
             <h1 className="titre-page" style={{ marginTop: 'var(--e2)' }}>
-              Le défi du jour
+              Le défi musical du jour
             </h1>
-            <p className="lin" style={{ marginTop: 'var(--e2)', maxWidth: 470 }}>
-              {EPREUVES.length}{' '}épreuves, une seule tentative chacune, les mêmes pour tout le
-              monde jusqu&apos;à minuit. Pour t&apos;entraîner sans limite, elles sont aussi
-              jouables{' '}<Link href={lienEpreuve(EPREUVES[0].slug)}>en accès libre</Link>.
+            {/* ---- Trois choses, dans cet ordre ----
+                1. CE QU'ON JOUE. « 10 épreuves » ne disait pas de quoi. Les
+                   mots « oreille » et « musique » n'apparaissaient nulle part
+                   sur cette page, alors que c'est son sujet et que c'est ce
+                   qu'un moteur y cherche.
+                2. CE QU'ON GAGNE. Le score sur dix et le partage étaient
+                   absents, alors que c'est le seul motif de revenir demain.
+                3. L'ÉCHAPPATOIRE. Elle vient en dernier : proposer
+                   l'entraînement avant d'avoir donné envie du défi, c'est
+                   inviter à partir.
+
+                « Pour t'entraîner sans limite, elles sont aussi jouables à
+                l'entraînement » disait deux fois le même mot dans une même
+                proposition : c'est une séquelle du renommage, l'ancienne
+                formule se terminait par « en accès libre ». */}
+            {/* ---- Un bloc se juge à sa dernière ligne ----
+                La version précédente en occupait trois, dont la troisième ne
+                portait que « à partager. ». Deux mots seuls sous deux lignes
+                pleines : le lecteur voit la coupure avant de lire la phrase.
+
+                La cause n'était pas la mise en forme mais la longueur — 157
+                signes pour une colonne qui en tient une soixantaine par ligne.
+                « Et de culture musicale » est retiré : c'est une précision qui
+                sert le référencement, et le référencement se joue dans la
+                balise meta, où elle est restée. Sur la page, elle coûtait une
+                ligne entière pour ne rien apprendre à qui est déjà arrivé.
+
+                Les deux paragraphes forment maintenant un dégradé : deux
+                lignes pleines, puis une courte, plus petite et plus pâle.
+                L'échappatoire vers l'entraînement se lit comme ce qu'elle est,
+                un aparté, au lieu de peser autant que la règle du jeu.
+
+                LE TOTAL VIENT DE `max`, la même constante que la carte du
+                score. Écrit en dur, il disait « sur dix » — la note d'UNE
+                épreuve — alors que le défi en cumule dix. Le chiffre juste
+                était affiché à trente pixels de là, dans le relevé. */}
+            <p className="lin" style={{ marginTop: 'var(--e2)', maxWidth: 470, textWrap: 'pretty' }}>
+              {EPREUVES.length}{' '}épreuves d&apos;oreille, une seule tentative chacune,
+              les mêmes pour tous jusqu&apos;à minuit. Un score sur {max} à partager.
+            </p>
+            <p style={{
+              marginTop: 'var(--e3)', maxWidth: 470, fontSize: 13,
+              color: 'var(--lin)', textWrap: 'pretty',
+            }}>
+              Ces épreuves sont aussi jouables sans limite
+              {' '}<Link href={lienEpreuve(EPREUVES[0].slug)}>à l&apos;entraînement</Link>.
             </p>
           </div>
 
@@ -1427,6 +1541,7 @@ export default function PageQuotidien() {
                 type="button"
                 className="q-veille-bouton"
                 aria-expanded={veilleOuverte}
+                title={`Corrections du défi du ${dateLisible(archive.jour)}`}
                 onClick={() => {
                   /* Bascule franche : on referme aussi l'état de survol, sinon
                      le curseur encore posé sur le bouton rouvrirait aussitôt
@@ -1435,7 +1550,7 @@ export default function PageQuotidien() {
                   setVeilleSurvolee(false);
                 }}
               >
-                <span>Corrections du défi du {dateLisible(archive.jour)}</span>
+                <span>Corrections du {dateCourte(archive.jour)}</span>
                 <svg
                   width="12" height="12" viewBox="0 0 16 16" fill="none"
                   stroke="currentColor" strokeWidth="2" strokeLinecap="round"
@@ -1478,11 +1593,11 @@ export default function PageQuotidien() {
                           retrouverait pas. Afficher un tiret à sa place aurait
                           fait passer une limite d'architecture pour une panne.
                           La réponse, elle, est la même pour tout le monde. */}
-                      {EPREUVES.filter((e) => archive.corrections?.[e.slug]).map((e) => (
+                      {EPREUVES.filter((e) => correctionDe(archive, e)).map((e) => (
                         <div key={e.slug} className="q-veille-item">
                           <span className="q-veille-num">{e.num}</span>
                           <span className="q-veille-nom">{e.court}</span>
-                          <span className="q-veille-rep">{archive.corrections[e.slug]}</span>
+                          <span className="q-veille-rep">{correctionDe(archive, e)}</span>
                         </div>
                       ))}
                     </div>
@@ -1615,7 +1730,7 @@ export default function PageQuotidien() {
 
             <p className="description" style={{ marginTop: 'var(--e4)' }}>
               Pas encore prêt ?{' '}
-              <Link href={lienEpreuve(EPREUVES[0].slug)}>Entraîne-toi en accès libre</Link>,
+              <Link href={lienEpreuve(EPREUVES[0].slug)}>Passe à l&apos;entraînement</Link>,
               sans limite de tentatives.
             </p>
           </div>
@@ -1907,7 +2022,7 @@ export default function PageQuotidien() {
                         </p>
                         <p className="description" style={{ marginTop: 'var(--e2)' }}>
                           Sans attendre, tu peux rejouer {x.nom.toLowerCase()}{' '}
-                          <Link href={lienEpreuve(x.slug)}>en accès libre</Link>.
+                          <Link href={lienEpreuve(x.slug)}>à l&apos;entraînement</Link>.
                         </p>
                       </div>
                     );

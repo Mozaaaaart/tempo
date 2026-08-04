@@ -2,7 +2,9 @@
 import { useEffect, useRef, useState } from 'react';
 
 /* ============================================================
-   SURCOUCHE D'INTRODUCTION — ÉPREUVE « UNE SECONDE DE PLUS »
+   SURCOUCHE D'INTRODUCTION — ÉPREUVE « BLIND TEST »
+   (composant nommé IntroSeconde pour raisons historiques : l'épreuve
+   s'appelait « Une seconde de plus » jusqu'au renommage.)
 
    Même dispositif que les autres épreuves : une surcouche `absolute` posée
    DANS le panneau du jeu, pas un voile plein écran, pour que le jeu reste
@@ -220,7 +222,7 @@ export default function IntroSeconde({ onFin }) {
             letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--or)',
             animation: `secEntree 340ms ${T_TITRE}ms ease-out both`,
           }}>
-            Une seconde de plus
+            Blind test
           </div>
 
           {/* ---------- Accroche ---------- */}
@@ -230,7 +232,7 @@ export default function IntroSeconde({ onFin }) {
             letterSpacing: '0.02em', color: 'var(--lin)',
             animation: `secEntree 320ms ${T_ACCROCHE}ms ease-out both`,
           }}>
-            Chaque erreur allonge l&apos;extrait
+            Une seconde d&apos;extrait, et un peu plus à chaque erreur
           </div>
 
           {/* ---------- Disque d'écoute ---------- */}
@@ -425,11 +427,15 @@ export default function IntroSeconde({ onFin }) {
 
 function paletteScore(valeur) {
   const n = +valeur;
-  if (n <= 0) return { couleur: 'var(--carmin)', mention: 'perdu' };
+  /* Un seul axe : LA VITESSE. Le barème ne mesure que le nombre d'essais.
+     « Bien vu » félicitait la perspicacité, « trouvé » constatait le
+     résultat : deux registres pour une même échelle, qui obligeaient à se
+     demander lequel valait mieux. Chaque mention situe désormais l'essai. */
+  if (n <= 0) return { couleur: 'var(--carmin)', mention: 'morceau manqué' };
   if (n >= 9.5) return { couleur: 'var(--jade)', mention: 'en une seconde' };
-  if (n >= 7) return { couleur: 'var(--or)', mention: 'bien vu' };
+  if (n >= 7) return { couleur: 'var(--or)', mention: 'vite trouvé' };
   if (n >= 4) return { couleur: 'var(--ivoire)', mention: 'trouvé' };
-  return { couleur: 'var(--ivoire)', mention: 'de justesse' };
+  return { couleur: 'var(--ivoire)', mention: 'sur le fil' };
 }
 
 const RES_ETIQUETTE = 280;

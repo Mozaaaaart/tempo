@@ -171,6 +171,18 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
   const dailyRngRef = useRef(null);
   const dailyCountRef = useRef(0);
   const dailyGoodRef = useRef(0);
+  /* ---- Journal des manches du défi ----
+     « Titre — Artiste (humain) », dans l'ordre joué.
+
+     Cette épreuve était la seule du quotidien à appeler onDone SANS second
+     argument. La page des corrections indexe par slug et n'affiche que ce
+     qui a été archivé : Humain ou IA en était donc absente le lendemain,
+     purement et simplement. Un rang manquant dans un tableau numéroté se
+     lit comme une panne, pas comme une intention.
+
+     Une ref et non un état : rien ne dépend de cette valeur au rendu, et
+     un état déclencherait un rendu de plus à chaque manche. */
+  const dailyRepondusRef = useRef([]);
   const dailyDoneRef = useRef(false);
 
   /* Extraits déjà servis dans ce run.
@@ -376,11 +388,20 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
     if (daily) {
       dailyCountRef.current += 1;
       if (correct) dailyGoodRef.current += 1;
+      /* L'artiste n'est pas garanti sur un morceau généré : on ne l'ajoute
+         que s'il existe, plutôt que d'écrire un tiret dans le vide. */
+      dailyRepondusRef.current.push(
+        (round.artiste ? `${round.titre}, ${round.artiste}` : round.titre ?? 'extrait')
+        + (round.isAI ? ' (IA)' : ' (humain)')
+      );
       setDailyCount(dailyCountRef.current);
       if (dailyCountRef.current >= DAILY_ROUNDS && !dailyDoneRef.current) {
         dailyDoneRef.current = true;
         const s = Math.round((dailyGoodRef.current / DAILY_ROUNDS) * 10 * 10) / 10;
-        onDone(s);
+        /* La correction dit CE QU'IL FALLAIT RÉPONDRE, pas ce que le joueur
+           a répondu : elle est la même pour tout le monde, et c'est ce qui
+           la rend publiable le lendemain. */
+        onDone(s, dailyRepondusRef.current.join(' · '));
         setResultat(s);
         setStatus(`Terminé : ${dailyGoodRef.current} sur ${DAILY_ROUNDS}.`);
         return;
@@ -443,7 +464,7 @@ export default function JeuIAGame({ daily = false, onDone = () => {} }) {
         : <IntroIA onFin={() => setIntro(false)} />
       )}
       {resultat !== null && (
-        <ResultatIA score={resultat} detail={`${dailyGoodRef.current} bonne(s) réponse(s) sur ${DAILY_ROUNDS}`} />
+        <ResultatIA score={resultat} detail={`${dailyGoodRef.current} bonne${dailyGoodRef.current > 1 ? 's' : ''} réponse${dailyGoodRef.current > 1 ? 's' : ''} sur ${DAILY_ROUNDS}`} />
       )}
       {defaite && <DefaiteIA niveau={niveau} />}
 

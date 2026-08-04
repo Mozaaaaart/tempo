@@ -429,13 +429,30 @@ export default function IntroBPM({ onFin }) {
    situe sur dix.
 ============================================================ */
 
+/* ---- Les cinq mentions sont une échelle de DISTANCE ----
+ *
+ * L'ancienne série mélangeait trois registres et se contredisait :
+ * « tempo juste », « bonne pulsation », « approchant », « de justesse ».
+ *
+ *   — « pulsation » est un mot de musicien. Cette épreuve est justement
+ *     celle qui attire des gens qui n'en sont pas : des DJ, des monteurs,
+ *     des curieux qui cherchent le tempo d'un morceau.
+ *   — « de justesse » signifie « réussi de peu », et c'était la PIRE note du
+ *     barème. Elle sonnait mieux qu'« approchant », qui la surpasse. Un
+ *     joueur à 2 sur 10 lisait qu'il s'en était bien sorti.
+ *
+ * Une seule métaphore désormais, et c'est celle que le score mesure vraiment :
+ * l'écart entre le tempo proposé et le vrai. On est dessus, tout près, pas
+ * loin, loin, ou complètement ailleurs. Cinq degrés qu'aucun lecteur n'a à
+ * interpréter, et qui ne peuvent plus s'inverser.
+ */
 function paletteScore(valeur) {
   const n = +valeur;
-  if (n <= 0) return { couleur: 'var(--carmin)', mention: 'à côté' };
-  if (n >= 9.5) return { couleur: 'var(--jade)', mention: 'tempo juste' };
-  if (n >= 7) return { couleur: 'var(--or)', mention: 'bonne pulsation' };
-  if (n >= 4) return { couleur: 'var(--ivoire)', mention: 'approchant' };
-  return { couleur: 'var(--ivoire)', mention: 'de justesse' };
+  if (n <= 0) return { couleur: 'var(--carmin)', mention: 'complètement à côté' };
+  if (n >= 9.5) return { couleur: 'var(--jade)', mention: 'pile dessus' };
+  if (n >= 7) return { couleur: 'var(--or)', mention: 'tout proche' };
+  if (n >= 4) return { couleur: 'var(--ivoire)', mention: 'pas loin' };
+  return { couleur: 'var(--ivoire)', mention: 'loin du compte' };
 }
 
 const RES_ETIQUETTE = 280;

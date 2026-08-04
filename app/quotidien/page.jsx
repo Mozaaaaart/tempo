@@ -2,28 +2,37 @@ import PageQuotidien from '@/components/PageQuotidien';
 import { SITE_NOM } from '@/data/site';
 
 /**
- * Enveloppe SERVEUR du défi du jour. Même raison que /epreuves : le corps est
- * client, et un composant client ne peut pas porter de métadonnées.
+ * Enveloppe SERVEUR du défi du jour. Le corps est un composant client, et un
+ * composant client ne peut pas exporter de métadonnées : Next les ignore en
+ * silence. Cette route ne porte donc que l'en-tête du document.
  *
- * Cette page-ci a en plus un enjeu propre : « défi du jour » est une requête
- * récurrente, et c'est l'URL sur laquelle un joueur revient chaque matin. Elle
- * mérite mieux que le titre générique du site.
+ * ------------------------------------------------------------------ le titre
+ *
+ * « Le défi du jour » ne dit pas de QUOI. Un défi du jour, il y en a pour les
+ * mots croisés, la géographie, le code : la requête seule ne mène nulle part.
+ * « Défi musical du jour » est à la fois plus vrai et plus disputable — c'est
+ * la seule formulation qui puisse capter quelqu'un qui cherche ce genre de jeu
+ * sans connaître le site.
+ *
+ * La description, elle, cite les jeux plutôt que de les résumer : « blind
+ * test », « accords », « tempo », « pochettes » sont les mots que les gens
+ * tapent, et ils ont l'avantage d'être vrais.
  */
 export const metadata = {
-  title: 'Le défi du jour',
+  title: 'Le défi musical du jour',
   description:
-    'Dix épreuves musicales, les mêmes pour tout le monde, renouvelées chaque jour. '
-    + 'Un seul essai par épreuve, un score sur dix à partager. Gratuit, sans inscription.',
+    'Dix épreuves d\u2019oreille renouvelées chaque jour, identiques pour tous : '
+    + 'blind test, accords, tempo, pochettes. Un score sur 100 à partager.',
   alternates: { canonical: '/quotidien' },
   openGraph: {
     type: 'website',
     locale: 'fr_FR',
     siteName: SITE_NOM,
     url: '/quotidien',
-    title: `Le défi du jour | ${SITE_NOM}`,
+    title: `Le défi musical du jour | ${SITE_NOM}`,
     description:
-      'Dix épreuves musicales, les mêmes pour tous, renouvelées chaque jour. '
-      + 'Un score sur dix à partager.',
+      'Dix épreuves musicales renouvelées chaque jour, les mêmes pour tous. '
+      + 'Un score sur 100 à partager. Gratuit, sans inscription.',
   },
 };
 

@@ -1016,7 +1016,7 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
     setChargementAudio(null);
 
     if (!url) {
-      setMessage('Extrait momentanément indisponible — réessaie dans un instant.');
+      setMessage('Extrait momentanément indisponible. Réessaie dans un instant.');
       return;
     }
 
@@ -1029,7 +1029,7 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
 
     a.play().catch(() => {
       if (demande !== demandeRef.current) return;
-      setMessage('Lecture impossible — reclique sur le bouton d\'écoute.');
+      setMessage('Lecture impossible. Reclique sur le bouton d\'écoute.');
       setEnLecture(null);
     });
     setEnLecture(cote);
@@ -1062,7 +1062,7 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
     } else {
       // → reprise : on repart avec le budget restant, pas 15 s pleines
       debutLectureRef.current = Date.now();
-      a.play().catch(() => setMessage('Lecture impossible — reclique sur le bouton d\'écoute.'));
+      a.play().catch(() => setMessage('Lecture impossible. Reclique sur le bouton d\'écoute.'));
       setEnPause(null);
       setEnLecture(cote);
       minuteurAudioRef.current = setTimeout(() => extraitEpuise(cote), dureeRestanteRef.current);
@@ -1306,7 +1306,7 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
   if (phase === 'erreur') {
     return (
       <div style={panel}>
-        <h3 className="titre-section" style={{ marginBottom: 'var(--e2)' }}>Duel</h3>
+        <h3 className="titre-section" style={{ marginBottom: 'var(--e2)' }}>Qui a le plus de streams ?</h3>
         <p className="description">
           Les données de l&apos;épreuve n&apos;ont pas pu être chargées. Réessaie plus tard.
         </p>
@@ -1400,6 +1400,23 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
         }
       `}</style>
 
+      {/* ---- Pas de cartouche de tête sur cette épreuve ----
+          Contrairement aux neuf autres, et c'est une décision de mise en page.
+
+          Le panneau du duel occupe toute la largeur : deux pochettes écartées
+          d'un bout à l'autre, un tableau de bord calé à gauche. Un bloc de
+          texte centré au-dessus n'a aucun axe auquel se rattacher, il flotte
+          entre deux colonnes vides.
+
+          Le cadrage est donc porté par le titre de page et la carte du
+          catalogue, qui disent tous deux ce qu'on compare, et par la scène
+          elle-même : deux pochettes, un « VS », deux flèches. Cette épreuve
+          est la seule du site qui se comprenne sans une ligne de texte.
+
+          NOTE DE SYNTAXE. Ce bloc doit rester entre accolades. En JSX, un
+          commentaire posé nu entre deux balises n'est pas un commentaire :
+          c'est du texte, et React l'affiche tel quel. */}
+
       {/* Tableau de bord — même vocabulaire que l'épreuve Rythme */}
       <div style={{
         display: 'flex', gap: 'var(--e5)', flexWrap: 'wrap',
@@ -1477,7 +1494,7 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
                 <div className="mono" style={{ fontSize: 24, fontWeight: 500, color: couleurRevelation }}>
                   {formaterStreams(challenger.streams)}
                 </div>
-                <div className="description">{juste ? 'bonne réponse' : 'raté'}</div>
+                <div className="description">{juste ? 'bonne réponse' : 'mauvaise réponse'}</div>
               </>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--e2)' }}>
@@ -1528,7 +1545,7 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
               onClick={() => demarrerRun(false)}
               style={{ ...btn(true, false), marginTop: 'var(--e4)' }}
             >
-              Recommencer
+              Relancer un run
             </button>
           </div>
         )

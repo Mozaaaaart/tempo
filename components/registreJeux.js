@@ -32,11 +32,11 @@ export const JEUX = {
   'artiste': JeuArtiste,
   'pochette': JeuPochette,
   'humain-ou-ia': JeuIAGame,
-  'une-seconde': JeuSeconde,
+  'blind-test': JeuSeconde,   // composant historique, épreuve renommée « Blind test »
   'tempo': JeuBPM,
   'instrument': JeuInstrument,
   'duel': JeuDuelGame,
-  'refrain': JeuRefrain,
+  'paroles': JeuRefrain,   // composant historique, épreuve renommée « Paroles »
 };
 
 /* ------------------------------------------------------------------

@@ -23,6 +23,22 @@
   --rayon-controle: 8px;
   --rayon-carte: 12px;
 
+  /* ---- Halo doré ----
+     La lueur qui entoure les blocs encadrés d'or : scène du jeu, carte du
+     score, seuil du défi, carte du défi au survol.
+
+     Elle était écrite à la main à chaque emplacement, et les valeurs avaient
+     divergé — 26 px sur la page du quotidien, 22 sur la carte du défi. Deux
+     halos presque identiques posés à deux endroits de la même page se
+     remarquent sans qu'on sache dire ce qui cloche.
+
+     Un seul jeton, donc, et plus aucune dérive possible. La modifier ici les
+     modifie tous.
+
+     box-shadow et non filter: drop-shadow, comme sur l'onde : le filtre force
+     une rastérisation à chaque repaint et fait tomber le défilement mobile. */
+  --halo-or: 0 0 26px rgba(239, 159, 39, 0.6);
+
   /* ---- Mouvement ---- */
   --transition-courte: 220ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-onde: 620ms cubic-bezier(0.22, 1, 0.36, 1);

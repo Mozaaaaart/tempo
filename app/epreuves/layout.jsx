@@ -503,9 +503,36 @@ export default function EpreuvesLayout({ children }) {
           ============================================================ */
           @media (hover: hover) and (pointer: fine) {
             .carte-defi:hover {
-              box-shadow: 0 0 22px rgba(239, 159, 39, 0.6);
+              /* Le meme halo que la carte du score et la scene du jeu : un
+                 seul jeton, plus de valeur recopiee a la main.
+
+                 Le filet reste en or et ne passe plus en or clair. C'etait la
+                 seconde moitie de l'ecart : un contour plus vif donne une
+                 lueur qui semble partir de plus loin, meme a rayon egal. */
+              box-shadow: var(--halo-or);
               background: var(--onyx-haut);
-              border-color: var(--or-clair);
+              /* ---- Le texte ne bouge pas ----
+                 globals.css applique une regle a:hover qui passe TOUS les
+                 liens en or clair. La carte en est un, elle heritait donc d'un
+                 changement de couleur que son propre bloc ne demandait nulle
+                 part : le defaut etait invisible a la lecture de ce fichier.
+
+                 Une carte n'est pas un lien de texte. Un lien signale qu'il
+                 est actif en changeant de couleur, faute d'autre surface ;
+                 celle-ci a deja un halo, un fond et un filet qui s'eclaircit.
+                 Trois signaux suffisent, et le quatrieme coutait la lisibilite
+                 de la phrase.
+
+                 inherit plutot qu'une valeur en dur : la carte reprend la
+                 couleur ambiante, exactement comme au repos. La specificite
+                 suffit a l'emporter, une classe valant mieux qu'un selecteur
+                 d'element.
+
+                 AUCUN ACCENT GRAVE ICI. Ce bloc vit dans un gabarit, et un
+                 accent grave isole refermerait la chaine CSS en plein milieu.
+                 C'est exactement ce qui vient d'arriver a la premiere
+                 redaction de ce commentaire. */
+              color: inherit;
             }
             .epreuve-relance:hover {
               background: var(--or);
@@ -671,7 +698,7 @@ export default function EpreuvesLayout({ children }) {
                intitulé raccourci — « Relancer » suffit, le nom de l'épreuve
                est écrit en 28 px juste au-dessus.
 
-               La mention « rejouable à volonté » se replie : elle est du
+               La mention de contexte se replie : elle est du
                commentaire, et le commentaire est ce qui part en premier
                quand la place manque. */
             .epreuve-actions { gap: var(--e2); }
@@ -717,13 +744,27 @@ export default function EpreuvesLayout({ children }) {
             Le titre change avec l'URL mais n'est pas remonté : pas de saut. */}
         <div className="epreuve-tete">
           <div className="epreuve-tete-texte">
-            <div className="etiquette-mono">épreuve {e.num} · accès libre</div>
+            {/* « Entraînement » et non « accès libre ».
+                L'ancien libellé décrivait une PERMISSION — jouer sans compte,
+                sans payer, sans limite — et laissait au lecteur le soin de
+                deviner laquelle. Celui-ci décrit une ACTIVITÉ, et il s'oppose
+                de lui-même au défi du jour : on s'entraîne ici, on se mesure
+                là. C'est déjà le verbe qu'emploie la page du quotidien. */}
+            <div className="etiquette-mono">épreuve {e.num} · entraînement</div>
             <h1 className="titre-page" style={{ marginTop: 'var(--e2)' }}>{e.nom}</h1>
             {/* `pretty` empêche le dernier mot de rester seul sur sa ligne.
                 Le défaut se voyait sur « Une seconde de plus », où « plus. »
-                se retrouvait isolé. */}
+                se retrouvait isolé.
+
+                `pre-line` rend les sauts de ligne écrits dans `desc`. C'est ce
+                qui permet à une épreuve d'imposer sa coupure — entre deux
+                phrases, jamais au milieu d'une — sans que les autres changent :
+                une description sans saut de ligne se comporte exactement comme
+                avant. Le catalogue, lui, n'a pas cette propriété, et le même
+                texte y reprend son cours normal. */}
             <p className="lin" style={{
-              marginTop: 'var(--e2)', maxWidth: 470, textWrap: 'pretty',
+              marginTop: 'var(--e2)', maxWidth: 470,
+              textWrap: 'pretty', whiteSpace: 'pre-line',
             }}>{e.desc}</p>
           </div>
 
@@ -793,7 +834,7 @@ export default function EpreuvesLayout({ children }) {
         {/* 5 — Bandeau d'action : contexte, relance, navigation */}
         <div className="epreuve-actions">
           <span className="etiquette-mono epreuve-actions-contexte" style={{ color: 'var(--cendre)' }}>
-            {e.nom} · rejouable à volonté
+            {e.nom}
           </span>
 
           <button

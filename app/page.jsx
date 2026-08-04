@@ -18,13 +18,20 @@ const VITRINE = ['accords', 'rythme', 'artiste', 'pochette', 'humain-ou-ia'];
  * descriptions du catalogue, qui servent aux métadonnées et aux pages
  * d'épreuve. C'est le seul texte volontairement dupliqué.
  */
-const ACCROCHES = {
-  'accords': 'Place trois ou quatre notes sur la portée, écoute l\'écart avec la cible.',
-  'rythme': 'Reproduis un pattern de batterie au clic, à cinquante millisecondes près.',
-  'artiste': 'Devine l\'artiste du jour. Genre, pays, décennie : les indices tombent à chaque erreur.',
-  'pochette': 'Une pochette d\'album, floutée à l\'extrême. Le flou se lève à chaque tentative.',
-  'humain-ou-ia': 'Deux extraits, l\'un composé par un humain, l\'autre par une machine. À toi de trancher.',
-};
+/* VIDÉ VOLONTAIREMENT — et le mécanisme reste, voir plus bas.
+ *
+ * Ces cinq phrases doublaient les descriptions de data/epreuves.js, et elles
+ * avaient vieilli sans que personne s'en aperçoive : l'accueil annonçait
+ * encore « l'artiste du jour » alors que le tirage est libre hors défi, et
+ * « le flou se lève à chaque tentative » alors qu'il ne se lève qu'à chaque
+ * ERREUR. Deux textes pour une même épreuve finissent toujours par se
+ * contredire, et c'est le plus visité des deux qui ment.
+ *
+ * Le repli `ACCROCHES[slug] ?? e.desc` fait donc désormais tomber la vitrine
+ * sur la source unique. L'objet est conservé pour le jour où une épreuve
+ * mériterait une accroche propre à l'accueil : il suffira d'y ajouter une
+ * ligne, en sachant qu'on crée un texte de plus à tenir à jour. */
+const ACCROCHES = {};
 
 /**
  * ACCROCHES COURTES — mobile uniquement.
@@ -105,7 +112,7 @@ export default function Accueil() {
   // Halo doré au survol : box-shadow plutôt que filter, bien moins coûteux
   function allumer(ev) {
     if (tactileRef.current) return;
-    ev.currentTarget.style.boxShadow = '0 0 26px rgba(239, 159, 39, 0.6)';
+    ev.currentTarget.style.boxShadow = 'var(--halo-or)';
     ev.currentTarget.style.background = 'var(--onyx-haut)';
     ev.currentTarget.style.borderColor = 'var(--or-clair)';
   }

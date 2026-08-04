@@ -264,6 +264,16 @@ export default function Quotidien() {
      elle qui remplace le plateau par le relevé. */
   const [releveFinal, setReleveFinal] = useState(false);
 
+  /* Même règle que sur la page des épreuves : l'onde ne s'allume qu'une fois
+     déroulée. Son tracé se découvre de 120 à 1020 ms ; éclairer la section
+     active pendant ce temps donnait une onde déjà allumée à mesure qu'elle
+     apparaissait, ce qui annulait le dévoilement. */
+  const [ondeAllumee, setOndeAllumee] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setOndeAllumee(true), 1120);
+    return () => clearTimeout(t);
+  }, []);
+
   /* Nombre de fois qu'on est arrivé sur chaque épreuve. Zéro veut dire
      jamais montée : on ne monte PAS les dix d'un coup, chacune déclenchant
      ses requêtes Deezer et ses échantillons Tone.js dès le montage.
@@ -1492,7 +1502,7 @@ export default function Quotidien() {
           <Onde
             variante="bandeau"
             sections={EPREUVES.length}
-            active={commence ? index : null}
+            active={commence && ondeAllumee ? index : null}
             complete={releveFinal}
           />
         </div>

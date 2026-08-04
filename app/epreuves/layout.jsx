@@ -108,6 +108,25 @@ export default function EpreuvesLayout({ children }) {
   const [ondeIndex, setOndeIndex] = useState(0);
   const premierRef = useRef(true);
 
+  /* L'onde ne s'ALLUME qu'une fois DÉROULÉE.
+
+     Le tracé se découvre de gauche à droite entre 120 et 1020 ms, pendant que
+     la lumière de la section active montait de son côté dès la première
+     image. Les deux mouvements se superposaient : on voyait apparaître une
+     onde déjà allumée, ce qui annulait l'effet de dévoilement.
+
+     `active={null}` maintient l'opacité de la lumière à zéro. On la libère à
+     la fin du déroulé, et la relaxation interne de l'onde fait le reste — la
+     lumière monte d'elle-même, sans transition à écrire.
+
+     Ne joue qu'au premier montage : le layout n'étant jamais démonté, changer
+     d'épreuve ne rejoue ni le déroulé ni l'allumage. */
+  const [ondeAllumee, setOndeAllumee] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setOndeAllumee(true), 1120);
+    return () => clearTimeout(t);
+  }, []);
+
   useEffect(() => {
     if (premierRef.current) {
       premierRef.current = false;
@@ -711,7 +730,7 @@ export default function EpreuvesLayout({ children }) {
           <Onde
             variante="bandeau"
             sections={EPREUVES.length}
-            active={mesure ? mesure.k : ondeIndex}
+            active={ondeAllumee ? (mesure ? mesure.k : ondeIndex) : null}
             ampleur={mesure ? mesure.ampleur : null}
           />
         </div>

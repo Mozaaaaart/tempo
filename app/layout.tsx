@@ -1,4 +1,5 @@
 import { Geist, Geist_Mono, Instrument_Serif } from 'next/font/google';
+import { Analytics } from '@vercel/analytics/next';
 import './globals.css';
 import { EPREUVES } from '@/data/epreuves';
 import { SITE_URL, SITE_NOM, SITE_ACCROCHE } from '@/data/site';
@@ -141,6 +142,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           dangerouslySetInnerHTML={{ __html: JSON.stringify(donnees) }}
         />
         {children}
+        {/* Vercel Analytics : trafic et navigation, y compris les transitions
+           client-side entre les épreuves. Ne rend rien visuellement — le
+           composant injecte le script /_vercel/insights et écoute les
+           changements de route de l'App Router. */}
+        <Analytics />
       </body>
     </html>
   );

@@ -68,6 +68,17 @@ const estDev = process.env.NODE_ENV === 'development';
 const scriptSrc = [
   "'self'",
   "'unsafe-inline'",
+  /* WebAssembly. Vercel Analytics compile un module WASM, ce qu'une CSP
+     interdit par défaut dès qu'un `script-src` existe. La tentation est
+     d'ouvrir 'unsafe-eval' — c'est disproportionné : ce mot-clé autorise AUSSI
+     eval(), new Function() et toute génération de code à partir de chaînes,
+     c'est-à-dire précisément ce qu'une CSP sert à empêcher.
+     'wasm-unsafe-eval' n'autorise QUE la compilation WebAssembly. Supporté par
+     Chrome 97+, Firefox 102+ et Safari 16+.
+     (En dev, 'unsafe-eval' est présent et prend le dessus : c'est la règle du
+     standard, et c'est sans conséquence puisque ce profil n'est jamais servi
+     en production.) */
+  "'wasm-unsafe-eval'",
   ...(estDev ? ["'unsafe-eval'"] : []), // React dev / Turbopack uniquement
   'https://va.vercel-scripts.com',
 ];
@@ -75,6 +86,12 @@ const scriptSrc = [
 const connectSrc = [
   "'self'",
   'https://va.vercel-scripts.com',
+  /* Banque d'échantillons `tonejs-instruments`, hébergée sur GitHub Pages.
+     Les épreuves Accords et Instrument y chargent leurs sons d'instruments
+     acoustiques (voir JeuAccordsGame.jsx et dailyGames.jsx). Tone.js les
+     récupère par fetch/XHR, donc c'est bien `connect-src` qui s'applique —
+     pas `media-src`, contrairement à ce qu'on pourrait croire pour de l'audio. */
+  'https://nbrosowsky.github.io',
   ...(estDev ? ['ws:', 'wss:'] : []), // websocket HMR uniquement
 ];
 
@@ -85,7 +102,7 @@ const CSP = [
   "font-src 'self'",
   "img-src 'self' data: blob: https://*.dzcdn.net https://*.mzstatic.com",
   `connect-src ${connectSrc.join(' ')}`,
-  "media-src 'self' blob: https://*.dzcdn.net https://*.deezer.com",
+  "media-src 'self' blob: https://*.dzcdn.net https://*.deezer.com https://nbrosowsky.github.io",
   "worker-src 'self' blob:",
   "frame-ancestors 'none'",
   "object-src 'none'",

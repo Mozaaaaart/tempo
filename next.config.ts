@@ -61,7 +61,7 @@ import type { NextConfig } from "next";
  *       manquant à la directive correspondante plus bas, puis recommencer.
  *    4. Passer à `false`, redéployer. Terminé.
  * ══════════════════════════════════════════════════════════════════════════ */
-const CSP_EN_OBSERVATION = true;
+const CSP_EN_OBSERVATION = false;
 
 const estDev = process.env.NODE_ENV === 'development';
 

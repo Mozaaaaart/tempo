@@ -80,6 +80,44 @@ export function lev(a, b) {
 // "Get Lucky (feat. Pharrell) - Radio Edit" → "getlucky"
 export const normTitle = (s) => norm(String(s).replace(/\(.*?\)/g, '').replace(/\[.*?\]/g, '').split(' - ')[0]);
 
+/* ---- Titres destinés à l'API de paroles ----
+
+   NE PAS UTILISER normTitle POUR CELA. normTitle passe par norm(), qui retire
+   TOUT sauf [a-z0-9] : espaces et accents compris. C'est ce qu'il faut pour
+   COMPARER la réponse d'un joueur (« Get Lucky (feat. Pharrell) - Radio Edit »
+   et « get lucky » doivent se rejoindre), et c'est exactement ce qu'il ne faut
+   pas envoyer à Lyrics.ovh, qui cherche un titre lisible.
+
+   « Pareja Del Año » devenait « parejadelano », « T'as peur » « taspeur » :
+   des chaînes qu'aucun catalogue ne connaît, donc un 404 systématique — visible
+   dans la console, et coûteux en requêtes.
+
+   `titreRequete` nettoie ce qui gêne vraiment (mentions entre parenthèses ou
+   crochets, suffixes « - Radio Edit ») en PRÉSERVANT espaces, accents et
+   apostrophes.
+
+   `variantesTitre` renvoie les formes à tenter dans l'ordre, de la plus
+   probable à la plus large :
+     1. le titre nettoyé          « Pareja Del Año »
+     2. le titre brut             « Pareja Del Año (feat. Maria Becerra) »
+     3. le nettoyé sans accents   « Pareja Del Ano »  (certaines entrées du
+        catalogue sont saisies sans diacritiques)
+   Les doublons sont retirés : un titre déjà propre ne produit qu'une requête. */
+export const titreRequete = (s) =>
+  String(s)
+    .replace(/\(.*?\)/g, '')
+    .replace(/\[.*?\]/g, '')
+    .split(' - ')[0]
+    .replace(/\s+/g, ' ')
+    .trim();
+
+export const variantesTitre = (s) => {
+  const propre = titreRequete(s);
+  const sansAccents = propre.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return [propre, String(s).trim(), sansAccents]
+    .filter((v, i, arr) => v && arr.indexOf(v) === i);
+};
+
 /* ============================================================
    STYLES PARTAGÉS — jetons du design system
 ============================================================ */
@@ -2632,6 +2670,18 @@ const SAMPLE_BASE = 'https://nbrosowsky.github.io/tonejs-instruments/samples/';
 
 /* Échantillons dont on a VÉRIFIÉ l'existence, par répertoire d'instrument.
 
+   TABLE VÉRIFIÉE CONTRE LE DÉPÔT (août 2026). Vingt-et-un des candidats
+   n'existaient pas dans nbrosowsky/tonejs-instruments : le sondage HEAD les
+   écartait proprement — rien n'était cassé — mais chaque partie émettait
+   autant de requêtes 404 inutiles, visibles dans la console. Le Tuba était le
+   cas limite : un seul candidat valide sur quatre, donc tout son registre
+   transposé depuis une note unique, au détriment du timbre.
+
+   Chaque note listée ici a été confrontée au contenu réel du dépôt. Avant
+   d'ajouter ou de modifier un candidat, vérifier qu'il existe :
+     https://github.com/nbrosowsky/tonejs-instruments/tree/master/samples/<dir>
+   Attention : les dièses s'écrivent 'As4', 'Ds3', 'Fs2' — jamais 'A#4'.
+
    Au niveau du module, donc conservé d'une manche à l'autre et d'une épreuve
    à l'autre — mais pas d'une visite à l'autre, ce qui est exactement la durée
    de vie souhaitée : assez longue pour ne sonder qu'une fois, assez courte
@@ -2639,25 +2689,25 @@ const SAMPLE_BASE = 'https://nbrosowsky.github.io/tonejs-instruments/samples/';
 const ECHANTILLONS_CONNUS = new Map();
 const SAMPLES = {
   'Piano':              { dir: 'piano',           candidates: ['C4', 'A4', 'C5', 'E4'], shift: 0 },
-  'Orgue':              { dir: 'organ',           candidates: ['C4', 'A4', 'C5', 'F4'], shift: 0 },
+  'Orgue':              { dir: 'organ',           candidates: ['C4', 'A4', 'C5', 'A3'], shift: 0 },
   'Harmonium':          { dir: 'harmonium',       candidates: ['C4', 'A4', 'C5', 'D4'], shift: 0 },
   'Violon':             { dir: 'violin',          candidates: ['C4', 'A4', 'C5', 'G4', 'E4'], shift: 0 },
   'Violoncelle':        { dir: 'cello',           candidates: ['C3', 'A3', 'C4', 'E3', 'G3'], shift: -12 },
-  'Contrebasse':        { dir: 'contrabass',      candidates: ['C2', 'A2', 'E2', 'G2', 'C3'], shift: -24 },
+  'Contrebasse':        { dir: 'contrabass',      candidates: ['C2', 'E2', 'A2', 'E3'], shift: -24 },
   'Guitare acoustique': { dir: 'guitar-acoustic', candidates: ['C4', 'E3', 'A3', 'G3'], shift: -12 },
-  'Guitare électrique': { dir: 'guitar-electric', candidates: ['C4', 'E3', 'A3', 'D4'], shift: -12 },
-  'Guitare classique':  { dir: 'guitar-nylon',    candidates: ['C4', 'E3', 'A3', 'G3'], shift: -12 },
-  'Harpe':              { dir: 'harp',            candidates: ['C4', 'A4', 'C5', 'E4', 'G4'], shift: 0 },
-  'Basse':              { dir: 'bass-electric',   candidates: ['E2', 'G2', 'A2', 'C2'], shift: -24 },
+  'Guitare électrique': { dir: 'guitar-electric', candidates: ['A2', 'C3', 'A3', 'C4'], shift: -12 },
+  'Guitare classique':  { dir: 'guitar-nylon',    candidates: ['E3', 'G3', 'A3', 'B3'], shift: -12 },
+  'Harpe':              { dir: 'harp',            candidates: ['D4', 'F4', 'A4', 'C5'], shift: 0 },
+  'Basse':              { dir: 'bass-electric',   candidates: ['E1', 'G1', 'E2', 'G2'], shift: -24 },
   'Flûte':              { dir: 'flute',           candidates: ['C4', 'C5', 'A4', 'E4'], shift: 12 },
-  'Clarinette':         { dir: 'clarinet',        candidates: ['D4', 'F4', 'A4', 'D5'], shift: 0 },
+  'Clarinette':         { dir: 'clarinet',        candidates: ['D4', 'F4', 'As4', 'D5'], shift: 0 },
   'Saxophone':          { dir: 'saxophone',       candidates: ['C4', 'A4', 'E4', 'G4', 'D4'], shift: 0 },
-  'Basson':             { dir: 'bassoon',         candidates: ['C3', 'A2', 'E3', 'G2'], shift: -12 },
-  'Trompette':          { dir: 'trumpet',         candidates: ['C4', 'A4', 'F4', 'G4', 'D5'], shift: 0 },
-  'Trombone':           { dir: 'trombone',        candidates: ['C3', 'A2', 'F3', 'D3'], shift: -12 },
-  'Tuba':               { dir: 'tuba',            candidates: ['C2', 'A2', 'F2', 'D2'], shift: -24 },
-  'Cor':                { dir: 'french-horn',     candidates: ['C3', 'A2', 'F3', 'D3'], shift: -12 },
-  'Xylophone':          { dir: 'xylophone',       candidates: ['C5', 'G4', 'C6', 'A4'], shift: 12 },
+  'Basson':             { dir: 'bassoon',         candidates: ['G2', 'A2', 'C3', 'A3'], shift: -12 },
+  'Trompette':          { dir: 'trumpet',         candidates: ['C4', 'F4', 'G4', 'D5'], shift: 0 },
+  'Trombone':           { dir: 'trombone',        candidates: ['As2', 'C3', 'D3', 'F3'], shift: -12 },
+  'Tuba':               { dir: 'tuba',            candidates: ['F1', 'As1', 'F2', 'As2'], shift: -24 },
+  'Cor':                { dir: 'french-horn',     candidates: ['G2', 'D3', 'F3', 'A3'], shift: -12 },
+  'Xylophone':          { dir: 'xylophone',       candidates: ['G4', 'C5', 'G5', 'C6'], shift: 12 },
 };
 
 // 5 mélodies classiques (domaine public) — le timbre reste le seul mystère
@@ -3366,9 +3416,14 @@ export function JeuParoles({ onDone }) {
         const start = Math.floor(rng() * tracks.length);
         for (let i = 0; i < Math.min(tracks.length, 6); i++) {
           const t = tracks[(start + i) % tracks.length];
-          const res = await fetch(`/api/lyrics?${new URLSearchParams({ artist: t.artistName, title: normTitle(t.trackName) })}`);
-          if (!res.ok) continue;
-          const data = await res.json();
+          /* On tente les formes lisibles du titre, pas la forme normalisée de
+             comparaison — voir variantesTitre(). */
+          let data = null;
+          for (const title of variantesTitre(t.trackName)) {
+            const res = await fetch(`/api/lyrics?${new URLSearchParams({ artist: t.artistName, title })}`);
+            if (res.ok) { data = await res.json(); break; }
+          }
+          if (!data) continue;
           const ex = extractExcerpt(data.lyrics, t.trackName);
           if (ex) {
             setTrack(t);
@@ -3667,8 +3722,11 @@ export function JeuRefrain({ onDone, daily = false, revelation = true }) {
            ordre, seulement du candidat, et reste la même à chaque montage. */
         const rngLigne = manche === 0 ? seeded(`refrain:${t.trackId}`) : Math.random;
 
-        const titres = [normTitle(t.trackName), t.trackName]
-          .filter((v, i, arr) => v && arr.indexOf(v) === i);
+        /* La première forme essayée était normTitle(), qui retire espaces et
+           accents : elle échouait systématiquement en 404 avant que le titre
+           brut ne sauve la mise. Une requête perdue par morceau, et une console
+           saturée. variantesTitre() ne produit que des formes plausibles. */
+        const titres = variantesTitre(t.trackName);
 
         for (const title of titres) {
           try {

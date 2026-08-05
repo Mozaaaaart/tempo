@@ -41,3 +41,13 @@ yarn-error.log*
 next-env.d.ts
 
 scripts/.cache/
+
+# Fichiers de sauvegarde résiduels (audit P-10).
+# data/artists.js.bak avait été committé : doublon de données publiques,
+# aucun secret, mais un résidu qui alourdit le dépôt.
+*.bak
+
+# Dépôt Git imbriqué committé par erreur (audit P-09).
+# tempo.git/ contenait un .git complet — non servi en production, mais il
+# divulguait l'ancien remote et polluait l'arborescence.
+tempo.git/

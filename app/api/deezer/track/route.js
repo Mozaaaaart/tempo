@@ -16,12 +16,12 @@ export async function GET(request) {
   try {
     // fresh=1 → contourne le cache (indispensable pour les previewUrl, dont le jeton expire)
     const fresh = searchParams.get('fresh') === '1';
-    const res = await fetch(`https://api.deezer.com/track/${id}`, 
+    const res = await fetch(`https://api.deezer.com/track/${id}`,
       fresh ? { cache: 'no-store' } : { next: { revalidate: 1800 } }
     );
 
     if (!res.ok) {
-      return NextResponse.json({ error: `Deezer API a répondu ${res.status}` }, { status: 502 });
+      return NextResponse.json({ error: 'Service momentanément indisponible' }, { status: 502 });
     }
 
     const data = await res.json();
@@ -44,9 +44,10 @@ export async function GET(request) {
       },
     });
   } catch (err) {
+    console.error('Proxy Deezer (track) :', err);
     return NextResponse.json(
-      { error: 'Échec de la requête vers Deezer', details: err.message },
-      { status: 500 }
+      { error: 'Service momentanément indisponible' },
+      { status: 502 }
     );
   }
 }

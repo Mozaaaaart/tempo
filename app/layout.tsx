@@ -2,7 +2,7 @@ import { Geist, Geist_Mono, Instrument_Serif } from 'next/font/google';
 import { Analytics } from '@vercel/analytics/next';
 import './globals.css';
 import { EPREUVES } from '@/data/epreuves';
-import { SITE_URL, SITE_NOM, SITE_ACCROCHE } from '@/data/site';
+import { SITE_URL, SITE_NOM, SITE_ACCROCHE, SITE_TITRE_ACCUEIL } from '@/data/site';
 
 const geistSans = Geist({
   subsets: ['latin'],
@@ -35,7 +35,7 @@ const instrumentSerif = Instrument_Serif({
 export const metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: `${SITE_NOM} — jeux d'oreille musicale gratuits`,
+    default: SITE_TITRE_ACCUEIL,
     template: `%s | ${SITE_NOM}`,
   },
   description: SITE_ACCROCHE,
@@ -46,12 +46,12 @@ export const metadata = {
     locale: 'fr_FR',
     siteName: SITE_NOM,
     url: '/',
-    title: `${SITE_NOM} — jeux d'oreille musicale gratuits`,
+    title: SITE_TITRE_ACCUEIL,
     description: SITE_ACCROCHE,
   },
   twitter: {
     card: 'summary_large_image',
-    title: `${SITE_NOM} — jeux d'oreille musicale gratuits`,
+    title: SITE_TITRE_ACCUEIL,
     description: SITE_ACCROCHE,
   },
   /* Vérification de propriété Google Search Console.

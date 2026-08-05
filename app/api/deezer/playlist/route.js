@@ -19,21 +19,24 @@ export async function GET(request) {
     });
 
     if (!res.ok) {
-      return NextResponse.json({ error: `Deezer API a répondu ${res.status}` }, { status: 502 });
+      return NextResponse.json({ error: 'Service momentanément indisponible' }, { status: 502 });
     }
 
     const data = await res.json();
     if (data.error) {
-      return NextResponse.json({ error: 'Playlist introuvable ou privée', details: data.error }, { status: 404 });
+      // On logue le détail Deezer côté serveur, on ne le renvoie pas au client.
+      console.warn('Deezer — playlist introuvable ou privée :', data.error);
+      return NextResponse.json({ error: 'Playlist introuvable ou privée' }, { status: 404 });
     }
 
     // On ne renvoie que l'essentiel
     const tracks = (data.tracks?.data ?? []).map((t) => ({ id: t.id, title: t.title }));
     return NextResponse.json({ count: tracks.length, tracks });
   } catch (err) {
+    console.error('Proxy Deezer (playlist) :', err);
     return NextResponse.json(
-      { error: 'Échec de la requête vers Deezer', details: err.message },
-      { status: 500 }
+      { error: 'Service momentanément indisponible' },
+      { status: 502 }
     );
   }
 }

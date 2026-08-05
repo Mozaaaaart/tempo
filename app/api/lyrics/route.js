@@ -24,7 +24,7 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Paroles introuvables' }, { status: 404 });
     }
     if (!res.ok) {
-      return NextResponse.json({ error: `Lyrics.ovh a répondu ${res.status}` }, { status: 502 });
+      return NextResponse.json({ error: 'Service momentanément indisponible' }, { status: 502 });
     }
 
     const data = await res.json();
@@ -44,9 +44,10 @@ export async function GET(request) {
       }
     });
   } catch (err) {
+    console.error('Proxy Lyrics.ovh :', err);
     return NextResponse.json(
-      { error: 'Échec de la requête vers Lyrics.ovh', details: err.message },
-      { status: 500 }
+      { error: 'Service momentanément indisponible' },
+      { status: 502 }
     );
   }
 }

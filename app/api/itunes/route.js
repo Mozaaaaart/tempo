@@ -16,7 +16,6 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
 
   const term = searchParams.get('term');
-  const country = searchParams.get('country') ?? 'FR';
   const entityRaw = searchParams.get('entity') ?? 'song';
 
   // Validation : term obligatoire
@@ -29,6 +28,14 @@ export async function GET(request) {
 
   // Validation : entity dans la liste blanche
   const entity = ALLOWED_ENTITIES.includes(entityRaw) ? entityRaw : 'song';
+
+  /* Validation : country sur deux lettres exactement.
+     Le paramètre était auparavant transmis tel quel. URLSearchParams l'encode,
+     donc le risque était faible — mais une entrée non bornée n'a pas sa place
+     à côté de `term`, `entity` et `limit` qui le sont tous. Toute valeur
+     inattendue retombe sur FR. */
+  const paysBrut = (searchParams.get('country') ?? 'FR').toUpperCase();
+  const country = /^[A-Z]{2}$/.test(paysBrut) ? paysBrut : 'FR';
 
   // Validation : limit borné entre 1 et 50 (l'API accepte jusqu'à 200,
   // mais inutile pour les jeux et ça alourdit les réponses)
@@ -49,7 +56,7 @@ export async function GET(request) {
 
     if (!res.ok) {
       return NextResponse.json(
-        { error: `iTunes API a répondu ${res.status}` },
+        { error: 'Service momentanément indisponible' },
         { status: 502 }
       );
     }
@@ -63,9 +70,10 @@ export async function GET(request) {
       }
     });
   } catch (err) {
+    console.error('Proxy iTunes (search) :', err);
     return NextResponse.json(
-      { error: 'Échec de la requête vers iTunes', details: err.message },
-      { status: 500 }
+      { error: 'Service momentanément indisponible' },
+      { status: 502 }
     );
   }
 }

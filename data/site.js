@@ -28,7 +28,40 @@ export const SITE_URL =
 
 export const SITE_NOM = 'Mozart Benchmark';
 
-/** Phrase de référence du site. Sert de description par défaut et de baseline. */
+/**
+ * Balise <title> de la page d'accueil — et infobulle de l'onglet.
+ *
+ * LA MARQUE D'ABORD, LES MOTS-CLÉS ENSUITE.
+ *
+ *   C'est un choix assumé, et il a ses raisons. Dans une barre d'onglets
+ *   chargée, seuls les premiers signes restent lisibles : ouvrir sur « Mozart
+ *   Benchmark » rend l'onglet reconnaissable d'un coup d'œil. Le titre sert
+ *   aussi d'infobulle au survol, où la marque annonce immédiatement où l'on
+ *   est. Et un nom répété se mémorise : c'est ainsi qu'une marque neuve se
+ *   construit un volume de recherche qu'elle n'a pas encore.
+ *
+ *   LE COÛT À CONNAÎTRE. Google pondère davantage le début de la balise, et
+ *   l'œil s'arrête sur les premiers mots dans une page de résultats. Placer
+ *   seize signes de marque en tête retarde d'autant les termes réellement
+ *   tapés — « test oreille musicale », « jeu oreille musicale ». Le compromis
+ *   est tenable ici parce que ces termes restent DANS la balise, sous la
+ *   limite d'affichage : ils sont vus, simplement pas en premier.
+ *
+ *   « Test » ET « jeux » cohabitent volontairement : deux racines de requête
+ *   distinctes pour une même intention, et les deux tiennent sans forcer.
+ *
+ * SOIXANTE SIGNES, PAS PLUS. Au-delà, Google tronque et la promesse se perd en
+ * chemin. Celui-ci en fait 60, soit environ 490 px — sous la limite
+ * d'affichage (~580 px), qui compte davantage que le nombre de signes.
+ *
+ * VARIANTES prêtes à l'emploi — remplace la valeur, rien d'autre à toucher :
+ *   'Mozart Benchmark \u2014 Teste ton oreille musicale, 10 jeux gratuits'
+ *   'Mozart Benchmark : test d\u2019oreille musicale, 10 jeux gratuits'
+ *   'Mozart Benchmark \u2014 Test d\u2019oreille musicale : 10 jeux gratuits'
+ */
+export const SITE_TITRE_ACCUEIL =
+  'Mozart Benchmark \u2014 Test d\u2019oreille musicale, 10 jeux gratuits';
+
 export const SITE_ACCROCHE =
   'Dix jeux d\u2019oreille musicale gratuits, sans inscription. '
   + 'Accords, rythme, tempo, blind test : ton oreille not\u00e9e sur dix.';

@@ -53,12 +53,18 @@ export async function GET(request) {
 
     // Page vide alors que la recherche a trouvé quelque chose : on suit le
     // lien `next` une fois plutôt que de rendre une liste vide au jeu.
+    // Défense en profondeur : on ne suit `next` que s'il pointe bien vers
+    // l'API Deezer (l'hôte n'est de toute façon pas contrôlable par l'appelant,
+    // mais on refuse par principe toute cible inattendue).
     if (!data?.data?.length && data?.total > 0 && data?.next) {
       try {
-        const suite = await interroger(data.next);
-        if (suite?.data?.length) data = suite;
+        const suivant = new URL(data.next);
+        if (suivant.hostname === 'api.deezer.com') {
+          const suite = await interroger(suivant.toString());
+          if (suite?.data?.length) data = suite;
+        }
       } catch (err) {
-        console.warn('Deezer — repli sur next échoué :', err.message);
+        console.warn('Deezer — repli sur next échoué :', err);
       }
     }
 
@@ -79,8 +85,10 @@ export async function GET(request) {
       },
     });
   } catch (err) {
+    // On logue le détail côté serveur, on ne le divulgue pas au client.
+    console.error('Proxy Deezer (search) :', err);
     return NextResponse.json(
-      { error: 'Échec de la requête vers Deezer', details: err.message },
+      { error: 'Service momentanément indisponible' },
       { status: 502 }
     );
   }

@@ -33,7 +33,7 @@ export async function GET(request) {
 
     if (!res.ok) {
       return NextResponse.json(
-        { error: `iTunes API a répondu ${res.status}` },
+        { error: 'Service momentanément indisponible' },
         { status: 502 }
       );
     }
@@ -45,9 +45,10 @@ export async function GET(request) {
       }
     });
   } catch (err) {
+    console.error('Proxy iTunes (lookup) :', err);
     return NextResponse.json(
-      { error: 'Échec de la requête vers iTunes', details: err.message },
-      { status: 500 }
+      { error: 'Service momentanément indisponible' },
+      { status: 502 }
     );
   }
 }

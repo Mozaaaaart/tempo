@@ -527,14 +527,18 @@ export default function Accueil() {
               style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
             />
           </div>
+          {/* Le nom seul, sans baseline. Il y en a eu deux — « Évaluation
+              auditive », puis « Dix jeux d'oreille » — et aucune ne gagnait
+              sa place : le titre qui suit, à quelques centimètres, dit déjà
+              ce qu'est le site et combien il compte de jeux. Une baseline
+              qui répète le titre juste en dessous n'informe personne et
+              alourdit le seul bloc de la page qui doit se lire d'un coup.
+
+              minWidth: 0 conservé sur le conteneur : c'est lui qui autorise
+              le nom à se compresser dans le flex parent plutôt qu'à pousser
+              la navigation hors de l'écran. */}
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 500 }}>Mozart Benchmark</div>
-            {/* La baseline dit ce que le site EST, en trois mots lus sous le nom.
-                « Évaluation auditive » annonçait un examen ; le site n'en est pas
-                un, et tous les arbitrages de rédaction l'ont montré. « Dix jeux
-                d'oreille » est vrai, se comprend sans effort, et contient les
-                deux mots qu'on tape pour chercher ça. */}
-            <div className="etiquette-mono" style={{ color: 'var(--cendre)' }}>dix jeux d&apos;oreille</div>
           </div>
         </div>
         <nav className="accueil-nav">
@@ -565,7 +569,7 @@ export default function Accueil() {
              defend toujours contre une evaluation.
 
              « MINI-JEUX » plutot que « jeux » : le mot dit la brievete avant
-             meme que le sous-titre annonce les deux minutes. C'est le premier
+             meme que le sous-titre annonce les trente secondes. C'est le premier
              frein leve, et il l'est en trois lettres.
 
              L'expression exacte « oreille musicale » est ici, dans le seul
@@ -593,13 +597,21 @@ export default function Accueil() {
 
              LA PREMIERE LIGNE NE REPETE PAS LE TITRE. Celui-ci annonce deja le
              nombre de jeux et ce qu'on y decouvre ; elle donne donc les deux
-             chiffres qu'il ne dit pas. « Deux minutes » leve le dernier frein,
-             « une note sur 10 » promet un resultat. */}
+             chiffres qu'il ne dit pas. « 30 secondes » leve le dernier frein,
+             « une note sur 10 » promet un resultat.
+
+             LA DUREE ANNONCEE EST UN ENGAGEMENT, pas une figure de style : un
+             joueur qui compte deux minutes et en passe trente secondes se
+             sent floue dans l'autre sens, et surtout la promesse la plus
+             courte est celle qui fait cliquer. Elle est passee de deux
+             minutes a trente secondes ; si le format d'une epreuve change,
+             c'est ici qu'il faut revenir — et aussi dans BlocAccueil.jsx et
+             CatalogueEpreuves.jsx, qui portent la meme annonce. */}
       <div className="bloc-soustitre">
         <p className="lin" style={{
           marginTop: 'var(--e3)', maxWidth: 430, textWrap: 'balance',
         }}>
-          Deux minutes par jeu, une note sur 10.
+          30 secondes par jeu, une note sur 10.
         </p>
 
         {/* ---- POURQUOI CETTE LIGNE N'EST PLUS EN MONO CAPITALES ----

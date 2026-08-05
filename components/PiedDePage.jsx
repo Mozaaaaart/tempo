@@ -106,6 +106,92 @@ export default function PiedDePage({ classe = '' }) {
           border-top: 0.5px solid var(--filet);
         }
 
+        /* ============================================================
+           ENTREE EN DIAGONALE
+
+           Les elements arrivent de haut en bas ET de gauche a droite : le
+           retard de chacun vaut (colonne + rangee) x un pas. Une vague
+           traverse donc le pied depuis son coin haut-gauche, au lieu des
+           deux cascades separees qu on obtiendrait en retardant les colonnes
+           puis les lignes. Le mouvement suit la lecture — on lit un pied de
+           page en diagonale, pas colonne par colonne.
+
+           La colonne visuelle n est PAS l ordre du DOM pour les dix jeux :
+           la liste est remplie en colonne (trois rangees), donc l element i
+           occupe la colonne floor(i/3) et la rangee i%3. Les retards
+           ci-dessous appliquent ce calcul a la main, sinon la vague
+           traverserait la grille de travers.
+
+           Grammaire du site : 560 ms, cubic-bezier(0.22, 1, 0.36, 1). Le
+           deplacement gagne une composante horizontale de 6 px, plus discrete
+           que la verticale de 8 px : la diagonale doit se sentir sans que les
+           mots aient l air de glisser de cote.
+
+           DEUX DECLENCHEURS, ET C EST VOULU. Le pied vit en bas de page :
+           anime au chargement, il aurait joue hors de l ecran et personne ne
+           l aurait vu. animation-timeline le lie donc a l entree du bloc dans
+           la fenetre. Les navigateurs qui ignorent les animations liees au
+           defilement retombent sur animation-delay, ecrit juste a cote — la
+           vague joue alors au chargement. Aucun des deux cas ne laisse un
+           element invisible, ce qui est la seule chose a ne pas rater.
+
+           prefers-reduced-motion est neutralise globalement dans
+           globals.css, qui ramene toutes les durees a 0,01 ms. */
+        @keyframes piedEntree {
+          from { opacity: 0; transform: translate(-6px, 8px); }
+          to   { opacity: 1; transform: translate(0, 0); }
+        }
+
+        .pied { view-timeline-name: --pied-vue; }
+
+        .pied-marque,
+        .pied-phrase,
+        .pied-soutenir,
+        .pied-titre,
+        .pied-liste li,
+        .pied-bas > * {
+          animation: piedEntree 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+          animation-timeline: --pied-vue;
+          animation-range: entry 12% entry 72%;
+        }
+
+        /* Colonne 0 — la signature */
+        .pied-marque   { animation-delay: 0ms;   animation-range: entry 12% entry 60%; }
+        .pied-phrase   { animation-delay: 45ms;  animation-range: entry 15% entry 63%; }
+        .pied-soutenir { animation-delay: 90ms;  animation-range: entry 18% entry 66%; }
+
+        /* Colonnes 1 a 4 — les dix jeux. Retard = (1 + floor(i/3)) + (1 + i%3). */
+        .pied-liste-jeux li:nth-child(1)  { animation-delay: 90ms;  animation-range: entry 18% entry 66%; }
+        .pied-liste-jeux li:nth-child(2)  { animation-delay: 135ms; animation-range: entry 21% entry 69%; }
+        .pied-liste-jeux li:nth-child(3)  { animation-delay: 180ms; animation-range: entry 24% entry 72%; }
+        .pied-liste-jeux li:nth-child(4)  { animation-delay: 135ms; animation-range: entry 21% entry 69%; }
+        .pied-liste-jeux li:nth-child(5)  { animation-delay: 180ms; animation-range: entry 24% entry 72%; }
+        .pied-liste-jeux li:nth-child(6)  { animation-delay: 225ms; animation-range: entry 27% entry 75%; }
+        .pied-liste-jeux li:nth-child(7)  { animation-delay: 180ms; animation-range: entry 24% entry 72%; }
+        .pied-liste-jeux li:nth-child(8)  { animation-delay: 225ms; animation-range: entry 27% entry 75%; }
+        .pied-liste-jeux li:nth-child(9)  { animation-delay: 270ms; animation-range: entry 30% entry 78%; }
+        .pied-liste-jeux li:nth-child(10) { animation-delay: 225ms; animation-range: entry 27% entry 75%; }
+
+        /* Les etiquettes de rubrique, sur la rangee du haut : leur retard ne
+           depend que de leur colonne. nth-of-type sur les nav plutot qu une
+           classe par rubrique — l ordre des trois nav est stable. */
+        .pied-cols nav:nth-of-type(1) .pied-titre { animation-delay: 45ms;  animation-range: entry 15% entry 63%; }
+        .pied-cols nav:nth-of-type(2) .pied-titre { animation-delay: 225ms; animation-range: entry 27% entry 75%; }
+        .pied-cols nav:nth-of-type(3) .pied-titre { animation-delay: 270ms; animation-range: entry 30% entry 78%; }
+
+        /* Colonne 5 — le site */
+        .pied-cols nav:nth-of-type(2) .pied-liste li:nth-child(1) { animation-delay: 270ms; animation-range: entry 30% entry 78%; }
+        .pied-cols nav:nth-of-type(2) .pied-liste li:nth-child(2) { animation-delay: 315ms; animation-range: entry 33% entry 81%; }
+
+        /* Colonne 6 — informations */
+        .pied-cols nav:nth-of-type(3) .pied-liste li:nth-child(1) { animation-delay: 315ms; animation-range: entry 33% entry 81%; }
+        .pied-cols nav:nth-of-type(3) .pied-liste li:nth-child(2) { animation-delay: 360ms; animation-range: entry 36% entry 84%; }
+        .pied-cols nav:nth-of-type(3) .pied-liste li:nth-child(3) { animation-delay: 405ms; animation-range: entry 39% entry 87%; }
+
+        /* La barre du bas ferme la vague, dans son propre sens de lecture. */
+        .pied-bas > *:nth-child(1) { animation-delay: 405ms; animation-range: entry 39% entry 87%; }
+        .pied-bas > *:nth-child(2) { animation-delay: 450ms; animation-range: entry 42% entry 90%; }
+
         /* Chaque rubrique a la largeur de son contenu, l espace vit ENTRE
            elles. La borne haute de l identite (300 px) est celle de sa
            phrase : au-dela, la ligne depasse 60 signes et cesse de se lire

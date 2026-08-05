@@ -7,7 +7,10 @@ import PageTexte from '@/components/PageTexte';
  * constat vérifiable dans le dépôt :
  *
  *   - aucun cookie : zéro occurrence de document.cookie ou Set-Cookie ;
- *   - aucun analytics, aucun script tiers, aucun formulaire, aucun compte ;
+ *   - UNE mesure d'audience : Vercel Web Analytics (composant <Analytics />
+ *     dans app/layout.tsx), sans cookie ni stockage sur le terminal — le
+ *     visiteur est identifié par un hash côté serveur qui expire sous 24 h ;
+ *   - aucun autre script tiers, aucun formulaire, aucun compte ;
  *   - cinq clés localStorage strictement nécessaires au service
  *     (mb:ambiance:volume, mb:ambiance:actif, mb-quotidien,
  *     mb-quotidien-veille, mb-direction) → exemptées de consentement au
@@ -16,13 +19,13 @@ import PageTexte from '@/components/PageTexte';
  *     et Lyrics.ovh ne voient jamais l'adresse IP du visiteur ;
  *   - EN REVANCHE le navigateur charge directement les extraits et pochettes
  *     depuis les CDN de Deezer, et les échantillons d'instruments depuis
- *     GitHub Pages — c'est LE transfert de données du site, énoncé tel quel ;
+ *     GitHub Pages — énoncé tel quel ;
  *   - polices auto-hébergées au build par next/font : aucun appel à Google
  *     au chargement des pages.
  *
- * Si le code change (pub, analytics, comptes), cette page doit changer
- * AVANT : une politique qui décrit un traitement inexistant — ou qui en
- * tait un réel — est fautive dans les deux sens.
+ * Si le code change (pub, comptes, autre outil de mesure), cette page doit
+ * changer AVANT : une politique qui décrit un traitement inexistant — ou qui
+ * en tait un réel — est fautive dans les deux sens.
  *
  * Vouvoiement : page formelle, comme les mentions légales.
  */
@@ -46,11 +49,14 @@ export default function Confidentialite() {
       <h2>L&rsquo;essentiel</h2>
       <p>
         Mozart Benchmark n&rsquo;a <strong>pas de comptes</strong>,{' '}
-        <strong>pas de formulaires</strong>, <strong>pas de cookies</strong>,{' '}
-        <strong>pas de mesure d&rsquo;audience</strong> et{' '}
-        <strong>pas de publicité</strong>. Le site ne collecte aucune donnée
-        personnelle et n&rsquo;en transmet aucune à des fins commerciales.
-        Vos scores et vos réglages restent dans votre navigateur.
+        <strong>pas de formulaires</strong>, <strong>pas de cookies</strong>{' '}
+        et <strong>pas de publicité</strong>. Le site utilise une{' '}
+        <strong>mesure d&rsquo;audience sans cookie</strong> (Vercel Web
+        Analytics) qui compte les visites de manière agrégée, sans identifiant
+        persistant ni suivi entre sites — elle est décrite en détail
+        ci-dessous. Le site ne collecte aucune autre donnée personnelle et
+        n&rsquo;en transmet aucune à des fins commerciales. Vos scores et vos
+        réglages restent dans votre navigateur.
       </p>
       <p>
         Ce qui subsiste malgré tout — parce qu&rsquo;aucun site ne fonctionne
@@ -91,7 +97,26 @@ export default function Confidentialite() {
       </p>
 
       <p>
-        <strong>b) Chargement direct des médias.</strong> Les recherches
+        <strong>b) Mesure d&rsquo;audience sans cookie.</strong> Le site
+        utilise <strong>Vercel Web Analytics</strong> pour connaître ses
+        statistiques de fréquentation&nbsp;: pages consultées, nombre de
+        visiteurs, pays d&rsquo;origine, type d&rsquo;appareil et de
+        navigateur, site référent. Cet outil ne dépose{' '}
+        <strong>aucun cookie</strong> et n&rsquo;écrit{' '}
+        <strong>rien</strong> dans votre navigateur. Pour distinguer les
+        visiteurs, il calcule côté serveur un identifiant éphémère (un hash
+        dérivé de la requête entrante) qui{' '}
+        <strong>expire automatiquement au bout de 24&nbsp;heures</strong> et
+        ne permet ni de vous reconnaître d&rsquo;un jour à l&rsquo;autre, ni
+        de vous suivre sur d&rsquo;autres sites. Les statistiques produites
+        sont agrégées et ne sont partagées avec aucun tiers. Base
+        légale&nbsp;: intérêt légitime — comprendre l&rsquo;usage du site pour
+        l&rsquo;améliorer. Le traitement est opéré par Vercel dans les
+        conditions décrites au point a) ci-dessus.
+      </p>
+
+      <p>
+        <strong>c) Chargement direct des médias.</strong> Les recherches
         musicales passent par le serveur du site&nbsp;: Deezer, iTunes et
         Lyrics.ovh ne voient jamais votre adresse IP lors d&rsquo;une
         recherche. En revanche, pour que la musique joue, votre navigateur
@@ -99,12 +124,11 @@ export default function Confidentialite() {
         pochettes depuis les serveurs de diffusion de Deezer, et les
         échantillons d&rsquo;instruments depuis GitHub Pages. Ces fournisseurs
         reçoivent alors, comme pour tout chargement web, votre adresse IP et
-        la signature technique de votre navigateur. C&rsquo;est le seul
-        transfert de données du site. Base légale&nbsp;: intérêt légitime —
-        fournir le contenu même que vous êtes venu écouter. Ces serveurs
-        pouvant être situés hors de l&rsquo;Union européenne, ce chargement
-        peut constituer un transfert international&nbsp;; il est régi par les
-        politiques de confidentialité de{' '}
+        la signature technique de votre navigateur. Base légale&nbsp;:
+        intérêt légitime — fournir le contenu même que vous êtes venu écouter.
+        Ces serveurs pouvant être situés hors de l&rsquo;Union européenne, ce
+        chargement peut constituer un transfert international&nbsp;; il est
+        régi par les politiques de confidentialité de{' '}
         <a
           href="https://www.deezer.com/legal/personal-datas"
           rel="noopener noreferrer"
@@ -122,7 +146,7 @@ export default function Confidentialite() {
       </p>
 
       <p>
-        <strong>c) Stockage local de votre navigateur.</strong> Le site écrit
+        <strong>d) Stockage local de votre navigateur.</strong> Le site écrit
         cinq clés dans le <strong>localStorage</strong> de votre
         navigateur&nbsp;: le volume du son d&rsquo;ambiance et son état
         activé/coupé, votre progression du défi du jour, l&rsquo;archive du
@@ -137,7 +161,7 @@ export default function Confidentialite() {
       </p>
 
       <p>
-        <strong>d) E-mails reçus.</strong> Si vous écrivez à l&rsquo;adresse
+        <strong>e) E-mails reçus.</strong> Si vous écrivez à l&rsquo;adresse
         de contact, votre message et votre adresse e-mail sont utilisés pour
         vous répondre, et pour rien d&rsquo;autre. Ils sont supprimés quand
         l&rsquo;échange n&rsquo;a plus d&rsquo;objet.
@@ -146,11 +170,15 @@ export default function Confidentialite() {
       <h2>Pourquoi il n&rsquo;y a pas de bandeau cookies</h2>
       <p>
         Ce n&rsquo;est pas un oubli. Un bandeau sert à recueillir un
-        consentement&nbsp;; or il n&rsquo;y a ici rien à consentir&nbsp;:
-        aucun cookie, aucun traceur, et un stockage local exempté parce que
-        strictement nécessaire. Afficher un bandeau sans traceur dégraderait
-        votre visite pour rien — et serait trompeur, en laissant croire à des
-        traitements qui n&rsquo;existent pas.
+        consentement pour des informations stockées ou lues sur votre
+        appareil&nbsp;; or il n&rsquo;y a ici rien de tel à consentir&nbsp;:
+        aucun cookie, aucun traceur déposé, un stockage local exempté parce
+        que strictement nécessaire, et une mesure d&rsquo;audience qui
+        n&rsquo;écrit rien dans votre navigateur, ne crée aucun identifiant
+        persistant et ne suit personne d&rsquo;un site à l&rsquo;autre.
+        Afficher un bandeau dans ces conditions dégraderait votre visite pour
+        rien — et serait trompeur, en laissant croire à des traitements qui
+        n&rsquo;existent pas.
       </p>
 
       <h2>Vos droits</h2>
@@ -158,11 +186,15 @@ export default function Confidentialite() {
         Le RGPD vous donne des droits d&rsquo;accès, de rectification,
         d&rsquo;effacement, de limitation, d&rsquo;opposition et de
         portabilité. L&rsquo;honnêteté du contexte&nbsp;: le site ne détient
-        aucun fichier de visiteurs sur lequel les exercer. Vos scores et
-        réglages étant stockés dans votre navigateur, l&rsquo;essentiel de ces
-        droits s&rsquo;exerce directement — en vidant le stockage local, comme
-        décrit ci-dessus. Pour les e-mails que vous auriez envoyés, une simple
-        demande à l&rsquo;adresse de contact suffit.
+        aucun fichier de visiteurs sur lequel les exercer — les statistiques
+        d&rsquo;audience sont agrégées et ne permettent pas de retrouver un
+        visiteur en particulier. Vos scores et réglages étant stockés dans
+        votre navigateur, l&rsquo;essentiel de ces droits s&rsquo;exerce
+        directement — en vidant le stockage local, comme décrit ci-dessus.
+        Vous pouvez par ailleurs vous opposer à la mesure d&rsquo;audience en
+        utilisant un bloqueur de contenu&nbsp;: le site fonctionne
+        intégralement sans elle. Pour les e-mails que vous auriez envoyés, une
+        simple demande à l&rsquo;adresse de contact suffit.
       </p>
 
       <h2>Autorité de contrôle</h2>
@@ -182,16 +214,16 @@ export default function Confidentialite() {
 
       <h2>Mineurs</h2>
       <p>
-        Le site ne collecte aucune donnée, ne crée aucun compte et ne propose
-        aucune interaction sociale. Aucun traitement n&rsquo;étant fondé sur
-        le consentement, la question de l&rsquo;âge du consentement numérique
-        ne se pose pas.
+        Le site ne collecte aucune donnée déclarative, ne crée aucun compte et
+        ne propose aucune interaction sociale. Aucun traitement n&rsquo;étant
+        fondé sur le consentement, la question de l&rsquo;âge du consentement
+        numérique ne se pose pas.
       </p>
 
       <h2>Évolution de cette politique</h2>
       <p>
-        Si le site devait un jour changer de nature — publicité, mesure
-        d&rsquo;audience, comptes —, cette page serait mise à jour{' '}
+        Si le site devait un jour changer de nature — publicité, comptes,
+        outil de mesure plus intrusif —, cette page serait mise à jour{' '}
         <strong>avant</strong> le changement, et tout traceur soumis à
         consentement ne serait déposé qu&rsquo;après recueil de celui-ci. La
         date en tête de page fait foi de la version en vigueur.

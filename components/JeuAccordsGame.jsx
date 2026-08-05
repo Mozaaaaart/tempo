@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { seeded, survolOr, sortieOr } from '@/components/dailyGames';
-import { useVolume } from '@/utils/volume';
+import { useVolume, dbEffectif } from '@/utils/volume';
 import { useIntro } from '@/utils/intro';
 
 const POSITIONS = [
@@ -653,6 +653,11 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
         baseUrl: 'https://nbrosowsky.github.io/tonejs-instruments/samples/piano/',
         release: 1.2,
         onload: () => {
+          /* NIVEAU POSÉ DÈS LA CONSTRUCTION.
+             Un Sampler naît à 0 dB, c'est-à-dire à fond. L'effet plus bas ne
+             le corrigeait qu'au rendu suivant, et l'intro — qui démarre au
+             montage — jouait ses notes dans cet intervalle. */
+          sampler.volume.value = dbEffectif(Tone);
           synthRef.current = sampler;
           hoverSynthRef.current = sampler;
           setPianoPret(true);
@@ -684,7 +689,11 @@ export default function JeuAccordsGame({ daily = false, revelation = true, onDon
     const Tone = toneRef.current;
     const synth = synthRef.current;
     if (!Tone || !synth) return;
-    synth.volume.value = volume > 0 ? Tone.gainToDb(volume) : -Infinity;
+    /* `volume` ne sert que de DÉCLENCHEUR : au premier passage il vaut
+       encore la valeur par défaut du hook, lequel n'a pas pu lire le stockage
+       avant le montage. La valeur appliquée vient donc de dbEffectif, qui le
+       lit à l'instant même. */
+    synth.volume.value = dbEffectif(Tone);
   }, [volume, pianoPret]);
 
   /* Passer la présentation.

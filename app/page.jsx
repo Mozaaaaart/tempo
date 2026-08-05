@@ -4,6 +4,7 @@ import Link from 'next/link';
 import Onde from '@/components/Onde';
 import BlocAccueil from '@/components/BlocAccueil';
 import Ambiance from '@/components/Ambiance';
+import PiedDePage from '@/components/PiedDePage';
 import { EPREUVES as CATALOGUE, lienEpreuve } from '@/data/epreuves';
 
 /**
@@ -584,18 +585,62 @@ export default function Accueil() {
              chiffres qu'il ne dit pas. « Deux minutes » leve le dernier frein,
              « une note sur 10 » promet un resultat. */}
       <div className="bloc-soustitre">
-        <p className="lin" style={{ marginTop: 'var(--e3)', maxWidth: 390 }}>
+        <p className="lin" style={{
+          marginTop: 'var(--e3)', maxWidth: 430, textWrap: 'balance',
+        }}>
           Deux minutes par jeu, une note sur 10.
         </p>
+
+        {/* ---- POURQUOI CETTE LIGNE N'EST PLUS EN MONO CAPITALES ----
+            Le mono en capitales est bien la grammaire du site, mais il y sert
+            toujours à ÉTIQUETER : nom de section, date d'édition, mention de
+            statut. Ce sont des repères, qu'on saisit d'un coup d'œil sans les
+            parcourir.
+
+            Ces trois faits, eux, sont du CONTENU — ils lèvent trois freins,
+            et on les LIT. Rien ne justifiait qu'ils crient plus fort que la
+            phrase au-dessus d'eux, qui porte l'offre.
+
+            Ce qui fait le pas de lecture n'est de toute façon pas la police,
+            mais LES POINTS MÉDIANS : trois membres séparés se balayent, une
+            phrase se lit. La descente en trois marches est intacte, la
+            troisième a simplement cessé de hausser le ton.
+
+            L'interlettrage de 0,09 em disparaît avec les capitales : il
+            n'existe que pour les rendre respirables, et sur des bas-de-casse
+            il ne fait qu'étirer le mot.
+
+            ---- LES TROIS LIGNES FORMENT UN SEUL BLOC ----
+
+            Une version précédente détachait le conseil par un --e6, au motif
+            qu'il parle d'une autre page. L'argument tenait sur le fond, pas à
+            l'écran : sous un titre de trente-huit pixels, ce blanc coupait le
+            sous-titre en deux et le conseil se lisait comme un bloc orphelin,
+            sans rien qui le rattache à ce qui précède.
+
+            Les trois lignes gardent donc le même --e2. Elles répondent de
+            toute façon à la même question — qu'est-ce que je trouve ici, et à
+            quelles conditions — et elles sont assez courtes pour se lire d'un
+            seul regard. Ce qui les distingue reste lisible sans blanc : le
+            corps, la couleur et les points médians s'en chargent.
+
+            Interligne fixé sur la ligne du milieu : une marge se mesure entre
+            BOÎTES, l'œil mesure entre ENCRES. Sans lui, le blanc parasite de
+            la boîte s'ajoute en douce aux marges déclarées, dans les deux
+            sens — et deux valeurs identiques donnent alors deux écarts
+            visiblement différents. */}
         <p style={{
-          marginTop: 'var(--e2)', maxWidth: 390,
-          fontFamily: 'var(--mono)', fontSize: 10.5,
-          letterSpacing: '0.09em', textTransform: 'uppercase',
+          marginTop: 'var(--e2)', maxWidth: 430,
+          fontSize: 13, lineHeight: 1.4,
           color: 'var(--lin)',
         }}>
-          gratuit · sans inscription · sans solfège
+          Gratuit&nbsp;· Sans inscription&nbsp;· Sans solfège
         </p>
-        <p className="lin" style={{ marginTop: 'var(--e3)', maxWidth: 390, fontSize: 13 }}>
+
+        <p className="lin" style={{
+          marginTop: 'var(--e2)', maxWidth: 430,
+          fontSize: 13, textWrap: 'balance',
+        }}>
           Au défi du jour, tu n&apos;as qu&apos;un essai. Entraîne-toi avant.
         </p>
       </div>
@@ -718,10 +763,11 @@ export default function Accueil() {
       <BlocAccueil />
 
       {/* 12 — Mention de pied */}
-      <footer className="bloc-pied" style={{ textAlign: 'center', fontSize: 11, color: 'var(--cendre)' }}>
-        Mozart Benchmark, jeux d&apos;oreille musicale gratuits.
-        Extraits fournis par Deezer, sons de synthèse et échantillons libres.
-      </footer>
+      {/* Le pied de page est commun à tout le site : trois textes différents
+          cohabitaient auparavant, un par page. Il garde la classe bloc-pied,
+          qui porte son rang dans la chorégraphie d'entrée et son `order` sous
+          640 px — la classe vit maintenant sur le composant lui-même. */}
+      <PiedDePage classe="bloc-pied" />
     </main>
   );
 }

@@ -19,7 +19,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   return [
     { url: `${SITE_URL}/`, lastModified: maj, changeFrequency: 'weekly', priority: 1 },
-    { url: `${SITE_URL}/jeux`, lastModified: maj, changeFrequency: 'weekly', priority: 0.9 },
+    /* /jeux n'est plus declaree : elle redirige en 308 vers le premier jeu.
+       Un plan du site ne doit contenir que des URL canoniques — une entree
+       qui redirige fait perdre une exploration a chaque passage et brouille
+       le signal, puisqu'elle annonce une page qui n'existe pas. */
     { url: `${SITE_URL}/quotidien`, lastModified: maj, changeFrequency: 'daily', priority: 0.9 },
     ...EPREUVES.map((e) => ({
       url: `${SITE_URL}/jeux/${e.slug}`,

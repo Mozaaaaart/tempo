@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { panel, btn, seeded, ScoreBox, statusStyle } from '@/components/dailyGames';
 import { freshPreviewUrl } from '@/utils/deezer';
-import { useVolume } from '@/utils/volume';
+import { useVolume, volumeEffectif } from '@/utils/volume';
 import { useIntro } from '@/utils/intro';
 import { useEpreuveVisible } from '@/components/ContexteEpreuveVisible';
 import IntroDuelQuotidien from '@/components/IntroDuelQuotidien';
@@ -1021,7 +1021,10 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
     }
 
     const a = new Audio(url);
-    a.volume = volume;
+    /* Le niveau est posé à la CRÉATION de l'élément, depuis le stockage : un
+       <audio> naît à 1, c'est-à-dire à fond, et il commence à jouer avant que
+       l'effet de volume n'ait pu le corriger. Voir utils/volume.js. */
+    a.volume = volumeEffectif();
     audioRef.current = a;
     audioCoteRef.current = cote;
     dureeRestanteRef.current = DUREE_EXTRAIT;
@@ -1037,13 +1040,19 @@ export default function JeuDuelGame({ daily = false, onDone = () => {} }) {
     setMessage('');
 
     minuteurAudioRef.current = setTimeout(() => extraitEpuise(cote), dureeRestanteRef.current);
-  }, [reference, challenger, couperAudio, extraitEpuise, volume]);
+  /* `volume` a quitté cette liste : le rappel lit désormais le stockage au
+     moment où il crée l'élément audio, il ne dépend donc plus de l'état. L'y
+     laisser aurait recréé le rappel à chaque mouvement du curseur, et avec lui
+     tous les effets qui en dépendent — pour rien. */
+  }, [reference, challenger, couperAudio, extraitEpuise]);
 
   // Le curseur de volume peut être déplacé pendant qu'un extrait joue ou est
   // en pause : on répercute la valeur sur l'élément déjà chargé, sans
   // attendre le prochain démarrage.
   useEffect(() => {
-    if (audioRef.current) audioRef.current.volume = volume;
+    /* volumeEffectif plutôt que `volume` : au premier passage, l'état du
+       hook vaut encore son défaut. Voir utils/volume.js. */
+    if (audioRef.current) audioRef.current.volume = volumeEffectif();
   }, [volume]);
 
   /** Bascule lecture/pause d'un extrait déjà chargé pour ce côté. */

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import Onde from '@/components/Onde';
 import VolumeControl from '@/components/VolumeControl';
 import EnTete from '@/components/EnTete';
+import PiedDePage from '@/components/PiedDePage';
 import { EPREUVES, lienEpreuve } from '@/data/epreuves';
 import { jeuDuSlug } from '@/components/registreJeux';
 import { ContexteEpreuveVisible } from '@/components/ContexteEpreuveVisible';
@@ -2232,10 +2233,7 @@ export default function PageQuotidien() {
             </>
         )}
 
-        <footer style={{ marginTop: 'var(--e8)', textAlign: 'center', fontSize: 11, color: 'var(--cendre)' }}>
-          Nouveau défi chaque jour à minuit. ·{' '}
-          <Link href="/" style={{ color: 'var(--cendre)' }}>accueil</Link>
-        </footer>
+        <PiedDePage />
       </main>
     </>
   );

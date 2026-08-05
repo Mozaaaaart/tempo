@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { panel, seeded } from '@/components/dailyGames';
-import { useVolume } from '@/utils/volume';
+import { useVolume, dbEffectif } from '@/utils/volume';
 import { useIntro } from '@/utils/intro';
 import IntroRythmeQuotidien from '@/components/IntroRythmeQuotidien';
 /* Surcouche de résultat partagée. Elle porte le nom de l'épreuve où elle est
@@ -907,8 +907,10 @@ export default function JeuRythmeGame({ daily = false, onDone = () => {} }) {
     volumeRef.current = volume;
     const Tone = toneRef.current;
     if (!Tone) return;
-    if (clickRef.current) clickRef.current.volume.value = dbPour(Tone, GAIN_CLICK, volume);
-    if (clapRef.current) clapRef.current.volume.value = dbPour(Tone, GAIN_CLAP, volume);
+    /* Valeur lue dans le stockage, pas dans l'état : au premier passage
+       celui-ci vaut encore le défaut du hook. Voir utils/volume.js. */
+    if (clickRef.current) clickRef.current.volume.value = dbEffectif(Tone, GAIN_CLICK);
+    if (clapRef.current) clapRef.current.volume.value = dbEffectif(Tone, GAIN_CLAP);
   }, [volume, tonePret]);
 
   // L'intro se joue à l'ARRIVÉE sur l'épreuve — depuis la page d'accueil ou

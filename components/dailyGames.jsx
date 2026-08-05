@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ARTISTS } from '@/data/artists';
 import { searchTracks, trackDetails, freshPreviewUrl } from '@/utils/deezer';
-import { useVolume } from '@/utils/volume';
+import { useVolume, volumeEffectif, dbEffectif } from '@/utils/volume';
 import { useIntro } from '@/utils/intro';
 import { useEpreuveVisible } from '@/components/ContexteEpreuveVisible';
 import IntroArtiste, { ResultatArtiste, RES_ARTISTE_TOTAL } from './IntroArtiste';
@@ -149,7 +149,11 @@ export function useLecteurAudio() {
   // Le curseur de volume doit agir sur la piste EN COURS, pas seulement sur
   // la suivante : on garde la valeur en ref pour les démarrages, et on la
   // pousse sur l'élément audio à chaque changement.
-  const volumeRef = useRef(volume);
+  /* Initialisée depuis le STOCKAGE et non depuis l'état du hook, qui vaut
+     encore son défaut au premier rendu. Un extrait lancé tôt — présentation
+     d'épreuve, lecture automatique — partait sinon à 50 % quel que soit le
+     réglage. Voir utils/volume.js. */
+  const volumeRef = useRef(volumeEffectif());
   /* Atténuation ponctuelle, indépendante du curseur global : elle permet à un
      jeu de faire de la place à un autre son — le métronome de l'épreuve BPM,
      qui doit rester audible par-dessus l'extrait. Vaut 1 partout ailleurs. */
@@ -162,7 +166,8 @@ export function useLecteurAudio() {
   }
 
   useEffect(() => {
-    volumeRef.current = Math.max(0, Math.min(1, Number(volume) || 0));
+    /* `volume` n'est que le déclencheur ; la valeur vient du stockage. */
+    volumeRef.current = Math.max(0, Math.min(1, Number(volumeEffectif()) || 0));
     appliquerVolume();
   }, [volume]);
 
@@ -1593,8 +1598,8 @@ export function JeuBPM({ onDone, daily = false, revelation = true }) {
   // lecture.
   function appliquerGainMetro(actif = true) {
     if (!tone || !clickRef.current) return;
-    clickRef.current.volume.value = actif && volume > 0
-      ? 20 + tone.gainToDb(volume)
+    clickRef.current.volume.value = actif
+      ? dbEffectif(tone, 20)
       : -Infinity;
   }
 
@@ -2749,7 +2754,7 @@ export function JeuInstrument({ onDone, daily = false, revelation = true }) {
   // n'avait aucun effet sur cette épreuve.
   function appliquerGain() {
     if (!tone || !samplerRef.current) return;
-    samplerRef.current.volume.value = volume > 0 ? tone.gainToDb(volume) : -Infinity;
+    samplerRef.current.volume.value = dbEffectif(tone);
   }
 
   // Le curseur de volume agit sur le sampler DÉJÀ chargé : sans cet effet, il
@@ -2868,7 +2873,7 @@ export function JeuInstrument({ onDone, daily = false, revelation = true }) {
     // Cas particulier : la boîte à rythmes est électronique par nature → synthèse
     if (target === 'Boîte à rythmes') {
       const t0 = tone.now() + 0.15;
-      const gain = volume > 0 ? tone.gainToDb(volume) : -Infinity;
+      const gain = dbEffectif(tone);
       const kick = new tone.MembraneSynth({
         pitchDecay: 0.008, octaves: 2,
         envelope: { attack: 0.001, decay: 0.15, sustain: 0 },
@@ -2878,7 +2883,7 @@ export function JeuInstrument({ onDone, daily = false, revelation = true }) {
         envelope: { attack: 0.001, decay: 0.12, sustain: 0 },
       }).toDestination();
       kick.volume.value = gain;
-      clap.volume.value = volume > 0 ? -4 + tone.gainToDb(volume) : -Infinity;
+      clap.volume.value = dbEffectif(tone, -4);
       [0, 0.5, 1, 1.5].forEach((d) => kick.triggerAttackRelease('C2', '16n', t0 + d));
       [0.25, 0.75, 1.25, 1.75].forEach((d) => clap.triggerAttackRelease('16n', t0 + d));
       rythmeRef.current = [kick, clap];
@@ -2905,7 +2910,7 @@ export function JeuInstrument({ onDone, daily = false, revelation = true }) {
           }).toDestination();
         });
         if (samplerRef.current) {
-          samplerRef.current.volume.value = volume > 0 ? tone.gainToDb(volume) : -Infinity;
+          samplerRef.current.volume.value = dbEffectif(tone);
         }
       } catch (e) {
         console.error('Échec chargement samples:', e);

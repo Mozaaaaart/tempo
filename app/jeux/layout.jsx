@@ -7,6 +7,7 @@ import { EPREUVES } from '@/data/epreuves';
 import { EpreuveContext } from '@/components/EpreuveContext';
 import VolumeControl from '@/components/VolumeControl';
 import EnTete from '@/components/EnTete';
+import PiedDePage from '@/components/PiedDePage';
 
 /**
  * Enveloppe des dix épreuves.
@@ -934,9 +935,7 @@ export default function EpreuvesLayout({ children }) {
         <CarteDefi variante="mobile" />
 
         {/* 8 — Pied de page */}
-        <footer style={{ marginTop: 'var(--e8)', textAlign: 'center', fontSize: 11, color: 'var(--cendre)' }}>
-          Mozart Benchmark — extraits fournis par Deezer, sons de synthèse et échantillons libres.
-        </footer>
+        <PiedDePage />
       </main>
     </EpreuveContext.Provider>
   );

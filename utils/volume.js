@@ -121,6 +121,53 @@ export function useNiveau() {
 }
 
 /**
+ * Volume EFFECTIF, lu SYNCHRONEMENT dans le stockage. Zéro si le son est
+ * coupé, comme le hook du même nom.
+ *
+ * ------------------------------------------------------- pourquoi il existe
+ *
+ * Les hooks ci-dessus ne peuvent pas lire le stockage au premier rendu : ce
+ * rendu a aussi lieu sur le serveur, où localStorage n'existe pas, et le HTML
+ * hydraté doit correspondre. Ils partent donc de DEFAUT et ne connaissent la
+ * vraie valeur qu'après le montage, une fois leur effet passé.
+ *
+ * Pour un curseur affiché, c'est sans conséquence : il se corrige avant qu'on
+ * ait pu le regarder. Pour du SON, non. Tout ce qui joue au montage — les
+ * présentations des épreuves, qui démarrent seules — sonnait pendant cette
+ * fenêtre au niveau par DÉFAUT, c'est-à-dire 50 %, quel que soit le réglage
+ * réel. Quelqu'un qui avait baissé le son sur l'accueil retrouvait l'intro à
+ * fond, puis le reste de l'épreuve au bon niveau. D'où l'impression, juste,
+ * que l'intro n'obéit pas au mélangeur.
+ *
+ * ------------------------------------------------------------ comment l'user
+ *
+ * Le hook reste le DÉCLENCHEUR — c'est lui qui fait rejouer l'effet quand on
+ * bouge le curseur — mais la valeur APPLIQUÉE vient d'ici. Aucun risque de
+ * désynchronisation : ecrireVolume écrit dans le stockage AVANT de diffuser
+ * l'événement, donc au moment où l'effet se rejoue, la lecture est déjà à
+ * jour.
+ *
+ * Jamais appelée pendant le rendu : elle ferait diverger serveur et client.
+ * Sa place est dans un effet, un gestionnaire ou une construction d'objet
+ * audio.
+ */
+export function volumeEffectif() {
+  return lireActif() ? lireVolume() : 0;
+}
+
+/**
+ * Le même, converti en décibels pour Tone, avec un gain de base facultatif.
+ *
+ * gainToDb(0) vaut -Infinity, et lui ajouter un gain de base ne reste
+ * -Infinity que par chance : on écrit le cas explicitement. Sans quoi couper
+ * le son laisserait la source à plein volume, ou à son gain de base.
+ */
+export function dbEffectif(Tone, base = 0) {
+  const v = volumeEffectif();
+  return v > 0 ? base + Tone.gainToDb(v) : -Infinity;
+}
+
+/**
  * Volume EFFECTIF, celui que les sources appliquent : zéro dès que le son est
  * coupé, quel que soit le niveau du curseur.
  *

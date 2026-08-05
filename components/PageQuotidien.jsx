@@ -9,6 +9,7 @@ import { EPREUVES, lienEpreuve } from '@/data/epreuves';
 import { jeuDuSlug } from '@/components/registreJeux';
 import { ContexteEpreuveVisible } from '@/components/ContexteEpreuveVisible';
 import { TODAY, jourLocal, setSeedSalt } from '@/components/dailyGames';
+import { SITE_URL } from '@/data/site';
 
 /**
  * DÉFI DU JOUR
@@ -98,13 +99,14 @@ function correctionDe(archive, epreuve) {
 
 /* Adresse publique du défi, telle qu'elle apparaît dans le partage.
 
-   Écrite en dur plutôt que déduite de window.location.origin : un partage
-   émis depuis localhost ou depuis une préproduction Vercel enverrait sinon
-   une adresse injoignable pour le destinataire. Le lien doit toujours mener
-   au site en ligne, quel que soit l'endroit d'où l'on joue.
+   Déduite de SITE_URL (data/site.js) plutôt que de window.location.origin :
+   un partage émis depuis localhost ou depuis une préproduction Vercel
+   enverrait sinon une adresse injoignable pour le destinataire. Le lien doit
+   toujours mener au site en ligne, quel que soit l'endroit d'où l'on joue.
 
-   Contrepartie : elle est à changer ici le jour d'un domaine propre. */
-const LIEN_PUBLIC = 'https://mozartbenchmark.vercel.app/quotidien';
+   Une seule source de vérité : si le domaine change à nouveau, tout se joue
+   dans data/site.js — rien à changer ici. */
+const LIEN_PUBLIC = `${SITE_URL}/quotidien`;
 
 /* Temps laissé à la dernière épreuve pour présenter SON résultat avant que le
    relevé final ne prenne la place. Les voiles de fin des épreuves durent près

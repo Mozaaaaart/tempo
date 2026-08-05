@@ -2286,7 +2286,9 @@ export default function PageQuotidien() {
             </>
         )}
 
-        <PiedDePage />
+        {/* Seule page qui garde la liste des dix jeux : le defi les enchaine
+            tous, et le pied sert de recapitulatif pour y revenir un par un. */}
+        <PiedDePage avecJeux />
       </main>
     </>
   );

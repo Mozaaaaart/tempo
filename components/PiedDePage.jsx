@@ -91,11 +91,11 @@ const LEGAL = [
  *                main, et un pied de page sans rang tomberait sur le garde-fou
  *                plutôt que sur une place choisie.
  */
-export default function PiedDePage({ classe = '' }) {
+export default function PiedDePage({ classe = '', avecJeux = false }) {
   const annee = new Date().getFullYear();
 
   return (
-    <footer className={`pied ${classe}`.trim()}>
+    <footer className={['pied', avecJeux ? '' : 'pied-sans-jeux', classe].filter(Boolean).join(' ')}>
       <style>{`
         /* Aucun accent grave dans ce bloc : il vit dans un gabarit, et un
            accent grave isole y refermerait la chaine CSS en plein milieu. */
@@ -105,6 +105,12 @@ export default function PiedDePage({ classe = '' }) {
           padding-top: var(--e7);
           border-top: 0.5px solid var(--filet);
         }
+
+        /* Le pied sans les dix jeux tient sur trois lignes de liens au lieu de
+           cinq : il n a plus besoin d autant d air au-dessus ni en dessous.
+           Le rapport entre le blanc et la matiere est ce qui fait qu un bloc
+           parait compose ou simplement vide — a matiere reduite, blanc reduit. */
+        .pied-sans-jeux { margin-top: var(--e7); padding-top: var(--e6); }
 
         /* ============================================================
            ENTREE EN DIAGONALE
@@ -173,20 +179,31 @@ export default function PiedDePage({ classe = '' }) {
         .pied-liste-jeux li:nth-child(10) { animation-delay: 225ms; animation-range: entry 27% entry 75%; }
 
         /* Les etiquettes de rubrique, sur la rangee du haut : leur retard ne
-           depend que de leur colonne. nth-of-type sur les nav plutot qu une
-           classe par rubrique — l ordre des trois nav est stable. */
-        .pied-cols nav:nth-of-type(1) .pied-titre { animation-delay: 45ms;  animation-range: entry 15% entry 63%; }
-        .pied-cols nav:nth-of-type(2) .pied-titre { animation-delay: 225ms; animation-range: entry 27% entry 75%; }
-        .pied-cols nav:nth-of-type(3) .pied-titre { animation-delay: 270ms; animation-range: entry 30% entry 78%; }
+           depend que de leur colonne.
+
+           UNE CLASSE PAR RUBRIQUE, ET NON nth-of-type. Les retards etaient
+           accroches au RANG des nav, ce qui supposait leur ordre stable. Il ne
+           l est plus : la rubrique des jeux ne parait que sur le defi du jour,
+           donc « le site » est tantot le premier nav, tantot le second. Avec
+           nth-of-type, les retards se decalaient d une colonne ailleurs, et
+           les liens d informations perdaient meme le leur — aucun troisieme
+           nav a cibler. Une classe dit ce qu elle designe et ne bouge pas. */
+        .pied-nav-jeux  .pied-titre { animation-delay: 45ms;  animation-range: entry 15% entry 63%; }
+        .pied-nav-site  .pied-titre { animation-delay: 225ms; animation-range: entry 27% entry 75%; }
+        .pied-nav-infos .pied-titre { animation-delay: 270ms; animation-range: entry 30% entry 78%; }
 
         /* Colonne 5 — le site */
-        .pied-cols nav:nth-of-type(2) .pied-liste li:nth-child(1) { animation-delay: 270ms; animation-range: entry 30% entry 78%; }
-        .pied-cols nav:nth-of-type(2) .pied-liste li:nth-child(2) { animation-delay: 315ms; animation-range: entry 33% entry 81%; }
+        .pied-nav-site .pied-liste li:nth-child(1) { animation-delay: 270ms; animation-range: entry 30% entry 78%; }
+        .pied-nav-site .pied-liste li:nth-child(2) { animation-delay: 315ms; animation-range: entry 33% entry 81%; }
+        /* Troisieme ligne — Soutenir. Un pas de 45 ms de plus, comme partout :
+           sans cette regle elle entrerait sans retard, donc AVANT les deux
+           lignes du dessus, et la vague se briserait au dernier element. */
+        .pied-nav-site .pied-liste li:nth-child(3) { animation-delay: 360ms; animation-range: entry 36% entry 84%; }
 
         /* Colonne 6 — informations */
-        .pied-cols nav:nth-of-type(3) .pied-liste li:nth-child(1) { animation-delay: 315ms; animation-range: entry 33% entry 81%; }
-        .pied-cols nav:nth-of-type(3) .pied-liste li:nth-child(2) { animation-delay: 360ms; animation-range: entry 36% entry 84%; }
-        .pied-cols nav:nth-of-type(3) .pied-liste li:nth-child(3) { animation-delay: 405ms; animation-range: entry 39% entry 87%; }
+        .pied-nav-infos .pied-liste li:nth-child(1) { animation-delay: 315ms; animation-range: entry 33% entry 81%; }
+        .pied-nav-infos .pied-liste li:nth-child(2) { animation-delay: 360ms; animation-range: entry 36% entry 84%; }
+        .pied-nav-infos .pied-liste li:nth-child(3) { animation-delay: 405ms; animation-range: entry 39% entry 87%; }
 
         /* La barre du bas ferme la vague, dans son propre sens de lecture. */
         .pied-bas > *:nth-child(1) { animation-delay: 405ms; animation-range: entry 39% entry 87%; }
@@ -207,6 +224,37 @@ export default function PiedDePage({ classe = '' }) {
           align-items: start;
           gap: var(--e6) var(--e7);
         }
+
+        /* ---- Variante sans la rubrique des jeux ----
+
+           DECLAREE APRES .pied-cols, et c est essentiel : les deux selecteurs
+           ont la meme specificite (une classe), donc c est l ORDRE qui tranche.
+           Posee avant, elle etait ecrasee par repeat(3) et une quatrieme piste
+           vide restait ouverte a droite — les rubriques flottaient au milieu.
+
+           QUATRE PISTES POUR TROIS BLOCS. La piste 2 est un 1fr vide qui
+           absorbe tout l espace disponible : l identite reste calee a gauche,
+           les deux rubriques se rejoignent a droite, separees par une seule
+           gouttiere. Avec space-between sur trois pistes, l espace se serait
+           reparti a parts egales et « le site » aurait derive vers le centre,
+           sans rien pour le justifier — c est exactement ce qui donnait cette
+           impression de vide mal reparti.
+
+           Deux blocs cote a cote se lisent comme un groupe ; trois blocs
+           egalement espaces se lisent comme trois isoles. */
+        .pied-cols-sans-jeux {
+          grid-template-columns: minmax(220px, 300px) 1fr max-content max-content;
+          justify-content: initial;
+          column-gap: var(--e7);
+        }
+        .pied-cols-sans-jeux .pied-identite  { grid-column: 1; }
+        .pied-cols-sans-jeux .pied-nav-site  { grid-column: 3; }
+        .pied-cols-sans-jeux .pied-nav-infos { grid-column: 4; }
+
+        /* Sans les dix jeux, la rangee ne fait plus que trois lignes de liens :
+           le pied peut respirer moins large sans paraitre serre. Les valeurs
+           d origine tenaient a une colonne haute de cinq rangees, disparue. */
+        .pied-cols-sans-jeux { row-gap: var(--e5); }
 
         /* ---- Identite ----
            Le seul bloc centre en hauteur : voir la note de tete. La rangee
@@ -385,6 +433,16 @@ export default function PiedDePage({ classe = '' }) {
             grid-column: 1 / -1;
             align-self: start;
           }
+          /* La variante large posait chaque bloc sur une piste nommee. En
+             dessous de 1100 la grille n a plus ces pistes : sans ce retour a
+             auto, les rubriques viseraient des colonnes 3 et 4 inexistantes et
+             se retrouveraient rejetees hors de la rangee. */
+          .pied-cols-sans-jeux {
+            grid-template-columns: repeat(2, max-content);
+            justify-content: space-between;
+          }
+          .pied-cols-sans-jeux .pied-nav-site,
+          .pied-cols-sans-jeux .pied-nav-infos { grid-column: auto; }
         }
 
         @media (max-width: 640px) {
@@ -420,7 +478,7 @@ export default function PiedDePage({ classe = '' }) {
         }
       `}</style>
 
-      <div className="pied-cols">
+      <div className={`pied-cols${avecJeux ? '' : ' pied-cols-sans-jeux'}`}>
         <div className="pied-identite">
           <div className="pied-marque">
             {/* Meme fichier que l'en-tete : un seul aller-retour reseau pour
@@ -451,7 +509,22 @@ export default function PiedDePage({ classe = '' }) {
           </Link>
         </div>
 
-        <nav aria-label={`Les ${EPREUVES.length} jeux`}>
+        {/* La liste des dix jeux ne parait que sur le defi du jour.
+
+            Ailleurs elle faisait doublon : la page d accueil les liste deja
+            dans son bloc de presentation, et les pages de jeu ont leur propre
+            navigation d une epreuve a l autre. Le pied repetait donc un
+            maillage existant, au prix d une rangee de dix liens sous chaque
+            page.
+
+            A GARDER EN TETE POUR LE REFERENCEMENT : ces liens etaient aussi
+            du maillage interne, presents sur toutes les pages. Les pages
+            legales et « soutenir » n ont plus de lien direct vers les jeux.
+            Ce n est pas un probleme tant que l accueil et le plan du site les
+            lient — c est le cas — mais si un jeu peine a etre explore, c est
+            la premiere piste a revisiter. */}
+        {avecJeux && (
+        <nav className="pied-nav-jeux" aria-label={`Les ${EPREUVES.length} jeux`}>
           <div className="pied-titre">les {EPREUVES.length} jeux</div>
           <ul className="pied-liste pied-liste-jeux">
             {EPREUVES.map((e) => (
@@ -464,19 +537,35 @@ export default function PiedDePage({ classe = '' }) {
             ))}
           </ul>
         </nav>
+        )}
 
-        <nav aria-label="Navigation du site">
+        <nav className="pied-nav-site" aria-label="Navigation du site">
           <div className="pied-titre">le site</div>
-          {/* Soutenir n'est plus ici : promue dans le bloc de signature, où
-              elle suit la phrase « gratuits, sans inscription ». La dupliquer
-              à soixante pixels d'écart aurait affaibli les deux occurrences. */}
+          {/* SOUTENIR FIGURE DEUX FOIS DANS CE PIED, ET C'EST VOULU.
+
+              L'occurrence de la signature, à gauche, tire sa force de son
+              contexte : elle suit « gratuits, sans inscription », et
+              l'invitation y arrive comme la suite de la phrase. Celle-ci
+              répond à un autre besoin — quelqu'un qui parcourt les rubriques
+              de navigation cherche une liste de pages, et « Soutenir » en est
+              une. Deux lecteurs, deux chemins.
+
+              Aucun enjeu d'indexation : deux liens vers une même URL sur une
+              même page sont consolidés par les moteurs, qui retiennent l'ancre
+              du premier et ignorent le second. Pas de pénalité, pas de
+              dilution — la question est uniquement de composition.
+
+              EN DERNIER dans la liste : Accueil et Défi du jour sont les
+              destinations courantes, Soutenir est l'invitation. L'ordre va du
+              plus attendu au plus engageant, jamais l'inverse. */}
           <ul className="pied-liste">
             <li><Link href="/" className="pied-lien">Accueil</Link></li>
             <li><Link href="/quotidien" className="pied-lien">Défi du jour</Link></li>
+            <li><Link href="/soutenir" className="pied-lien">Soutenir</Link></li>
           </ul>
         </nav>
 
-        <nav aria-label="Informations légales">
+        <nav className="pied-nav-infos" aria-label="Informations légales">
           <div className="pied-titre">informations</div>
           <ul className="pied-liste">
             {LEGAL.map((l) => (

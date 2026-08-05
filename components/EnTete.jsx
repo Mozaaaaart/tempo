@@ -133,13 +133,32 @@ export default function EnTete({ liens = [], accent = false, children = null, dr
         }
 
         /* Monogramme : cercle en filet, identique sur toutes les pages. Le
-           repère d'identité ne doit pas changer d'une page à l'autre. */
+           repère d'identité ne doit pas changer d'une page à l'autre.
+
+           Le cercle contenait les initiales MB ; il contient désormais le
+           portrait — Mozart au casque, la seule blague du site (doc de
+           design). Le filet or RESTE : c'est lui qui fait du portrait un
+           logo et non une image posée là, et il maintient le cercle visible
+           pendant le chargement de l'image. overflow: hidden découpe le
+           carré en rond ; object-fit: cover absorbe tout écart d'échelle. */
         .entete-monogramme {
+          /* display: block est INDISPENSABLE et facile a perdre : ce
+             monogramme est un span, donc inline par defaut, et un element
+             inline ignore width, height ET overflow — le cercle disparait et
+             l image en width 100 pour cent se dimensionne sur l en-tete
+             entier. L ancien display: flex (qui centrait les initiales)
+             rendait ce service sans le dire ; le retirer avec les initiales
+             a casse le cadre. */
+          display: block;
           width: 28px; height: 28px; border-radius: 50%;
-          display: flex; align-items: center; justify-content: center;
-          border: 1px solid var(--or); color: var(--or);
-          font-family: var(--serif); font-size: 13px;
+          overflow: hidden;
+          border: 1px solid var(--or);
           flex-shrink: 0;
+        }
+        .entete-monogramme img {
+          width: 100%; height: 100%;
+          object-fit: cover;
+          display: block;
         }
         .entete-titre {
           font-size: 13.5px;
@@ -262,7 +281,17 @@ export default function EnTete({ liens = [], accent = false, children = null, dr
       `}</style>
 
       <Link href="/" aria-label="Accueil">
-        <span className="entete-monogramme">MB</span>
+        {/* Image simple et non next/image : le fichier fait deux kilo-octets,
+            l'optimiseur d'images de Vercel n'aurait rien à optimiser et
+            chaque passage y consomme le quota de transformations du plan
+            Hobby. width/height posés pour réserver la place avant le
+            chargement — un logo qui fait sauter la barre est pire qu'un logo
+            lent. alt vide : le lien porte déjà « Accueil », le lecteur
+            d'écran n'a pas besoin d'entendre deux étiquettes. */}
+        <span className="entete-monogramme">
+          {/* eslint-disable-next-line @next/next/no-img-element -- choix documenté ci-dessus : 2 Ko, pas d'optimiseur */}
+          <img src="/portrait-mozart-96.webp" alt="" width={28} height={28} />
+        </span>
       </Link>
 
       {/* Le nom du site, sur TOUTES les tailles d'écran. Il ne porte plus

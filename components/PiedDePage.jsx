@@ -7,56 +7,83 @@ import { SITE_NOM } from '@/data/site';
  *
  * ------------------------------------------------------------------ le fond
  *
- * Le site avait bien un <footer> sur chacune de ses pages, mais c'était une
- * LIGNE DE CRÉDITS, pas un pied de page : onze pixels, gris cendre, centrés,
- * et trois textes différents selon la page. Un visiteur qui arrive au bas du
- * document n'y trouvait ni où aller ensuite, ni qui édite le site, ni comment
- * le joindre.
- *
- * Trois fonctions manquaient, dans cet ordre d'importance :
+ * Trois fonctions, dans cet ordre d'importance :
  *
  *   1. UNE SORTIE. Le bas de page est l'endroit où l'on arrive quand on a fini
- *      de lire et qu'on ne sait pas quoi faire. Ne rien y proposer, c'est
- *      laisser partir. Les dix jeux y sont donc listés en toutes lettres —
- *      c'est aussi le seul endroit du site où ils sont TOUS liés depuis un
- *      rendu serveur, ce qui vaut pour l'exploration autant que pour le
- *      visiteur.
+ *      de lire et qu'on ne sait pas quoi faire. Les dix jeux y sont listés en
+ *      toutes lettres — c'est aussi le seul endroit du site où ils sont TOUS
+ *      liés depuis un rendu serveur.
  *
  *   2. UN ÉDITEUR. Un site sans identité visible ne se distingue pas d'une
- *      page jetable. C'est ce que mesure la ligne d'identité, et c'est aussi
- *      ce que cherche un moteur quand il évalue à qui il a affaire.
+ *      page jetable. C'est le rôle de la colonne d'identité — et du
+ *      monogramme, voir plus bas.
  *
- *   3. LES MENTIONS OBLIGATOIRES. Voir la note LEGAL plus bas : elles ne sont
- *      pas encore là, et c'est le seul point réellement bloquant.
+ *   3. LES MENTIONS OBLIGATOIRES. Rubrique « informations », séparée de la
+ *      navigation : on ne cherche pas les mentions légales comme on cherche
+ *      le défi du jour, les mélanger obligeait à lire toute la liste pour
+ *      trouver l'une ou l'autre.
  *
  * ------------------------------------------------------------------ la forme
  *
- * Sobre au sens du document de design, pas au sens de vide : filet de 0,5 px,
- * étiquettes en mono capitales — c'est leur emploi légitime, ce sont des noms
- * de rubrique — intitulés en lin, aucune surface, aucun aplat, une seule
- * couleur d'accent qui ne sert qu'au survol. Rien de neuf n'est inventé : la
- * grammaire est celle de la grille de l'accueil.
+ * QUATRE RUBRIQUES EN LARGEUR DE CONTENU, PAS EN TIERS ÉGAUX. La première
+ * version posait trois colonnes en `1fr` : sur un écran de 1600 px, chacune
+ * faisait 500 px pour un contenu qui en occupe 200, et le pied devenait trois
+ * îlots perdus dans le noir. Ici chaque rubrique épouse son contenu
+ * (`max-content`) et `justify-content: space-between` répartit l'espace ENTRE
+ * elles : l'identité ancre le bord gauche, les informations le bord droit, et
+ * le vide devient du rythme au lieu d'être du flottement.
  *
- * Composant SERVEUR : aucun état, aucun gestionnaire. Ses liens sont dans le
- * HTML servi.
+ * L'IDENTITÉ EST CENTRÉE EN HAUTEUR, LES RUBRIQUES NON. La colonne des dix
+ * jeux fait cinq rangées, celle du site en fait deux : la rangée est haute, et
+ * une signature de trois lignes calée en haut à gauche laissait sous elle un
+ * vide vertical que rien ne venait occuper. `align-self: center` la pose sur
+ * l'axe médian du pied — elle regarde alors la liste des jeux en face, au lieu
+ * de la surplomber.
+ *
+ * Les trois rubriques, elles, restent calées EN HAUT et c'est délibéré : leurs
+ * étiquettes mono partagent une seule ligne de base, et c'est cette ligne qui
+ * fait lire les trois listes comme un même système. Les centrer chacune sur sa
+ * propre hauteur ferait flotter trois étiquettes à trois niveaux différents —
+ * on ne saurait plus qu'elles sont de même rang. L'identité peut se permettre
+ * l'exception parce qu'elle n'appartient pas à ce système : c'est un bloc, pas
+ * une rubrique.
+ *
+ * LE PORTRAIT AU CASQUE reprend celui de l'en-tête : la barre du haut ouvre
+ * la page avec lui, le pied la ferme avec lui. Même fichier, même cercle au
+ * filet or — l'identité n'a pas besoin d'un logo de plus.
+ *
+ * LES NUMÉROS D'ÉPREUVE (01–10) reprennent la grammaire par laquelle le site
+ * nomme ses jeux partout ailleurs — colonnes de l'accueil, sommaire du défi :
+ * numéro mono + intitulé. En cendre, comme sur l'accueil : le numéro étiquette,
+ * le nom informe, et dix numéros or auraient fait crier la colonne (l'or reste
+ * l'accent, pas la peinture). La liste se lit DE HAUT EN BAS (01–05 puis
+ * 06–10, `grid-auto-flow: column`) : l'ancien remplissage en ligne faisait
+ * zigzaguer une suite numérotée, ce qui contredisait sa propre numérotation.
+ *
+ * Le reste est la grammaire du site : filet 0,5 px, étiquettes mono capitales
+ * pour NOMMER les rubriques, aucune surface, aucun aplat, l'or au survol
+ * seulement. Composant SERVEUR : aucun état, liens dans le HTML servi.
  */
 
-/* ---- Les mentions légales, à activer quand les pages existeront ----
+/* ---- Les mentions légales ----
  *
- * Laissé VIDE volontairement, et c'est un choix, pas un oubli : un lien vers
- * une page absente vaut moins que pas de lien du tout — il promet une
- * information et rend un 404, ce qui est le pire des deux mondes pour la
- * confiance comme pour l'exploration.
+ * Ce tableau ne référence que des pages qui EXISTENT : un lien vers une page
+ * absente promet une information et rend un 404 — le pire des deux mondes
+ * pour la confiance comme pour l'exploration.
  *
- * Dès que app/mentions-legales/page.jsx et app/confidentialite/page.jsx
- * existent, il suffit de remplir ce tableau : la rubrique apparaît d'elle-même
- * et disparaît de nouveau si on le vide.
+ * Casse de phrase, comme partout sur le site : « Mentions légales », pas
+ * « mentions légales » — la minuscule initiale les faisait lire comme des
+ * items d'un autre système que « Accueil » juste au-dessus.
  *
- *   { href: '/mentions-legales', libelle: 'mentions légales' },
- *   { href: '/confidentialite',  libelle: 'confidentialité' },
- *   { href: '/contact',          libelle: 'contact' },
+ * Soutenir vit dans « le site » et non ici : c'est une page du projet, pas
+ * une obligation légale — la ranger avec les mentions l'aurait fait lire
+ * comme une formalité, ce qui est le contraire d'une invitation.
  */
-const LEGAL = [];
+const LEGAL = [
+  { href: '/mentions-legales', libelle: 'Mentions légales' },
+  { href: '/confidentialite', libelle: 'Confidentialité' },
+  { href: '/contact', libelle: 'Contact' },
+];
 
 /**
  * @param classe  classes supplémentaires. L'accueil y passe `bloc-pied`, qui
@@ -75,35 +102,120 @@ export default function PiedDePage({ classe = '' }) {
 
         .pied {
           margin-top: var(--e8);
-          padding-top: var(--e6);
+          padding-top: var(--e7);
           border-top: 0.5px solid var(--filet);
         }
 
-        /* Trois colonnes de largeur INEGALE. L identite tient une phrase et
-           merite d etre lue, les deux listes se balayent : leur donner la
-           meme place aurait etire les intitules sur toute la largeur pour
-           rien.
+        /* Chaque rubrique a la largeur de son contenu, l espace vit ENTRE
+           elles. La borne haute de l identite (300 px) est celle de sa
+           phrase : au-dela, la ligne depasse 60 signes et cesse de se lire
+           comme une signature.
 
-           auto-fit et un plancher de 220 px : trois colonnes sur un ecran
-           large, deux sur une tablette, une sur un telephone. Aucun point de
-           rupture a maintenir. */
+           align-items: start pose les trois rubriques sur une seule ligne de
+           base — c est ce qui les fait lire comme un meme systeme. Seule
+           l identite y echappe, plus bas. */
         .pied-cols {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+          grid-template-columns: minmax(220px, 300px) repeat(3, max-content);
+          justify-content: space-between;
+          align-items: start;
           gap: var(--e6) var(--e7);
         }
-        .pied-identite { grid-column: span 1; }
 
-        /* Etiquette de rubrique : c est l emploi legitime du mono capitales,
-           celui que le document de design lui assigne. On NOMME une section,
-           on ne redige pas. */
+        /* ---- Identite ----
+           Le seul bloc centre en hauteur : voir la note de tete. La rangee
+           est haute de cinq rangees de liens ; une signature de trois lignes
+           calee en haut y laissait un vide vertical sous elle. */
+        .pied-identite { align-self: center; }
+
+        .pied-marque {
+          display: flex;
+          align-items: center;
+          gap: var(--e2);
+        }
+        /* Le meme portrait que la barre du haut : l en-tete ouvre la page
+           avec lui, le pied la ferme avec lui. Cercle au filet or, comme
+           la-haut — c est le filet qui en fait un logo. baseline cede la
+           place a center : une image n a pas de ligne de base typographique,
+           et alignee dessus elle flottait au-dessus du nom. */
+        .pied-monogramme {
+          /* display explicite : ce span n est block que parce qu il est
+             enfant flex de pied-marque — un changement de conteneur le
+             rendrait inline et lui ferait ignorer width, height et overflow
+             (le bug qu a connu l en-tete). Autant ne pas dependre du
+             contexte. */
+          display: block;
+          width: 24px; height: 24px;
+          border-radius: 50%;
+          overflow: hidden;
+          border: 1px solid var(--or);
+          flex-shrink: 0;
+        }
+        .pied-monogramme img {
+          width: 100%; height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+        .pied-nom {
+          font-size: 13.5px;
+          font-weight: 500;
+          color: var(--ivoire);
+        }
+        .pied-phrase {
+          margin-top: var(--e3);
+          max-width: 280px;
+          font-size: 12.5px;
+          line-height: 1.6;
+          color: var(--lin);
+        }
+
+        /* ---- Le lien de soutien ----
+           Promu de la liste de navigation vers la signature, et pas duplique :
+           range parmi Accueil et Defi du jour, il se lisait comme une page de
+           plus ; pose sous la phrase, il en devient la suite logique — le
+           lecteur vient de lire  gratuits, sans inscription , l invitation a
+           soutenir arrive avec son contexte.
+
+           Un lien or, rien de plus. L or est la couleur canonique du lien
+           (doc de design, table de palette), donc aucun element nouveau n est
+           invente : ni bouton, ni encadre — le seul bloc encadre de l accueil
+           doit rester la carte du defi. La fleche donne la direction sans
+           crier ; elle glisse d un cran au survol, seul mouvement concede,
+           dans la duree courte du site. */
+        .pied-soutenir {
+          display: inline-flex;
+          align-items: baseline;
+          gap: 6px;
+          margin-top: var(--e4);
+          font-size: 12.5px;
+          font-weight: 500;
+          color: var(--or);
+          text-decoration: none;
+          transition: color var(--transition-courte);
+        }
+        .pied-soutenir:hover,
+        .pied-soutenir:focus-visible { color: var(--or-clair); }
+        .pied-soutenir-fleche {
+          transition: transform var(--transition-courte);
+        }
+        .pied-soutenir:hover .pied-soutenir-fleche,
+        .pied-soutenir:focus-visible .pied-soutenir-fleche {
+          transform: translateX(3px);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .pied-soutenir-fleche { transition: none; }
+        }
+
+        /* ---- Rubriques ---- */
+        /* Etiquette de rubrique : l emploi legitime du mono capitales, celui
+           que le document de design lui assigne. On NOMME une section. */
         .pied-titre {
           font-family: var(--mono);
           font-size: 10px;
           letter-spacing: 0.09em;
           text-transform: uppercase;
           color: var(--or);
-          margin-bottom: var(--e3);
+          margin-bottom: var(--e4);
         }
 
         .pied-liste {
@@ -111,13 +223,28 @@ export default function PiedDePage({ classe = '' }) {
           margin: 0;
           padding: 0;
           display: grid;
-          gap: 7px;
+          gap: 8px;
         }
-        /* Les dix jeux sur DEUX colonnes : dix lignes d affilee font une
-           colonne plus haute que le reste du pied, et le desequilibrent. */
-        .pied-liste-jeux { grid-template-columns: 1fr 1fr; gap: 7px var(--e4); }
+
+        /* Les dix jeux SUR TROIS LIGNES, remplies en colonne : 01-03, 04-06,
+           07-09, et 10 qui ouvre seul la derniere colonne — dix ne tient pas
+           dans neuf cases, le debordement est arithmetique, pas un accident.
+           En tete de colonne et non en queue de ligne, l orphelin s aligne
+           sur la rangee des premiers de colonne : il se lit comme une
+           colonne courte, pas comme un item tombe de la grille.
+           grid-auto-flow: column laisse la grille creer les colonnes
+           necessaires : un onzieme jeu completerait la quatrieme sans
+           retoucher une ligne de CSS. */
+        .pied-liste-jeux {
+          grid-auto-flow: column;
+          grid-template-rows: repeat(3, auto);
+          gap: 8px var(--e6);
+        }
 
         .pied-lien {
+          display: inline-flex;
+          align-items: baseline;
+          gap: var(--e2);
           font-size: 12.5px;
           color: var(--lin);
           text-decoration: none;
@@ -126,10 +253,23 @@ export default function PiedDePage({ classe = '' }) {
         .pied-lien:hover,
         .pied-lien:focus-visible { color: var(--or); }
 
+        /* Le numero etiquette, le nom informe : cendre, comme les colonnes de
+           l accueil. Il passe a l or AVEC son lien — un seul geste au survol,
+           pas deux vitesses. */
+        .pied-num {
+          font-family: var(--mono);
+          font-size: 10px;
+          letter-spacing: 0.06em;
+          color: var(--cendre);
+          transition: color var(--transition-courte);
+        }
+        .pied-lien:hover .pied-num,
+        .pied-lien:focus-visible .pied-num { color: var(--or); }
+
         /* ---- La barre du bas ----
-           Ce qui n est ni navigation ni identite : la propriete, l origine des
-           sons. On le lit une fois dans sa vie, d ou le cendre et les onze
-           pixels — c est la seule mention du site dont on puisse se passer. */
+           Ce qui n est ni navigation ni identite : la propriete, l origine
+           des sons. On le lit une fois dans sa vie, d ou le cendre et les
+           onze pixels. */
         .pied-bas {
           margin-top: var(--e7);
           padding-top: var(--e4);
@@ -142,14 +282,46 @@ export default function PiedDePage({ classe = '' }) {
           color: var(--cendre);
         }
 
+        /* ---- Ecrans moyens : deux rubriques par rangee ----
+           Entre 640 et 1100 px, quatre colonnes en max-content se compriment
+           jusqu a coller les listes ; deux par rangee gardent l air entre
+           elles, et l identite prend sa rangee entiere en tete.
+
+           Elle y reprend son calage HAUT : centree en hauteur, elle n a plus
+           rien a cote d elle pour justifier le decalage — le centrage vertical
+           ne vaut que face a une colonne plus haute. */
+        @media (max-width: 1100px) {
+          .pied-cols {
+            grid-template-columns: repeat(2, max-content);
+            row-gap: var(--e7);
+          }
+          .pied-identite {
+            grid-column: 1 / -1;
+            align-self: start;
+          }
+        }
+
         @media (max-width: 640px) {
           .pied { margin-top: var(--e7); padding-top: var(--e5); }
-          .pied-cols { gap: var(--e5); }
-          /* Les intitules passent a 48 px de haut : au doigt, sept pixels de
-             gouttiere entre deux liens de douze, c est une cible qu on rate. */
+          .pied-cols {
+            grid-template-columns: 1fr;
+            row-gap: var(--e6);
+          }
+          .pied-titre { margin-bottom: var(--e2); }
+          /* Cibles tactiles : sept pixels de gouttiere entre deux liens de
+             douze, au doigt, c est une cible qu on rate. */
           .pied-liste { gap: 0; }
+          /* Retour a DEUX colonnes de cinq au telephone : trois colonnes de
+             liens a 13,5 px sur 380 px de large, c est  Humain ou IA  coupe
+             en deux. Cinq rangees remplies en colonne, l ordre reste lisible
+             de haut en bas. */
+          .pied-liste-jeux {
+            grid-template-rows: repeat(5, auto);
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0 var(--e5);
+          }
           .pied-lien {
-            display: block;
+            display: flex;
             padding: 9px 0;
             font-size: 13.5px;
           }
@@ -164,54 +336,100 @@ export default function PiedDePage({ classe = '' }) {
 
       <div className="pied-cols">
         <div className="pied-identite">
-          <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ivoire)' }}>
-            {SITE_NOM}
+          <div className="pied-marque">
+            {/* Meme fichier que l'en-tete : un seul aller-retour reseau pour
+                les deux, le cache fait le reste. alt vide, le nom est ecrit
+                juste a cote. */}
+            <span className="pied-monogramme" aria-hidden="true">
+              {/* eslint-disable-next-line @next/next/no-img-element -- choix documenté ci-dessus : 2 Ko, pas d'optimiseur */}
+          <img src="/portrait-mozart-96.webp" alt="" width={24} height={24} />
+            </span>
+            <span className="pied-nom">{SITE_NOM}</span>
           </div>
-          {/* Une phrase, pas un slogan. Elle dit ce que le site EST à quelqu'un
-              qui arrive par un moteur sur une page de jeu et n'a jamais vu
-              l'accueil — c'est le cas le plus fréquent, et le pied de page est
-              souvent le seul endroit où il peut l'apprendre. */}
-          <p style={{
-            marginTop: 'var(--e2)', maxWidth: 280,
-            fontSize: 12.5, lineHeight: 1.55, color: 'var(--lin)',
-          }}>
-            Dix jeux pour mesurer ton oreille musicale. Gratuits, sans
-            inscription, et sans une note de solfège.
+          {/* Une phrase, pas un slogan. Elle dit ce que le site EST à
+              quelqu'un qui arrive par un moteur sur une page de jeu et n'a
+              jamais vu l'accueil — le cas le plus fréquent, et le pied est
+              souvent le seul endroit où il peut l'apprendre.
+
+              Le compte vient de EPREUVES : la phrase ne peut pas mentir sur
+              le nombre de jeux le jour où un onzième arrive. */}
+          <p className="pied-phrase">
+            {EPREUVES.length} jeux musicaux. Gratuits, sans inscription et
+            sans connaissances en solfège.
           </p>
+          {/* La suite naturelle de la phrase : gratuit, donc soutenable.
+              Le verbe d'abord, comme tous les libellés d'action du site. */}
+          <Link href="/soutenir" className="pied-soutenir">
+            Soutenir le projet
+            <span className="pied-soutenir-fleche" aria-hidden="true">→</span>
+          </Link>
         </div>
 
-        <div>
+        <nav aria-label={`Les ${EPREUVES.length} jeux`}>
           <div className="pied-titre">les {EPREUVES.length} jeux</div>
           <ul className="pied-liste pied-liste-jeux">
             {EPREUVES.map((e) => (
               <li key={e.slug}>
-                <Link href={lienEpreuve(e.slug)} className="pied-lien">{e.nom}</Link>
+                <Link href={lienEpreuve(e.slug)} className="pied-lien">
+                  <span className="pied-num">{e.num}</span>
+                  {e.nom}
+                </Link>
               </li>
             ))}
           </ul>
-        </div>
+        </nav>
 
-        <div>
+        <nav aria-label="Navigation du site">
           <div className="pied-titre">le site</div>
+          {/* Soutenir n'est plus ici : promue dans le bloc de signature, où
+              elle suit la phrase « gratuits, sans inscription ». La dupliquer
+              à soixante pixels d'écart aurait affaibli les deux occurrences. */}
           <ul className="pied-liste">
             <li><Link href="/" className="pied-lien">Accueil</Link></li>
             <li><Link href="/quotidien" className="pied-lien">Défi du jour</Link></li>
+          </ul>
+        </nav>
+
+        <nav aria-label="Informations légales">
+          <div className="pied-titre">informations</div>
+          <ul className="pied-liste">
             {LEGAL.map((l) => (
               <li key={l.href}>
                 <Link href={l.href} className="pied-lien">{l.libelle}</Link>
               </li>
             ))}
           </ul>
-        </div>
+        </nav>
       </div>
 
       <div className="pied-bas">
         <span>© {annee} {SITE_NOM}</span>
-        {/* La provenance des extraits n'est pas une politesse : elle dit que
-            le site ne rehéberge aucun fichier, ce qui est exactement ce qui le
-            rend légal. Elle mérite de rester visible. */}
+        {/* La provenance n'est pas une politesse : elle dit que le site ne
+            rehéberge aucun fichier, ce qui est exactement ce qui le rend
+            légal. Elle mérite de rester visible.
+
+            LES POCHETTES Y FIGURENT DESORMAIS. Elles manquaient, et c'était
+            une omission de fond : ce sont des œuvres protégées au même titre
+            que les extraits, chargées depuis les mêmes serveurs Deezer, et
+            la ligne ne couvrait que le son. Nommer les deux fait coïncider
+            cette mention avec ce que décrivent les mentions légales et la
+            politique de confidentialité — trois pages qui parlent du même
+            transfert doivent le décrire pareil.
+
+            LES CHIFFRES DE STREAMS AUSSI. Ils viennent de kworb.net, figés
+            dans public/data/duels.json (champ « source »), et alimentent le
+            jeu Duel. Une donnée reprise d'un tiers se cite : c'est la règle
+            de base, et le jeu l'appliquait déjà dans son écran de partie —
+            le pied de page était le seul endroit à ne pas le faire, alors
+            que c'est lui qui parle de provenance pour tout le site.
+
+            « Extraits et pochettes » plutôt que « contenus musicaux », qui
+            aurait été plus court mais aurait cessé de nommer ce dont il
+            s'agit. Une mention de provenance qui reste vague ne protège
+            personne. */}
         <span>
-          Extraits fournis par Deezer, sons de synthèse et échantillons libres.
+          Extraits et pochettes fournis par Deezer, chiffres de streams par
+          kworb.net, sons de synthèse et échantillons libres.
         </span>
       </div>
     </footer>

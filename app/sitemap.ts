@@ -30,5 +30,16 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: 'monthly' as const,
       priority: 0.8,
     })),
+    /* Les pages légales : déclarées pour être atteignables — les régies et
+       certains moteurs vérifient leur EXISTENCE — mais en priorité basse,
+       pour qu'elles ne disputent pas le budget d'exploration aux dix jeux.
+       /soutenir les rejoint depuis que son lien Ko-fi est actif : même
+       priorité, ce n'est pas une page qu'on cherche par un moteur. */
+    ...['/mentions-legales', '/confidentialite', '/contact', '/soutenir'].map((p) => ({
+      url: `${SITE_URL}${p}`,
+      lastModified: maj,
+      changeFrequency: 'yearly' as const,
+      priority: 0.2,
+    })),
   ];
 }

@@ -1273,12 +1273,63 @@ export default function PageQuotidien() {
             gap: var(--e4) var(--e3);
             text-align: left;
           }
+          /* ---- Le filet se TRACE de gauche a droite au survol ----
+             Repris tel quel de la grille de l'accueil : meme procede, meme
+             duree, meme courbe. Le filet passait a l'or d'un bloc, en 220 ms
+             et sur toute sa longueur a la fois ; ici il se DESSINE, et les
+             deux gestes ne racontent pas la meme chose — le premier allume
+             une case, le second parcourt une liste. C'est le meme sommaire
+             d'un ecran a l'autre, il devait avoir le meme comportement.
+
+             Deux pseudo-elements superposes plutot qu'une couleur animee :
+             le gris reste en place et l'or se deploie par-dessus depuis son
+             bord gauche. scaleX et non une largeur animee — la mise a
+             l'echelle est composee par le processeur graphique, une largeur
+             declencherait un recalcul de mise en page a chaque image.
+
+             560 ms en cubic-bezier(0.22, 1, 0.36, 1) : la valeur exacte de
+             l'accueil. Ecrite en clair et non via --transition-courte, qui
+             vaut 220 ms — le trace est un mouvement, pas un changement de
+             couleur, et les deux n'ont pas la meme duree dans le systeme.
+
+             Epaisseurs du document de design : 0,5 px au repos, 1 px sur
+             l'element actif.
+
+             La bordure d'origine cede la place au pseudo-element : conservee,
+             elle aurait ajoute un demi-pixel gris SOUS le trait dore, visible
+             en fin de course. */
           .q-sommaire-item {
+            position: relative;
             padding-top: var(--e2);
-            border-top: 0.5px solid var(--filet);
-            transition: border-color var(--transition-courte);
           }
-          .q-sommaire-item:hover { border-top-color: var(--or); }
+          .q-sommaire-item::before,
+          .q-sommaire-item::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+          }
+          .q-sommaire-item::before {
+            height: 0.5px;
+            background: var(--filet);
+          }
+          .q-sommaire-item::after {
+            height: 1px;
+            background: var(--or);
+            transform: scaleX(0);
+            transform-origin: left center;
+            transition: transform 560ms cubic-bezier(0.22, 1, 0.36, 1);
+          }
+          .q-sommaire-item:hover::after { transform: scaleX(1); }
+
+          /* Sans mouvement demande, le trait apparait d'un coup plutot que de
+             ne rien faire : l'information de survol reste, le deplacement
+             part. La regle vaut aussi pour l'accueil, ou globals.css coupe
+             deja toutes les transitions. */
+          @media (prefers-reduced-motion: reduce) {
+            .q-sommaire-item::after { transition: none; }
+          }
 
           /* ---- Entrée du seuil ----
              Les blocs se posent du haut vers le bas, à la cadence des autres

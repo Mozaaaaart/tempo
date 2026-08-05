@@ -508,13 +508,24 @@ export default function Accueil() {
           de la page vit au bloc 5. */}
       <header className="accueil-entete">
         <div className="accueil-identite">
+          {/* Le même portrait que l'en-tête commun et le pied de page —
+              c'était le troisième « MB » du site, resté en initiales quand
+              les deux autres sont passés à l'image : un repère d'identité
+              qui change de forme selon la page n'en est plus un.
+              Même fichier (2 Ko, déjà en cache après toute navigation),
+              même cercle au filet or, découpé par overflow. */}
           <div style={{
             width: 34, height: 34, borderRadius: '50%',
-            border: '1px solid var(--or)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'var(--serif)', fontSize: 15, color: 'var(--or)', flexShrink: 0,
+            border: '1px solid var(--or)', overflow: 'hidden', flexShrink: 0,
           }}>
-            MB
+            {/* eslint-disable-next-line @next/next/no-img-element -- même choix que l'en-tête : 2 Ko, pas d'optimiseur */}
+            <img
+              src="/portrait-mozart-96.webp"
+              alt=""
+              width={34}
+              height={34}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            />
           </div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 500 }}>Mozart Benchmark</div>

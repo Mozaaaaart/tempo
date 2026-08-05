@@ -834,7 +834,7 @@ export default function BlocAccueil() {
           </p>
 
           <p className="description ba-p">
-            Mozart Benchmark est fait pour ça. Dix jeux musicaux, deux minutes chacun,
+            Mozart Benchmark est fait pour ça. Dix jeux musicaux, trente secondes chacun,
             une note sur dix. On y reconnaît des accords, on reproduit des rythmes, on
             cherche le tempo d’un morceau, on démasque une musique générée par une
             machine. Aucune connaissance en solfège n’est nécessaire : les notes se posent
@@ -867,8 +867,19 @@ export default function BlocAccueil() {
           </button>
 
           <div className="ba-suite" id="ba-suite" role="region" aria-label="Suite de la présentation">
+            {/* « À l'entraînement » mène à la PREMIÈRE épreuve du catalogue, et
+                non à une adresse écrite à la main : renommer son slug dans
+                data/epreuves.js ne peut donc pas laisser un lien mort ici. Il
+                vise le jeu directement plutôt que /jeux, qui redirige en 308 —
+                un aller-retour de moins pour le visiteur comme pour le robot.
+
+                Le commentaire est posé AVANT le paragraphe, pas au milieu :
+                inséré entre le texte et le lien, il aurait mangé l'espace qui
+                les sépare, JSX supprimant les blancs de fin de ligne autour
+                d'une expression. */}
             <p className="description ba-p">
-              Deux façons de jouer. À l’entraînement, tu enchaînes autant de parties que tu
+              Deux façons de jouer.{' '}
+              <Link href={lienEpreuve(EPREUVES[0].slug)}>À l’entraînement</Link>, tu enchaînes autant de parties que tu
               veux. Au <Link href="/quotidien">défi du jour</Link>, les dix jeux sont les
               mêmes pour tout le monde jusqu’à minuit, avec une seule tentative chacun et un
               score sur 100 à partager. Le mieux est de s’entraîner avant de tenter le défi.

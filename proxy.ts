@@ -38,7 +38,7 @@ import type { NextRequest } from 'next/server';
 const ORIGINES_AUTORISEES = new Set<string>([
   'https://mozartbenchmark.com',
   'https://www.mozartbenchmark.com',
-  'http://localhost:3000/',
+  'http://localhost:3000',
 ]);
 
 function origineAutorisee(request: NextRequest): boolean {

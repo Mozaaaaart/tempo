@@ -2687,6 +2687,21 @@ const SAMPLE_BASE = 'https://nbrosowsky.github.io/tonejs-instruments/samples/';
    de vie souhaitée : assez longue pour ne sonder qu'une fois, assez courte
    pour qu'un ajout dans la banque soit pris en compte au rechargement. */
 const ECHANTILLONS_CONNUS = new Map();
+
+/* Nom de FICHIER → nom de NOTE.
+
+   Le dépôt tonejs-instruments nomme ses dièses « As2 », « Ds3 », « Fs4 » :
+   le « # » n'a pas sa place dans une URL, il y serait un fragment. Tone.js,
+   lui, veut une note valide en clé de son objet `urls`, et rejette « As2 »
+   avec « url key is neither a note or midi pitch ».
+
+   Les deux mondes sont donc distincts et il faut les tenir séparés : la CLÉ
+   est la note (« A#2 »), la VALEUR est le fichier (« As2.mp3 »). C'est
+   exactement ce que fait la configuration d'origine de tonejs-instruments.
+
+   Tant que la table SAMPLES ne contenait que des notes naturelles, confondre
+   les deux ne se voyait pas. */
+const cleNote = (fichier) => String(fichier).replace(/^([A-G])s(-?\d+)$/, '$1#$2');
 const SAMPLES = {
   'Piano':              { dir: 'piano',           candidates: ['C4', 'A4', 'C5', 'E4'], shift: 0 },
   'Orgue':              { dir: 'organ',           candidates: ['C4', 'A4', 'C5', 'A3'], shift: 0 },
@@ -2847,16 +2862,17 @@ export function JeuInstrument({ onDone, daily = false, revelation = true }) {
     );
 
     const urls = {};
-    for (const note of reponses) {
-      if (!note) continue;
-      urls[note] = `${note}.mp3`;
+    for (const fichier of reponses) {
+      if (!fichier) continue;
+      // Clé = note lisible par Tone.js ; valeur = fichier tel qu'il existe.
+      urls[cleNote(fichier)] = `${fichier}.mp3`;
       if (Object.keys(urls).length >= 3) break;
     }
     /* Aucune réponse exploitable — serveur muet, hors ligne : on tente quand
        même le premier candidat plutôt que de renoncer au son. Ce cas-là n'est
        PAS mémorisé, il tient à l'état du réseau et non à celui du dépôt. */
     if (!Object.keys(urls).length) {
-      urls[candidates[0]] = `${candidates[0]}.mp3`;
+      urls[cleNote(candidates[0])] = `${candidates[0]}.mp3`;
       return urls;
     }
 

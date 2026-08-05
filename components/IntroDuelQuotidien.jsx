@@ -494,14 +494,34 @@ export default function IntroDuelQuotidien({ manches = 5, onFin }) {
             </>
           )}
 
-          {/* ---------- Le chiffre connu, sous le premier morceau ---------- */}
+          {/* ---------- Le chiffre connu, sous le premier morceau ----------
+
+              EN COLONNE LARGE, CE BLOC PARTAGE SA RANGÉE AVEC LA QUESTION
+              (même `top`), et il doit donc se caler sur la COLONNE DE GAUCHE,
+              pas sur le centre de la scène.
+
+              Il était simplement centré : large de G.col dans une scène de
+              G.L, il se posait à cheval sur le milieu — 185 à 435 quand la
+              colonne de gauche va de 60 à 310. Il recouvrait donc la question
+              et les deux touches, qui occupent 310 à 560. Le défaut ne se
+              voyait qu'ici : le jeu libre, lui, réunit les deux blocs dans une
+              seule rangée flex, où le problème ne peut pas se poser.
+
+              La marge est calculée, pas écrite en dur : `50% - G.col` place le
+              bord gauche du bloc exactement là où commence sa colonne, quelle
+              que soit la géométrie. C'est le miroir exact du `marginRight` du
+              bloc de droite, juste en dessous — les deux se lisent ensemble.
+
+              En colonne étroite, les deux blocs sont sur des rangées
+              distinctes et occupent toute la largeur : on reste centré. */}
           <div style={{
             position: 'absolute', top: G.basA, left: 0, right: 0,
-            display: 'flex', justifyContent: 'center',
+            display: 'flex', justifyContent: etroit ? 'center' : 'flex-start',
           }}>
             <div style={{
               width: G.col, textAlign: 'center',
               paddingRight: etroit ? 0 : 'var(--e5)',
+              marginLeft: etroit ? 0 : 'calc(50% - ' + G.col + 'px)',
               boxSizing: 'border-box', opacity: 0,
               animation: 'dqEntree 340ms ' + T_CHIFFRE + 'ms ease-out both',
             }}>
